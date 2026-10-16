@@ -28,6 +28,7 @@
 
 - [ ] 5.1 Verify an end-to-end run with verbose enabled produces poll-cycle and turn diagnostics and an end-to-end run with verbose disabled matches the previous concise output
 - [ ] 5.2 Verify `npm run verify` passes (format, lint, typecheck, tests, and strict OpenSpec validation) and that the README documents the option end to end
+- [ ] 5.3 Verify verbose diagnostics are written to standard error and that a `--once` run with verbose enabled still prints only the per-repository summary lines to standard output
 
 ## Workflow follow-up
 

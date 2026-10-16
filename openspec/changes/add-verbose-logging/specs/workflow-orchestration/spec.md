@@ -31,3 +31,17 @@ When verbose logging is enabled, the orchestrator SHALL report the lifecycle of 
 #### Scenario: Turn failure is reported
 - **WHEN** a turn fails and is retried or marked failed
 - **THEN** the output reports the failure reason
+
+### Requirement: Verbose diagnostics do not corrupt the report
+
+When verbose logging is enabled, the orchestrator SHALL write diagnostics to
+standard error and MUST NOT write them to standard output, so the standard output
+report stays machine-readable.
+
+#### Scenario: One-shot report stays clean
+- **WHEN** a `--once` run completes with verbose logging enabled
+- **THEN** standard output contains only the per-repository summary lines and the diagnostics appear on standard error
+
+#### Scenario: Long-running diagnostics use standard error
+- **WHEN** the long-running loop emits verbose diagnostics
+- **THEN** they are written to standard error rather than standard output

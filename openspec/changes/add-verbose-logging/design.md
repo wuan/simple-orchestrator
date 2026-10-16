@@ -38,7 +38,7 @@ Consequence: because the option can only add verbosity, there is no precedence c
 
 ### Decision: Verbose diagnostics go to stderr
 
-Verbose output is written to stderr. The concise `--once` summary keeps writing to stdout as it does today, and the long-running loop keeps using stderr.
+Verbose output is written to stderr. The concise `--once` summary keeps writing to stdout as it does today, and the long-running loop keeps using stderr. This is a spec-level guarantee (`workflow-orchestration`), not just a convention, so the report stays machine-readable even when verbose is on.
 
 Alternatives considered: everything to stdout (rejected: it mixes the summary channel with diagnostics); everything to stderr (rejected: changes existing `--once` behavior for no benefit).
 

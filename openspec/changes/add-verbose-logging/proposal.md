@@ -9,6 +9,7 @@ When the service is running it prints almost nothing: a poll cycle only reports 
 - Add a `--verbose` (`-v`) command-line option and an optional `logging.verbose` configuration field that turn on verbose diagnostics for a run. The default stays concise.
 - When verbose is on, emit per-poll-cycle diagnostics (repository, discovered issues, workflows started, per-workflow decision and idle reason) and per-turn diagnostics (skill, target, outcome, readiness result, retries).
 - Guarantee that credentials and tokens never appear in output, redacting secret values from any diagnostic at every verbosity.
+- Keep the machine-readable report intact by writing diagnostics to standard error, leaving the `--once` summary on standard output untouched.
 - Document the option in the CLI usage, `README.md`, and `docs/configuration.md`.
 
 ## Capabilities
@@ -20,7 +21,7 @@ When the service is running it prints almost nothing: a poll cycle only reports 
 ### Modified Capabilities
 
 - `orchestrator-configuration`: add a configurable logging verbosity (CLI option and configuration field, default concise) and a guarantee that secrets are never written to output.
-- `workflow-orchestration`: define the verbose per-poll-cycle and per-turn diagnostics the orchestrator emits when verbosity is enabled.
+- `workflow-orchestration`: define the verbose per-poll-cycle and per-turn diagnostics the orchestrator emits when verbosity is enabled, and the standard-error channel that keeps the standard output report machine-readable.
 
 ## Impact
 
