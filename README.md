@@ -144,6 +144,19 @@ GITHUB_TOKEN=... node dist/run.js --config config.yaml
 stock CLI without one: it uses an `UnconfiguredRuntime` that fails loudly on the
 first turn, which is what the fake-provider smoke test below relies on.
 
+### Entry points
+
+The package ships two entry points over the same CLI (`--config`, `--once`,
+`--help`):
+
+- **`dist/run.js`** — the deployable entry point. It supplies the embedded
+  OpenCode runtime, so turns actually run. The `orchestrator` bin points here.
+- **`dist/index.js`** — the runtime-agnostic `main` CLI. It supplies no runtime,
+  so `UnconfiguredRuntime` **fails loudly** on the first turn; it backs the
+  fake-provider smoke test below and is the entry point the tests import.
+
+Run the service with `dist/run.js` (or the `orchestrator` command).
+
 Label an issue with `openspec` to start a workflow. Lifecycle labels
 `openspec:proposing`, `openspec:ready`, `openspec:implementing`,
 `openspec:done`, and `openspec:failed` are managed on the pull request.
