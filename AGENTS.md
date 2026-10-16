@@ -21,7 +21,6 @@ subject has the form `<type>(<scope>): <description>`, for example:
 
 ## Workflow
 
-- Do not commit to `main`; work on a branch and open a pull request.
 - `npm run verify` is the gate: format check, lint, typecheck, the unit and
   integration tests, and OpenSpec validation. The tracked pre-commit hook runs
   it on every commit, and CI repeats it on pull requests and pushes to `main`.
