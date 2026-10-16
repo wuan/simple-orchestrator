@@ -56,7 +56,11 @@ describe('GhCliTransport.json', () => {
   });
 
   it('maps a gh failure to a typed error with the HTTP status', async () => {
-    const commands = new RecordingCommands({ code: 1, stdout: '', stderr: 'gh: Not Found (HTTP 404)' });
+    const commands = new RecordingCommands({
+      code: 1,
+      stdout: '',
+      stderr: 'gh: Not Found (HTTP 404)',
+    });
     const transport = new GhCliTransport({ commands });
 
     await expect(transport.json('GET', '/missing')).rejects.toMatchObject({

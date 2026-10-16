@@ -84,8 +84,12 @@ describe('end-to-end workflow', () => {
 
     const applyRequest = runtime.requests.find((request) => request.context.skill === 'apply');
     expect(applyRequest).toBeDefined();
-    expect(applyRequest?.context.pendingFeedback.some((event) => event.kind === 'approval')).toBe(true);
-    expect(provider.commentLog.some((entry) => entry.body.includes('OpenSpec apply turn'))).toBe(true);
+    expect(applyRequest?.context.pendingFeedback.some((event) => event.kind === 'approval')).toBe(
+      true,
+    );
+    expect(provider.commentLog.some((entry) => entry.body.includes('OpenSpec apply turn'))).toBe(
+      true,
+    );
 
     // 4. Merge completes the workflow.
     provider.setPullRequestState(100, 'merged');

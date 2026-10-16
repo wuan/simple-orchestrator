@@ -1,0 +1,13 @@
+# Dependencies and build output.
+node_modules/
+dist/
+coverage/
+.opencode/
+
+# npm owns this file's formatting.
+package-lock.json
+
+# OpenSpec owns the formatting of its specs and changes.
+openspec/
+
+*.log

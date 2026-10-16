@@ -6,7 +6,11 @@ import { GitHubRest } from './rest.js';
 import { InMemoryGitHub } from './testing/in-memory-github.js';
 import { RecordingCommands } from './testing/recording-commands.js';
 
-function setup(): { provider: GitHubProvider; github: InMemoryGitHub; commands: RecordingCommands } {
+function setup(): {
+  provider: GitHubProvider;
+  github: InMemoryGitHub;
+  commands: RecordingCommands;
+} {
   const github = new InMemoryGitHub();
   const commands = new RecordingCommands();
   const provider = new GitHubProvider({
@@ -73,7 +77,10 @@ describe('GitHubProvider', () => {
     let pr = await provider.getPullRequest({ repo: provider.repo, number: 10 });
     expect(pr?.labels).toContain('openspec:proposing');
 
-    await provider.removeLabel({ kind: 'pull_request', ref: { repo: provider.repo, number: 10 } }, 'openspec:proposing');
+    await provider.removeLabel(
+      { kind: 'pull_request', ref: { repo: provider.repo, number: 10 } },
+      'openspec:proposing',
+    );
     pr = await provider.getPullRequest({ repo: provider.repo, number: 10 });
     expect(pr?.labels).not.toContain('openspec:proposing');
   });

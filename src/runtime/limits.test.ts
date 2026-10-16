@@ -19,7 +19,11 @@ const CONTEXT: TurnContext = {
 };
 
 function request(limits: Partial<TurnRequest['limits']> = {}): TurnRequest {
-  return { context: CONTEXT, workspace: '/tmp/workspace', limits: { ...DEFAULT_LIMITS, ...limits } };
+  return {
+    context: CONTEXT,
+    workspace: '/tmp/workspace',
+    limits: { ...DEFAULT_LIMITS, ...limits },
+  };
 }
 
 function usageRuntime(steps: number, tokens: number): AgentRuntime {
@@ -51,7 +55,9 @@ describe('LimitedRuntime', () => {
 
   it('fails when the token limit is exceeded', async () => {
     const limited = new LimitedRuntime(usageRuntime(1, 1000));
-    await expect(limited.run(request({ maxTokens: 100 }))).rejects.toMatchObject({ limit: 'tokens' });
+    await expect(limited.run(request({ maxTokens: 100 }))).rejects.toMatchObject({
+      limit: 'tokens',
+    });
   });
 
   it('fails when the wall-clock limit is exceeded', async () => {

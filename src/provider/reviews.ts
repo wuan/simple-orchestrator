@@ -10,7 +10,10 @@ export function isBotActor(actor: Actor): boolean {
  * The newest review authored by a human. Bot reviews, and reviews by a known
  * bot login, are excluded.
  */
-export function latestHumanReview(reviews: ProviderReview[], botLogin?: string): ProviderReview | null {
+export function latestHumanReview(
+  reviews: ProviderReview[],
+  botLogin?: string,
+): ProviderReview | null {
   const humans = reviews.filter(
     (review) => !isBotActor(review.author) && review.author.login !== botLogin,
   );

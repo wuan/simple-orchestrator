@@ -51,7 +51,11 @@ export function decide(input: DecisionInput): WorkflowAction {
       if (input.reviseRounds >= input.maxReviseRounds) {
         return { kind: 'fail', reason: 'revise limit reached before the change was ready' };
       }
-      return { kind: 'revise', trigger: review, reason: 'approval arrived before the change was ready' };
+      return {
+        kind: 'revise',
+        trigger: review,
+        reason: 'approval arrived before the change was ready',
+      };
     }
     return { kind: 'idle', reason: 'approved but not ready' };
   }

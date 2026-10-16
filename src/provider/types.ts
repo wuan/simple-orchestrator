@@ -1,15 +1,8 @@
-import type {
-  Actor,
-  IssueRef,
-  PullRequestRef,
-  RepoRef,
-  ReviewState,
-} from '../domain/types.js';
+import type { Actor, IssueRef, PullRequestRef, RepoRef, ReviewState } from '../domain/types.js';
 
 /** A conversation target: an issue or a pull request (merge request). */
 export type ThreadTarget =
-  | { kind: 'issue'; ref: IssueRef }
-  | { kind: 'pull_request'; ref: PullRequestRef };
+  { kind: 'issue'; ref: IssueRef } | { kind: 'pull_request'; ref: PullRequestRef };
 
 export interface ProviderIssue {
   ref: IssueRef;

@@ -155,7 +155,10 @@ describe('WorkflowEngine.drive', () => {
 
   it('is idle when there is no new human activity', async () => {
     const { harness: h, pullRequestNumber } = await started();
-    const pr = await h.provider.getPullRequest({ repo: h.provider.repo, number: pullRequestNumber });
+    const pr = await h.provider.getPullRequest({
+      repo: h.provider.repo,
+      number: pullRequestNumber,
+    });
     const action = await h.engine.drive(pr!);
     expect(action.kind).toBe('idle');
     expect(h.runtime.requests).toHaveLength(1);
@@ -166,7 +169,10 @@ describe('WorkflowEngine.drive', () => {
     h.provider.seedReview(pullRequestNumber, { state: 'changes_requested', body: 'fix X' });
     h.runtime.enqueue(proposeResult({ summary: 'revised' }));
 
-    const pr = await h.provider.getPullRequest({ repo: h.provider.repo, number: pullRequestNumber });
+    const pr = await h.provider.getPullRequest({
+      repo: h.provider.repo,
+      number: pullRequestNumber,
+    });
     const action = await h.engine.drive(pr!);
     expect(action.kind).toBe('revise');
     expect(h.runtime.requests).toHaveLength(2);
@@ -177,7 +183,10 @@ describe('WorkflowEngine.drive', () => {
     const { harness: h, pullRequestNumber } = await started({ maxReviseRounds: 0 });
     h.provider.seedReview(pullRequestNumber, { state: 'changes_requested' });
 
-    const pr = await h.provider.getPullRequest({ repo: h.provider.repo, number: pullRequestNumber });
+    const pr = await h.provider.getPullRequest({
+      repo: h.provider.repo,
+      number: pullRequestNumber,
+    });
     const action = await h.engine.drive(pr!);
     expect(action.kind).toBe('fail');
     expect(await labelsOf(h.provider, pullRequestNumber)).toContain(DEFAULT_LABELS.failed);

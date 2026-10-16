@@ -42,7 +42,10 @@ export class FakeOpenspecCli implements OpenspecCli {
   markInProgress(changeName: string): void {
     this.changes = [{ name: changeName }];
     this.statuses.set(changeName, {
-      artifacts: [{ id: 'proposal', status: 'done' }, { id: 'tasks', status: 'ready' }],
+      artifacts: [
+        { id: 'proposal', status: 'done' },
+        { id: 'tasks', status: 'ready' },
+      ],
       isComplete: false,
     });
     this.validations.set(changeName, { valid: false, output: 'not ready' });

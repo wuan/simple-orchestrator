@@ -14,7 +14,12 @@ class ScriptedHttp implements HttpClient {
 }
 
 function makeRest(http: HttpClient, floor = 50): GitHubRest {
-  return new GitHubRest({ token: 'tkn', http, baseUrl: 'https://api.github.com', rateLimitFloor: floor });
+  return new GitHubRest({
+    token: 'tkn',
+    http,
+    baseUrl: 'https://api.github.com',
+    rateLimitFloor: floor,
+  });
 }
 
 function futureReset(): string {
@@ -23,7 +28,8 @@ function futureReset(): string {
 
 describe('nextLink', () => {
   it('extracts the rel=next URL', () => {
-    const header = '<https://api.github.com/x?page=2>; rel="next", <https://api.github.com/x?page=5>; rel="last"';
+    const header =
+      '<https://api.github.com/x?page=2>; rel="next", <https://api.github.com/x?page=5>; rel="last"';
     expect(nextLink(header)).toBe('https://api.github.com/x?page=2');
     expect(nextLink(undefined)).toBeNull();
     expect(nextLink('<https://api.github.com/x?page=1>; rel="prev"')).toBeNull();
@@ -32,7 +38,11 @@ describe('nextLink', () => {
 
 describe('GitHubRest.json', () => {
   it('sends an authorization header and parses JSON', async () => {
-    const http = new ScriptedHttp(() => ({ status: 200, headers: {}, text: JSON.stringify({ ok: true }) }));
+    const http = new ScriptedHttp(() => ({
+      status: 200,
+      headers: {},
+      text: JSON.stringify({ ok: true }),
+    }));
     const result = await makeRest(http).json<{ ok: boolean }>('GET', '/repos/acme/widget');
     expect(result.data).toEqual({ ok: true });
     expect(http.calls[0]?.headers['authorization']).toBe('Bearer tkn');
@@ -68,7 +78,11 @@ describe('GitHubRest.json', () => {
   });
 
   it('throws a typed error for non-2xx responses', async () => {
-    const http = new ScriptedHttp(() => ({ status: 404, headers: {}, text: '{"message":"Not Found"}' }));
+    const http = new ScriptedHttp(() => ({
+      status: 404,
+      headers: {},
+      text: '{"message":"Not Found"}',
+    }));
     await expect(makeRest(http).json('GET', '/missing')).rejects.toBeInstanceOf(GitHubApiError);
   });
 });

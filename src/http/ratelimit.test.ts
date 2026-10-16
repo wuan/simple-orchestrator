@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { RateLimitError, RateLimitTracker, resetTimeFromHeaders, shouldBackOff } from './ratelimit.js';
+import {
+  RateLimitError,
+  RateLimitTracker,
+  resetTimeFromHeaders,
+  shouldBackOff,
+} from './ratelimit.js';
 
 function futureEpochSeconds(offsetMs = 3_600_000): string {
   return String(Math.floor((Date.now() + offsetMs) / 1000));
@@ -16,7 +21,9 @@ describe('shouldBackOff', () => {
 
 describe('resetTimeFromHeaders', () => {
   it('parses the reset epoch into a Date', () => {
-    expect(resetTimeFromHeaders({ 'x-ratelimit-reset': '1700000000' })?.getTime()).toBe(1_700_000_000_000);
+    expect(resetTimeFromHeaders({ 'x-ratelimit-reset': '1700000000' })?.getTime()).toBe(
+      1_700_000_000_000,
+    );
     expect(resetTimeFromHeaders({})).toBeNull();
   });
 });
@@ -38,7 +45,10 @@ describe('RateLimitTracker', () => {
 
   it('expires once the reset time has passed', () => {
     const tracker = new RateLimitTracker(50);
-    tracker.observe({ 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) - 10) });
+    tracker.observe({
+      'x-ratelimit-remaining': '0',
+      'x-ratelimit-reset': String(Math.floor(Date.now() / 1000) - 10),
+    });
     expect(tracker.isBackingOff()).toBe(false);
   });
 });

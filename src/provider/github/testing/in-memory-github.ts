@@ -73,7 +73,12 @@ export class InMemoryGitHub implements HttpClient {
     return new Date(this.clock).toISOString();
   }
 
-  seedIssue(input: { number: number; title?: string; labels?: string[]; state?: 'open' | 'closed' }): void {
+  seedIssue(input: {
+    number: number;
+    title?: string;
+    labels?: string[];
+    state?: 'open' | 'closed';
+  }): void {
     this.issues.set(input.number, {
       number: input.number,
       title: input.title ?? `Issue ${input.number}`,
@@ -106,7 +111,13 @@ export class InMemoryGitHub implements HttpClient {
     });
   }
 
-  seedReview(input: { pull: number; state: string; login?: string; bot?: boolean; body?: string }): void {
+  seedReview(input: {
+    pull: number;
+    state: string;
+    login?: string;
+    bot?: boolean;
+    body?: string;
+  }): void {
     const list = this.reviews.get(input.pull) ?? [];
     list.push({
       id: this.nextId++,
@@ -162,7 +173,8 @@ export class InMemoryGitHub implements HttpClient {
     const path = url.pathname;
     this.calls.push({ method: input.method, path });
 
-    const body = input.body === undefined ? undefined : (JSON.parse(input.body) as Record<string, unknown>);
+    const body =
+      input.body === undefined ? undefined : (JSON.parse(input.body) as Record<string, unknown>);
 
     // /user
     if (input.method === 'GET' && path === '/user') {
@@ -177,14 +189,12 @@ export class InMemoryGitHub implements HttpClient {
         stateFilter === null || stateFilter === 'all' || stateFilter === state;
       const issueList = [...this.issues.values()].filter(
         (issue) =>
-          stateAllows(issue.state) &&
-          (labelFilter === null || issue.labels.includes(labelFilter)),
+          stateAllows(issue.state) && (labelFilter === null || issue.labels.includes(labelFilter)),
       );
       const pullAsIssues = [...this.pulls.values()]
         .filter(
           (pull) =>
-            stateAllows(pull.state) &&
-            (labelFilter === null || pull.labels.includes(labelFilter)),
+            stateAllows(pull.state) && (labelFilter === null || pull.labels.includes(labelFilter)),
         )
         .map((pull) => ({
           number: pull.number,
@@ -213,7 +223,10 @@ export class InMemoryGitHub implements HttpClient {
       if (target !== undefined) {
         for (const label of incoming) if (!target.includes(label)) target.push(label);
       }
-      return json(200, incoming.map((name) => ({ name })));
+      return json(
+        200,
+        incoming.map((name) => ({ name })),
+      );
     }
 
     const labelMatch = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)\/labels\/(.+)$/.exec(path);
@@ -284,7 +297,10 @@ export class InMemoryGitHub implements HttpClient {
       const list = [...this.pulls.values()].filter(
         (pull) => head === null || `${this.owner}:${pull.head}` === head || pull.head === head,
       );
-      return json(200, list.map((pull) => this.pullPayload(pull)));
+      return json(
+        200,
+        list.map((pull) => this.pullPayload(pull)),
+      );
     }
 
     const pullMatch = /^\/repos\/[^/]+\/[^/]+\/pulls\/(\d+)$/.exec(path);

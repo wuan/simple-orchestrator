@@ -37,16 +37,16 @@ function ok(stdout: string): CommandResult {
 describe('EnvCredentialResolver', () => {
   it('resolves a secret from the environment', async () => {
     const resolver = new EnvCredentialResolver({ GITHUB_TOKEN: 'secret-value' });
-    await expect(resolver.resolve('env:GITHUB_TOKEN', { repo: 'github:acme/widget' })).resolves.toBe(
-      'secret-value',
-    );
+    await expect(
+      resolver.resolve('env:GITHUB_TOKEN', { repo: 'github:acme/widget' }),
+    ).resolves.toBe('secret-value');
   });
 
   it('fails, naming the repository, when the secret is not set', async () => {
     const resolver = new EnvCredentialResolver({});
-    await expect(resolver.resolve('env:GITHUB_TOKEN', { repo: 'github:acme/widget' })).rejects.toMatchObject(
-      { name: 'CredentialError', repo: 'github:acme/widget' },
-    );
+    await expect(
+      resolver.resolve('env:GITHUB_TOKEN', { repo: 'github:acme/widget' }),
+    ).rejects.toMatchObject({ name: 'CredentialError', repo: 'github:acme/widget' });
   });
 
   it('rejects unsupported credential schemes', async () => {
@@ -61,21 +61,25 @@ describe('GhCredentialResolver', () => {
   it('resolves the gh: scheme from `gh auth token`', async () => {
     const commands = new StubCommands(ok('gh-token\n'));
     const resolver = new GhCredentialResolver({ commands });
-    await expect(resolver.resolve('gh:token', { repo: 'github:acme/widget' })).resolves.toBe('gh-token');
+    await expect(resolver.resolve('gh:token', { repo: 'github:acme/widget' })).resolves.toBe(
+      'gh-token',
+    );
     expect(commands.runs[0]).toEqual({ command: 'gh', args: ['auth', 'token'] });
   });
 
   it('resolves an env: reference as a fallback', async () => {
     const resolver = new GhCredentialResolver({ commands: new StubCommands(ok('gh-token')) });
-    await expect(resolver.resolve('env:GITHUB_TOKEN', { repo: 'github:acme/widget' })).resolves.toBe(
-      'gh-token',
-    );
+    await expect(
+      resolver.resolve('env:GITHUB_TOKEN', { repo: 'github:acme/widget' }),
+    ).resolves.toBe('gh-token');
   });
 
   it('fails, naming the repository, when gh is not authenticated', async () => {
     const commands = new StubCommands({ code: 1, stdout: '', stderr: 'gh: not logged in' });
     const resolver = new GhCredentialResolver({ commands });
-    await expect(resolver.resolve('gh:token', { repo: 'github:acme/widget' })).rejects.toMatchObject({
+    await expect(
+      resolver.resolve('gh:token', { repo: 'github:acme/widget' }),
+    ).rejects.toMatchObject({
       name: 'CredentialError',
       repo: 'github:acme/widget',
     });
@@ -104,7 +108,9 @@ describe('FallbackCredentialResolver', () => {
   it('reports every attempt, naming the repository, when all resolvers fail', async () => {
     const resolver = new FallbackCredentialResolver([
       new EnvCredentialResolver({}),
-      new GhCredentialResolver({ commands: new StubCommands({ code: 1, stdout: '', stderr: 'nope' }) }),
+      new GhCredentialResolver({
+        commands: new StubCommands({ code: 1, stdout: '', stderr: 'nope' }),
+      }),
     ]);
     await expect(
       resolver.resolve('env:GITHUB_TOKEN', { repo: 'github:acme/widget' }),

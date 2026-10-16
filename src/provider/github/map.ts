@@ -1,6 +1,11 @@
 import type { Actor, RepoRef } from '../../domain/types.js';
 import { normalizeGithubReviewState } from '../normalize.js';
-import type { ProviderComment, ProviderIssue, ProviderPullRequest, ProviderReview } from '../types.js';
+import type {
+  ProviderComment,
+  ProviderIssue,
+  ProviderPullRequest,
+  ProviderReview,
+} from '../types.js';
 
 export interface GithubUser {
   login: string;

@@ -19,7 +19,11 @@ function proposeResult(): TurnResult {
   };
 }
 
-function makePoller(provider: FakeProvider, runtime: FakeRuntime, openspec: FakeOpenspecCli): Poller {
+function makePoller(
+  provider: FakeProvider,
+  runtime: FakeRuntime,
+  openspec: FakeOpenspecCli,
+): Poller {
   return new Poller({
     provider,
     runtime,
@@ -43,7 +47,9 @@ describe('Poller.pollOnce', () => {
     const poller = makePoller(provider, runtime, openspec);
     const first = await poller.pollOnce();
     expect(first.started).toEqual([1]);
-    expect(await provider.listPullRequestsForIssue({ repo: provider.repo, number: 1 })).toHaveLength(1);
+    expect(
+      await provider.listPullRequestsForIssue({ repo: provider.repo, number: 1 }),
+    ).toHaveLength(1);
 
     const second = await poller.pollOnce();
     expect(second.started).toEqual([]);

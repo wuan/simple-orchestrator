@@ -1,7 +1,11 @@
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
-import { EnvCredentialResolver, FallbackCredentialResolver, GhCredentialResolver } from './config/credentials.js';
+import {
+  EnvCredentialResolver,
+  FallbackCredentialResolver,
+  GhCredentialResolver,
+} from './config/credentials.js';
 import { loadConfigFile } from './config/loader.js';
 import { createService, type BuildServiceOptions, type Service } from './service.js';
 import { NodeCommandRunner } from './system/commands.js';
@@ -112,7 +116,9 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<number>
   if (options.once) {
     for (const repository of service.repositories) {
       const report = await repository.poller.pollOnce();
-      out(`${repository.key}: started ${report.started.length}, actions ${report.actions.length}\n`);
+      out(
+        `${repository.key}: started ${report.started.length}, actions ${report.actions.length}\n`,
+      );
     }
     return 0;
   }
@@ -155,7 +161,9 @@ export async function runLoop(service: Service, deps: MainDeps = {}): Promise<vo
         try {
           const report = await repository.poller.pollOnce();
           if (report.started.length > 0 || report.actions.length > 0) {
-            err(`${repository.key}: started ${report.started.length}, actions ${report.actions.length}\n`);
+            err(
+              `${repository.key}: started ${report.started.length}, actions ${report.actions.length}\n`,
+            );
           }
         } catch (error) {
           err(`${repository.key}: poll failed: ${message(error)}\n`);

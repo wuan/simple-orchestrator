@@ -5,7 +5,12 @@ import { decide, type DecisionInput } from './decision.js';
 
 const HUMAN = { login: 'alice', isBot: false };
 
-const APPROVAL = reviewEvent({ id: 'r1', at: '2026-02-01T00:00:00.000Z', actor: HUMAN, state: 'approved' });
+const APPROVAL = reviewEvent({
+  id: 'r1',
+  at: '2026-02-01T00:00:00.000Z',
+  actor: HUMAN,
+  state: 'approved',
+});
 const CHANGE_REQUEST = reviewEvent({
   id: 'r2',
   at: '2026-02-02T00:00:00.000Z',
@@ -40,9 +45,10 @@ describe('decide', () => {
   });
 
   it('does nothing when there is no new human activity', () => {
-    expect(decide(input({ latestHumanReview: CHANGE_REQUEST, lastTurnAt: '2026-02-03T00:00:00.000Z' })).kind).toBe(
-      'idle',
-    );
+    expect(
+      decide(input({ latestHumanReview: CHANGE_REQUEST, lastTurnAt: '2026-02-03T00:00:00.000Z' }))
+        .kind,
+    ).toBe('idle');
   });
 
   it('revises for new reviewer feedback', () => {
@@ -51,7 +57,9 @@ describe('decide', () => {
   });
 
   it('fails when the revise limit is reached', () => {
-    const action = decide(input({ latestHumanReview: CHANGE_REQUEST, reviseRounds: 3, maxReviseRounds: 3 }));
+    const action = decide(
+      input({ latestHumanReview: CHANGE_REQUEST, reviseRounds: 3, maxReviseRounds: 3 }),
+    );
     expect(action.kind).toBe('fail');
   });
 

@@ -105,7 +105,13 @@ function parseRepository(entry: unknown, index: number): RepositoryConfig {
   // Required, and its absence fails fast naming the offending repository.
   const credential = requireNonEmptyString(record, 'credential', context, repo);
 
-  const baseBranch = optionalNonEmptyString(record, 'baseBranch', context, DEFAULT_BASE_BRANCH, repo);
+  const baseBranch = optionalNonEmptyString(
+    record,
+    'baseBranch',
+    context,
+    DEFAULT_BASE_BRANCH,
+    repo,
+  );
   const pollIntervalSeconds = optionalPositiveInt(
     record,
     'pollIntervalSeconds',
@@ -139,7 +145,12 @@ function parseLimits(raw: unknown): Limits {
   return {
     maxSteps: optionalPositiveInt(record, 'maxSteps', 'limits', DEFAULT_LIMITS.maxSteps),
     maxTokens: optionalPositiveInt(record, 'maxTokens', 'limits', DEFAULT_LIMITS.maxTokens),
-    maxDurationMs: optionalPositiveInt(record, 'maxDurationMs', 'limits', DEFAULT_LIMITS.maxDurationMs),
+    maxDurationMs: optionalPositiveInt(
+      record,
+      'maxDurationMs',
+      'limits',
+      DEFAULT_LIMITS.maxDurationMs,
+    ),
   };
 }
 

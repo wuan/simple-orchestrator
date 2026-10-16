@@ -25,18 +25,34 @@ describe('TokenCloner', () => {
 
   it('clones full history and all branches when asked', async () => {
     const commands = new RecordingCommands();
-    const cloner = new TokenCloner({ owner: 'acme', name: 'widget', token: 'secret-token', commands });
+    const cloner = new TokenCloner({
+      owner: 'acme',
+      name: 'widget',
+      token: 'secret-token',
+      commands,
+    });
 
     await cloner.clone({ branch: 'main', destination: '/tmp/store', full: true });
     const [run] = commands.runs;
-    expect(run?.args).toEqual(['clone', '--branch', 'main', 'https://github.com/acme/widget.git', '/tmp/store']);
+    expect(run?.args).toEqual([
+      'clone',
+      '--branch',
+      'main',
+      'https://github.com/acme/widget.git',
+      '/tmp/store',
+    ]);
     expect(run?.args).not.toContain('--single-branch');
     expect(run?.args).not.toContain('--depth');
   });
 
   it('fetches into an existing clone without exposing the token in argv', async () => {
     const commands = new RecordingCommands();
-    const cloner = new TokenCloner({ owner: 'acme', name: 'widget', token: 'secret-token', commands });
+    const cloner = new TokenCloner({
+      owner: 'acme',
+      name: 'widget',
+      token: 'secret-token',
+      commands,
+    });
 
     await cloner.fetch({ destination: '/tmp/store' });
     const [run] = commands.runs;
@@ -50,7 +66,12 @@ describe('TokenCloner', () => {
 describe('GhCliCloner', () => {
   it('clones through `gh repo clone` with git flags after `--`', async () => {
     const commands = new RecordingCommands();
-    const cloner = new GhCliCloner({ owner: 'acme', name: 'widget', commands, token: 'secret-token' });
+    const cloner = new GhCliCloner({
+      owner: 'acme',
+      name: 'widget',
+      commands,
+      token: 'secret-token',
+    });
 
     await cloner.clone({ branch: 'openspec/issue-7', destination: '/tmp/work' });
     const [run] = commands.runs;
@@ -73,7 +94,12 @@ describe('GhCliCloner', () => {
 
   it('qualifies the slug with the hostname for GitHub Enterprise', async () => {
     const commands = new RecordingCommands();
-    const cloner = new GhCliCloner({ owner: 'acme', name: 'widget', commands, hostname: 'ghe.example.com' });
+    const cloner = new GhCliCloner({
+      owner: 'acme',
+      name: 'widget',
+      commands,
+      hostname: 'ghe.example.com',
+    });
 
     await cloner.clone({ branch: 'main', destination: '/tmp/work' });
     expect(commands.runs[0]?.args[2]).toBe('ghe.example.com/acme/widget');
@@ -97,7 +123,12 @@ describe('GhCliCloner', () => {
 
   it('fetches into an existing clone with GH_TOKEN set', async () => {
     const commands = new RecordingCommands();
-    const cloner = new GhCliCloner({ owner: 'acme', name: 'widget', commands, token: 'secret-token' });
+    const cloner = new GhCliCloner({
+      owner: 'acme',
+      name: 'widget',
+      commands,
+      token: 'secret-token',
+    });
 
     await cloner.fetch({ destination: '/tmp/store' });
     const [run] = commands.runs;

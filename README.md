@@ -37,7 +37,7 @@ drives the OpenSpec lifecycle from the issue's problem description.
 - **READY** is computed objectively from `openspec status --json` and
   `openspec validate --strict`, never from agent prose.
 - On approval the orchestrator claims the approval (label `openspec:implementing`)
-  *before* running the apply turn, so a later push cannot re-trigger apply.
+  _before_ running the apply turn, so a later push cannot re-trigger apply.
 - The apply turn implements the tasks and folds `openspec archive` into its
   final commit; merging the PR completes the workflow.
 
@@ -191,24 +191,33 @@ cluster.
 ## Testing
 
 ```bash
-npm test          # unit + integration (fakes; no network)
+npm test              # unit + integration (fakes; no network)
 npm run lint
 npm run typecheck
+npm run format:check  # Prettier: is the tree formatted?
+npm run format        # Prettier: rewrite the tree in place
 ```
 
 The end-to-end tests cover the full lifecycle against fakes and verify that
 `openspec archive` folds a change's requirements into the main specs.
 
-`npm run verify` runs the whole gate — lint, typecheck, tests, and OpenSpec
-validation — and is what both the git hook and CI invoke.
+Formatting is [Prettier](https://prettier.io), configured in `.prettierrc.json`
+(100 columns, single quotes). `.prettierignore` keeps the formatter out of
+`openspec/`, `dist/`, and `package-lock.json`; ESLint defers to Prettier for
+layout via `eslint-config-prettier`.
+
+`npm run verify` runs the whole gate — format check, lint, typecheck, tests, and
+OpenSpec validation — and is what both the git hook and CI invoke.
 
 ### Git hooks
 
 `npm install` wires a tracked pre-commit hook (it sets `core.hooksPath` to
-`.githooks`). Every commit runs `npm run verify`: lint, typecheck, the unit and
-integration tests, and `openspec validate --strict` across the specs, the
-in-progress change, and the archived changes. Bypass it with
-`git commit --no-verify` only when you know why.
+`.githooks`). Every commit first rewrites the staged files with Prettier and
+re-stages them, so a commit can never land unformatted code; only the paths in
+that commit are touched. Then it runs `npm run verify`: the format check, lint,
+typecheck, the unit and integration tests, and `openspec validate --strict`
+across the specs, the in-progress change, and the archived changes. Bypass it
+with `git commit --no-verify` only when you know why.
 
 CI (`.github/workflows/ci.yml`) runs the same gate on every pull request and on
 pushes to `main`.

@@ -26,7 +26,11 @@ describe('latestHumanReview', () => {
   it('returns the newest human review and excludes bots', () => {
     const reviews = [
       review({ id: 'r1', at: '2026-01-01T00:00:00.000Z', state: 'changes_requested' }),
-      review({ id: 'bot', author: { login: 'openspec-bot', isBot: true }, at: '2026-01-02T00:00:00.000Z' }),
+      review({
+        id: 'bot',
+        author: { login: 'openspec-bot', isBot: true },
+        at: '2026-01-02T00:00:00.000Z',
+      }),
       review({ id: 'r2', at: '2026-01-03T00:00:00.000Z', state: 'approved' }),
     ];
     expect(latestHumanReview(reviews, 'openspec-bot')?.id).toBe('r2');
@@ -34,7 +38,11 @@ describe('latestHumanReview', () => {
 
   it('excludes a configured bot login even when isBot is false', () => {
     const reviews = [
-      review({ id: 'bot', author: { login: 'openspec-bot', isBot: false }, at: '2026-01-05T00:00:00.000Z' }),
+      review({
+        id: 'bot',
+        author: { login: 'openspec-bot', isBot: false },
+        at: '2026-01-05T00:00:00.000Z',
+      }),
     ];
     expect(latestHumanReview(reviews, 'openspec-bot')).toBeNull();
   });

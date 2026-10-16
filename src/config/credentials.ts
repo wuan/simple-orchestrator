@@ -116,7 +116,8 @@ export class GhCredentialResolver implements CredentialResolver {
 
     const token = result.stdout.trim();
     if (result.code !== 0 || token === '') {
-      const detail = result.stderr.trim() === '' ? `exit code ${result.code}` : result.stderr.trim();
+      const detail =
+        result.stderr.trim() === '' ? `exit code ${result.code}` : result.stderr.trim();
       throw new CredentialError(
         `credential '${reference}' for repository '${context.repo}' is not available from the gh CLI (${detail}); run 'gh auth login' or set the referenced environment variable`,
         context.repo,

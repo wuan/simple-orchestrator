@@ -3,7 +3,7 @@
 The orchestrator is configured from a single declarative file (YAML or JSON).
 It is single-tenant: one operator, one shared file, no per-user accounts.
 
-Secrets are **never** stored in this file. A credential is a *reference* such as
+Secrets are **never** stored in this file. A credential is a _reference_ such as
 `env:GITHUB_TOKEN` or `gh:token`, resolved at runtime from the environment or
 the `gh` CLI.
 
@@ -11,50 +11,50 @@ the `gh` CLI.
 
 ### Top level
 
-| Field | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `repositories` | yes | — | Non-empty list of repositories to serve. |
-| `limits` | no | see below | Per-turn cost caps. |
-| `workspace` | no | see below | Where repository clones and per-turn worktrees live. |
+| Field          | Required | Default   | Description                                          |
+| -------------- | -------- | --------- | ---------------------------------------------------- |
+| `repositories` | yes      | —         | Non-empty list of repositories to serve.             |
+| `limits`       | no       | see below | Per-turn cost caps.                                  |
+| `workspace`    | no       | see below | Where repository clones and per-turn worktrees live. |
 
 ### `repositories[]`
 
-| Field | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `provider` | yes | — | Host provider id, e.g. `github`. |
-| `owner` | yes | — | Repository owner or namespace. |
-| `name` | yes | — | Repository name. |
-| `credential` | yes | — | Credential reference, e.g. `env:GITHUB_TOKEN`. |
-| `baseBranch` | no | `main` | Branch a workflow branches from and merges into. |
-| `pollIntervalSeconds` | no | `30` | How often the repository is polled. |
-| `maxReviseRounds` | no | `3` | Maximum propose/review/revise rounds before the workflow is marked failed. |
-| `labels` | no | see below | Label name overrides. |
+| Field                 | Required | Default   | Description                                                                |
+| --------------------- | -------- | --------- | -------------------------------------------------------------------------- |
+| `provider`            | yes      | —         | Host provider id, e.g. `github`.                                           |
+| `owner`               | yes      | —         | Repository owner or namespace.                                             |
+| `name`                | yes      | —         | Repository name.                                                           |
+| `credential`          | yes      | —         | Credential reference, e.g. `env:GITHUB_TOKEN`.                             |
+| `baseBranch`          | no       | `main`    | Branch a workflow branches from and merges into.                           |
+| `pollIntervalSeconds` | no       | `30`      | How often the repository is polled.                                        |
+| `maxReviseRounds`     | no       | `3`       | Maximum propose/review/revise rounds before the workflow is marked failed. |
+| `labels`              | no       | see below | Label name overrides.                                                      |
 
 ### `labels`
 
-| Field | Default |
-|-------|---------|
-| `trigger` | `openspec` |
-| `proposing` | `openspec:proposing` |
-| `ready` | `openspec:ready` |
+| Field          | Default                 |
+| -------------- | ----------------------- |
+| `trigger`      | `openspec`              |
+| `proposing`    | `openspec:proposing`    |
+| `ready`        | `openspec:ready`        |
 | `implementing` | `openspec:implementing` |
-| `done` | `openspec:done` |
-| `failed` | `openspec:failed` |
+| `done`         | `openspec:done`         |
+| `failed`       | `openspec:failed`       |
 
 ### `limits`
 
-| Field | Default | Description |
-|-------|---------|-------------|
-| `maxSteps` | `200` | Agent steps allowed per turn. |
-| `maxTokens` | `200000` | Tokens allowed per turn. |
+| Field           | Default   | Description                             |
+| --------------- | --------- | --------------------------------------- |
+| `maxSteps`      | `200`     | Agent steps allowed per turn.           |
+| `maxTokens`     | `200000`  | Tokens allowed per turn.                |
 | `maxDurationMs` | `1800000` | Wall-clock limit per turn (30 minutes). |
 
 ### `workspace`
 
-| Field | Required | Default | Description |
-|-------|----------|---------|-------------|
-| `root` | no | `~/workspace` | Root holding one persistent clone per repository, at `<root>/<owner>/<name>`. |
-| `worktrees` | no | OS temp directory | Parent directory for ephemeral per-turn git worktrees. |
+| Field       | Required | Default           | Description                                                                   |
+| ----------- | -------- | ----------------- | ----------------------------------------------------------------------------- |
+| `root`      | no       | `~/workspace`     | Root holding one persistent clone per repository, at `<root>/<owner>/<name>`. |
+| `worktrees` | no       | OS temp directory | Parent directory for ephemeral per-turn git worktrees.                        |
 
 A leading `~` in either path is expanded to the operator's home directory. The
 orchestrator clones each repository once into `root` and reuses it across turns,
@@ -63,10 +63,10 @@ while each turn runs in a throwaway git worktree of that clone, created under
 
 ## Credential schemes
 
-| Reference | Source |
-|-----------|--------|
+| Reference  | Source                                    |
+| ---------- | ----------------------------------------- |
 | `env:NAME` | The value of environment variable `NAME`. |
-| `gh:token` | The token printed by `gh auth token`. |
+| `gh:token` | The token printed by `gh auth token`.     |
 
 The GitHub provider talks to the API through the `gh` CLI, so authentication is
 delegated to `gh`. The resolved credential is exported to `gh` as `GH_TOKEN`;

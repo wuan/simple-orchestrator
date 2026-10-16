@@ -14,11 +14,14 @@ const SKILL_INSTRUCTIONS: Record<TurnContext['skill'], string> = {
  * commit only to the current branch and to report a structured outcome.
  */
 export function buildSkillPrompt(context: TurnContext): string {
-  const changeLine = context.changeName === undefined ? '' : ` for change \`${context.changeName}\``;
+  const changeLine =
+    context.changeName === undefined ? '' : ` for change \`${context.changeName}\``;
   const feedback =
     context.pendingFeedback.length === 0
       ? '(no new reviewer feedback)'
-      : context.pendingFeedback.map((event) => `- ${event.kind} by ${event.actor.login}`).join('\n');
+      : context.pendingFeedback
+          .map((event) => `- ${event.kind} by ${event.actor.login}`)
+          .join('\n');
 
   return [
     `You are running the OpenSpec \`${context.skill}\` workflow${changeLine} on branch \`${context.branch}\`.`,

@@ -30,7 +30,9 @@ describe('FakeProvider', () => {
 
     const forIssue = await provider.listPullRequestsForIssue({ repo: provider.repo, number: 7 });
     expect(forIssue).toHaveLength(1);
-    expect(await provider.getPullRequest(created.ref)).toMatchObject({ branch: 'openspec/issue-7' });
+    expect(await provider.getPullRequest(created.ref)).toMatchObject({
+      branch: 'openspec/issue-7',
+    });
   });
 
   it('manages labels on issues and pull requests', async () => {

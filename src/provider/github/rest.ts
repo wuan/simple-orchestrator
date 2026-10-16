@@ -131,7 +131,10 @@ export class GitHubRest implements GitHubTransport {
       this.limiter.observe(response.headers);
       this.checkRateLimitResponse(response.status, response.headers);
       if (response.status >= 400) {
-        throw new GitHubApiError(`GitHub GET ${url} failed with ${response.status}: ${response.text}`, response.status);
+        throw new GitHubApiError(
+          `GitHub GET ${url} failed with ${response.status}: ${response.text}`,
+          response.status,
+        );
       }
       const page = response.text === '' ? [] : (JSON.parse(response.text) as T[]);
       results.push(...page);

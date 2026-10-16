@@ -22,12 +22,7 @@ import { PermissionError } from '../runtime/policy.js';
 import type { Sandbox } from '../runtime/sandbox.js';
 import type { AgentRuntime } from '../runtime/types.js';
 import { decide, type WorkflowAction } from './decision.js';
-import {
-  allPhaseLabels,
-  issueNumberFromBranch,
-  labelForPhase,
-  phaseFromLabels,
-} from './labels.js';
+import { allPhaseLabels, issueNumberFromBranch, labelForPhase, phaseFromLabels } from './labels.js';
 import { evaluateReadiness, type OpenspecCli } from './readiness.js';
 
 export interface WorkflowEngineOptions {
@@ -56,7 +51,10 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-function buildTranscript(reviews: ProviderReview[], comments: ProviderComment[]): TranscriptEntry[] {
+function buildTranscript(
+  reviews: ProviderReview[],
+  comments: ProviderComment[],
+): TranscriptEntry[] {
   const entries: TranscriptEntry[] = [
     ...reviews.map((review) => ({
       id: `review:${review.id}`,
@@ -219,7 +217,10 @@ export class WorkflowEngine {
         return;
       case 'cancel':
         await this.clearPhase(pullRequest);
-        await this.provider.comment(this.target(pullRequest), `Workflow cancelled: ${action.reason}.`);
+        await this.provider.comment(
+          this.target(pullRequest),
+          `Workflow cancelled: ${action.reason}.`,
+        );
         return;
     }
   }
@@ -231,7 +232,8 @@ export class WorkflowEngine {
     comments: ProviderComment[],
     trigger: NormalizedEvent | null,
   ): TurnContext {
-    const number = pullRequest.linkedIssue?.number ?? issueNumberFromBranch(pullRequest.branch) ?? 0;
+    const number =
+      pullRequest.linkedIssue?.number ?? issueNumberFromBranch(pullRequest.branch) ?? 0;
     return {
       skill,
       repo: this.provider.repo,

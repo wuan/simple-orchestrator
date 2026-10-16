@@ -96,7 +96,13 @@ describe('WorktreeSandbox', () => {
     const handle = await sandbox.create({ branch: 'openspec/issue-1' });
 
     expect(existsSync(join(handle.workspace, 'change.md'))).toBe(true);
-    const head = await commands.run('git', ['-C', handle.workspace, 'rev-parse', '--abbrev-ref', 'HEAD']);
+    const head = await commands.run('git', [
+      '-C',
+      handle.workspace,
+      'rev-parse',
+      '--abbrev-ref',
+      'HEAD',
+    ]);
     expect(head.stdout.trim()).toBe('openspec/issue-1');
     // The store itself is cloned once and survives the turn.
     expect(existsSync(f.store.pathFor(f.source.repo))).toBe(true);
@@ -146,16 +152,20 @@ describe('WorktreeSandbox', () => {
       async fetch() {},
     };
 
-    await expect(sandboxFor(f, failing).create({ branch: 'openspec/issue-1' })).rejects.toThrowError(
-      'clone failed',
-    );
+    await expect(
+      sandboxFor(f, failing).create({ branch: 'openspec/issue-1' }),
+    ).rejects.toThrowError('clone failed');
     expect(await readdir(f.worktrees)).toEqual([]);
   });
 });
 
 describe('buildDockerRunArgs', () => {
   it('isolates the container and mounts the workspace', () => {
-    const args = buildDockerRunArgs({ image: 'opencode:latest', workspace: '/tmp/work', command: ['propose'] });
+    const args = buildDockerRunArgs({
+      image: 'opencode:latest',
+      workspace: '/tmp/work',
+      command: ['propose'],
+    });
     expect(args.slice(0, 5)).toEqual(['run', '--rm', '--network', 'none', '--workdir']);
     expect(args).toContain('/tmp/work:/workspace');
     expect(args.slice(-2)).toEqual(['opencode:latest', 'propose']);

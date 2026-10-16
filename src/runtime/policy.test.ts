@@ -10,9 +10,9 @@ describe('assertPushAllowed', () => {
   });
 
   it('rejects pushing to a protected branch', () => {
-    expect(() =>
-      assertPushAllowed({ branch: 'main', protectedBranches: ['main'] }),
-    ).toThrowError(PermissionError);
+    expect(() => assertPushAllowed({ branch: 'main', protectedBranches: ['main'] })).toThrowError(
+      PermissionError,
+    );
   });
 
   it('rejects force-push', () => {

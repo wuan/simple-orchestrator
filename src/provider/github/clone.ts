@@ -55,7 +55,16 @@ export class TokenCloner implements GitHubCloner {
     const args =
       input.full === true
         ? ['clone', '--branch', input.branch, url, input.destination]
-        : ['clone', '--branch', input.branch, '--single-branch', '--depth', '1', url, input.destination];
+        : [
+            'clone',
+            '--branch',
+            input.branch,
+            '--single-branch',
+            '--depth',
+            '1',
+            url,
+            input.destination,
+          ];
     const result = await this.commands.run('git', args, { env: this.authEnv() });
     if (result.code !== 0) {
       throw new GitHubApiError(`git clone failed (${result.code}): ${result.stderr}`, result.code);
@@ -124,7 +133,10 @@ export class GhCliCloner implements GitHubCloner {
       { env: this.childEnv() },
     );
     if (result.code !== 0) {
-      throw new GitHubApiError(`gh repo clone failed (${result.code}): ${result.stderr}`, result.code);
+      throw new GitHubApiError(
+        `gh repo clone failed (${result.code}): ${result.stderr}`,
+        result.code,
+      );
     }
   }
 

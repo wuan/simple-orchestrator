@@ -80,11 +80,9 @@ export class NodeOpenspecCli implements OpenspecCli {
   }
 
   async status(change: string, cwd: string): Promise<OpenspecStatus> {
-    const result = await this.commands.run(
-      this.binary,
-      ['status', '--change', change, '--json'],
-      { cwd },
-    );
+    const result = await this.commands.run(this.binary, ['status', '--change', change, '--json'], {
+      cwd,
+    });
     if (result.code !== 0) {
       throw new Error(`openspec status failed for '${change}': ${result.stderr || result.stdout}`);
     }

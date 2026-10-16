@@ -108,7 +108,8 @@ export class FakeProvider implements RepoProvider {
   seedReview(
     pullRequest: number,
     input: { state: ReviewState; author?: Actor; body?: string; id?: string; at?: string },
-  ): ProviderReview {    const review: ProviderReview = {
+  ): ProviderReview {
+    const review: ProviderReview = {
       id: input.id ?? `review-${this.reviews.get(pullRequest)?.length ?? 0}-${pullRequest}`,
       author: input.author ?? HUMAN,
       state: input.state,
@@ -124,7 +125,8 @@ export class FakeProvider implements RepoProvider {
   seedComment(
     target: ThreadTarget,
     input: { author?: Actor; body?: string; id?: string; at?: string },
-  ): ProviderComment {    const comment: ProviderComment = {
+  ): ProviderComment {
+    const comment: ProviderComment = {
       id: input.id ?? `comment-${++this.commentSeq}`,
       author: input.author ?? HUMAN,
       body: input.body ?? '',

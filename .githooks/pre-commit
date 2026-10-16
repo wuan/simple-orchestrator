@@ -1,5 +1,6 @@
 #!/bin/sh
-# Pre-commit gate: lint, typecheck, tests, and OpenSpec validation.
+# Pre-commit gate: format the staged files, then lint, typecheck, test, and
+# validate the OpenSpec specs.
 # Wired up by `npm install` (see the "prepare" script in package.json),
 # which sets `core.hooksPath` to this directory. Bypass with `git commit -n`.
 set -e
@@ -9,5 +10,15 @@ set -e
 # a leftover relative GIT_INDEX_FILE otherwise breaks `git worktree add`.
 unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
 unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+
+# Rewrite and re-stage the files in this commit, so nothing lands unformatted.
+# Only staged paths are touched; `--ignore-unknown` skips files Prettier cannot
+# parse and `.prettierignore` is honoured automatically. `-z`/`xargs -0` keep
+# paths containing spaces or newlines intact.
+staged=$(git diff --cached --name-only --diff-filter=ACMR)
+if [ -n "$staged" ]; then
+  git diff --cached --name-only --diff-filter=ACMR -z | xargs -0 npx prettier --write --ignore-unknown --
+  git diff --cached --name-only --diff-filter=ACMR -z | xargs -0 git add --
+fi
 
 npm run verify

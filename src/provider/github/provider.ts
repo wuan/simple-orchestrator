@@ -69,10 +69,13 @@ export class GitHubProvider implements RepoProvider {
   }
 
   async listTriggerIssues(triggerLabel: string): Promise<ProviderIssue[]> {
-    const payloads = await this.transport.paginate<GithubIssuePayload>(`${this.repoPath()}/issues`, {
-      state: 'open',
-      labels: triggerLabel,
-    });
+    const payloads = await this.transport.paginate<GithubIssuePayload>(
+      `${this.repoPath()}/issues`,
+      {
+        state: 'open',
+        labels: triggerLabel,
+      },
+    );
     return payloads
       .filter((payload) => !isPullRequestPayload(payload))
       .map((payload) => mapIssue(this.repo, payload));
@@ -92,15 +95,19 @@ export class GitHubProvider implements RepoProvider {
     await this.transport.json('POST', `${this.repoPath()}/git/refs`, {
       body: { ref: `refs/heads/${branch}`, sha },
     });
-    const created = await this.transport.json<GithubPullPayload>('POST', `${this.repoPath()}/pulls`, {
-      body: {
-        title: input.title,
-        body: input.body,
-        head: branch,
-        base: input.baseBranch,
-        draft: input.draft,
+    const created = await this.transport.json<GithubPullPayload>(
+      'POST',
+      `${this.repoPath()}/pulls`,
+      {
+        body: {
+          title: input.title,
+          body: input.body,
+          head: branch,
+          base: input.baseBranch,
+          draft: input.draft,
+        },
       },
-    });
+    );
     if (created.data === null) {
       throw new GitHubApiError('create pull request returned no body', created.status);
     }
@@ -128,10 +135,13 @@ export class GitHubProvider implements RepoProvider {
   }
 
   async listPullRequestsWithLabel(label: string): Promise<ProviderPullRequest[]> {
-    const payloads = await this.transport.paginate<GithubIssuePayload>(`${this.repoPath()}/issues`, {
-      state: 'all',
-      labels: label,
-    });
+    const payloads = await this.transport.paginate<GithubIssuePayload>(
+      `${this.repoPath()}/issues`,
+      {
+        state: 'all',
+        labels: label,
+      },
+    );
     const numbers = payloads
       .filter((payload) => isPullRequestPayload(payload))
       .map((payload) => payload.number);
