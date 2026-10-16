@@ -112,4 +112,15 @@ describe('GitHubProvider', () => {
     expect(run?.args.join(' ')).not.toContain('secret-token');
     expect(run?.env?.['GIT_CONFIG_VALUE_0']).toContain('secret-token');
   });
+
+  it('fetches into an existing clone without exposing the token in argv', async () => {
+    const { provider, commands } = setup();
+    await provider.fetch({ destination: '/tmp/store' });
+
+    const [run] = commands.runs;
+    expect(run?.command).toBe('git');
+    expect(run?.args).toEqual(['-C', '/tmp/store', 'fetch', '--prune', 'origin']);
+    expect(run?.args.join(' ')).not.toContain('secret-token');
+    expect(run?.env?.['GIT_CONFIG_VALUE_0']).toContain('secret-token');
+  });
 });

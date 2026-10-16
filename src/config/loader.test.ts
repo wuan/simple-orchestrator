@@ -1,7 +1,12 @@
 import { describe, expect, it } from 'vitest';
 
 import { ConfigError, parseConfig } from './loader.js';
-import { DEFAULT_LABELS, DEFAULT_MAX_REVISE_ROUNDS, DEFAULT_POLL_INTERVAL_SECONDS } from './types.js';
+import {
+  DEFAULT_LABELS,
+  DEFAULT_MAX_REVISE_ROUNDS,
+  DEFAULT_POLL_INTERVAL_SECONDS,
+  DEFAULT_WORKSPACE_ROOT,
+} from './types.js';
 
 const MINIMAL = `
 repositories:
@@ -77,5 +82,31 @@ repositories:
     pollIntervalSeconds: 0
 `;
     expect(() => parseConfig(bad)).toThrowError(/positive integer/);
+  });
+
+  it('defaults the workspace locations when omitted', () => {
+    const config = parseConfig(MINIMAL);
+    expect(config.workspace.root).toBe(DEFAULT_WORKSPACE_ROOT);
+    expect(config.workspace.worktrees).toBeUndefined();
+  });
+
+  it('accepts workspace overrides', () => {
+    const config = parseConfig(`
+${MINIMAL}
+workspace:
+  root: /srv/clones
+  worktrees: /scratch
+`);
+    expect(config.workspace.root).toBe('/srv/clones');
+    expect(config.workspace.worktrees).toBe('/scratch');
+  });
+
+  it('rejects an empty worktrees directory', () => {
+    const bad = `
+${MINIMAL}
+workspace:
+  worktrees: ''
+`;
+    expect(() => parseConfig(bad)).toThrowError(/worktrees/);
   });
 });

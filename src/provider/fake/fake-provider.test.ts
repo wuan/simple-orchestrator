@@ -61,6 +61,9 @@ describe('FakeProvider', () => {
 
     await provider.clone({ branch: 'openspec/issue-1', destination: '/tmp/x' });
     expect(provider.clones).toEqual([{ branch: 'openspec/issue-1', destination: '/tmp/x' }]);
+
+    await provider.fetch({ destination: '/tmp/x' });
+    expect(provider.fetches).toEqual([{ destination: '/tmp/x' }]);
   });
 
   it('reports the bot identity', async () => {

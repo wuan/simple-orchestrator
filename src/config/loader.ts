@@ -8,10 +8,12 @@ import {
   DEFAULT_LIMITS,
   DEFAULT_MAX_REVISE_ROUNDS,
   DEFAULT_POLL_INTERVAL_SECONDS,
+  DEFAULT_WORKSPACE_ROOT,
   type LabelConfig,
   type Limits,
   type OrchestratorConfig,
   type RepositoryConfig,
+  type WorkspaceConfig,
 } from './types.js';
 
 /** Thrown when configuration is missing or invalid. Fails fast at startup. */
@@ -141,6 +143,22 @@ function parseLimits(raw: unknown): Limits {
   };
 }
 
+function parseWorkspace(raw: unknown): WorkspaceConfig {
+  if (raw === undefined) return { root: DEFAULT_WORKSPACE_ROOT };
+  const record = asRecord(raw, 'workspace');
+  const workspace: WorkspaceConfig = {
+    root: optionalNonEmptyString(record, 'root', 'workspace', DEFAULT_WORKSPACE_ROOT),
+  };
+  const worktrees = record['worktrees'];
+  if (worktrees !== undefined) {
+    if (typeof worktrees !== 'string' || worktrees.trim() === '') {
+      throw new ConfigError("workspace: 'worktrees' must be a non-empty string when provided");
+    }
+    workspace.worktrees = worktrees;
+  }
+  return workspace;
+}
+
 /**
  * Parse and validate an orchestrator configuration object or YAML string.
  * Throws {@link ConfigError} on any structural problem.
@@ -155,7 +173,11 @@ export function parseConfig(raw: unknown): OrchestratorConfig {
   }
 
   const repositories = repositoriesRaw.map((entry, index) => parseRepository(entry, index));
-  return { repositories, limits: parseLimits(record['limits']) };
+  return {
+    repositories,
+    limits: parseLimits(record['limits']),
+    workspace: parseWorkspace(record['workspace']),
+  };
 }
 
 /** Read and validate a configuration file (YAML or JSON). */

@@ -53,7 +53,7 @@ duplicating work.
  | Poller  ->  WorkflowEngine  ->  decision (labels + timestamps) |
  |                    |                                           |
  |                    v                                           |
- |             Sandbox (ephemeral workspace)                      |
+ |             Sandbox (store clone + ephemeral worktree)                      |
  |                    |                                           |
  |                    v                                           |
  |             AgentRuntime  (plugin)  -- OpenCode adapter        |
@@ -66,9 +66,20 @@ duplicating work.
 Two seams isolate everything external:
 
 - **`RepoProvider`** — issues, comments, labels, pull requests, review state,
-  clone. A GitHub adapter ships first; GitLab is an extension point.
+  clone and fetch. A GitHub adapter ships first; GitLab is an extension point.
 - **`AgentRuntime`** — runs exactly one OpenSpec skill (`propose` or `apply`) per
   turn in a sandbox and returns a structured result.
+
+### Repository store and worktrees
+
+The orchestrator keeps a persistent clone of each repository at
+`<workspace.root>/<owner>/<name>` (default `~/workspace`), created on the first
+turn and refreshed with `git fetch` before each later turn. Every turn then runs
+in a throwaway `git worktree` of that clone, checked out on the workflow branch
+and created under `<workspace.worktrees>` (default the OS temp directory). The
+worktree is removed when the turn ends, so turns stay isolated while the clone
+is reused. See [docs/configuration.md](docs/configuration.md) for the
+`workspace` fields.
 
 ## Requirements
 
@@ -100,6 +111,9 @@ limits:
   maxSteps: 200
   maxTokens: 200000
   maxDurationMs: 1800000
+workspace:
+  root: ~/workspace
+  worktrees: /tmp
 ```
 
 Credentials are references (`env:NAME` or `gh:token`); secrets are never stored
@@ -167,6 +181,8 @@ cluster.
 
 - Provide credentials via the environment (a secret manager is fine).
 - Give it the `openspec` CLI and git on `PATH`.
+- Give it a writable workspace root (default `~/workspace`) for the persistent
+  per-repository clones, plus a writable temp directory for turn worktrees.
 - For container-isolated turns, make a container runtime available and run the
   turn command via the provided container args (`buildDockerRunArgs`).
 - Restart freely: on start it re-discovers in-flight workflows from their
@@ -190,7 +206,7 @@ src/
   config/         configuration model, loader, credential resolution
   domain/         core domain types (events, phases, turns)
   provider/       RepoProvider seam, GitHub adapter, fake, contract suite
-  runtime/        AgentRuntime seam, limits, sandbox, policy, OpenCode adapter
+  runtime/        AgentRuntime seam, repository store, sandbox, limits, policy, OpenCode adapter
   orchestrator/   poller, engine, decision, readiness, labels
   service.ts      composition root
   index.ts        CLI

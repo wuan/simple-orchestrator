@@ -54,3 +54,19 @@ This version SHALL operate for a single operator with a shared configuration and
 #### Scenario: No user accounts required
 - **WHEN** the orchestrator runs
 - **THEN** it requires no per-user accounts beyond the configured credentials
+
+### Requirement: Configurable workspace locations
+
+The orchestrator SHALL let the operator configure the root for persistent
+repository clones and the parent directory for per-turn worktrees, and SHALL
+apply documented defaults when either is omitted.
+
+#### Scenario: Defaults apply
+
+- **WHEN** a configuration omits the workspace settings
+- **THEN** persistent clones are kept under `~/workspace` and per-turn worktrees under the OS temp directory
+
+#### Scenario: Overrides apply
+
+- **WHEN** a configuration specifies a workspace root and worktree directory
+- **THEN** persistent clones and per-turn worktrees are created under those paths

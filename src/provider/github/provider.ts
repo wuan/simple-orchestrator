@@ -2,6 +2,7 @@ import type { Actor, IssueRef, PullRequestRef, RepoRef } from '../../domain/type
 import type {
   CloneInput,
   CreatePullRequestInput,
+  FetchInput,
   ProviderComment,
   ProviderIssue,
   ProviderPullRequest,
@@ -178,5 +179,9 @@ export class GitHubProvider implements RepoProvider {
 
   async clone(input: CloneInput): Promise<void> {
     await this.cloner.clone(input);
+  }
+
+  async fetch(input: FetchInput): Promise<void> {
+    await this.cloner.fetch(input);
   }
 }

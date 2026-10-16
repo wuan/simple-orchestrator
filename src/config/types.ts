@@ -33,9 +33,17 @@ export interface RepositoryConfig {
   labels: LabelConfig;
 }
 
+export interface WorkspaceConfig {
+  /** Root for persistent per-repository clones, at `<root>/<owner>/<name>`. */
+  root: string;
+  /** Parent directory for ephemeral per-turn worktrees; defaults to the OS temp directory. */
+  worktrees?: string;
+}
+
 export interface OrchestratorConfig {
   repositories: RepositoryConfig[];
   limits: Limits;
+  workspace: WorkspaceConfig;
 }
 
 export const DEFAULT_LABELS: LabelConfig = {
@@ -50,6 +58,9 @@ export const DEFAULT_LABELS: LabelConfig = {
 export const DEFAULT_BASE_BRANCH = 'main';
 export const DEFAULT_POLL_INTERVAL_SECONDS = 30;
 export const DEFAULT_MAX_REVISE_ROUNDS = 3;
+
+/** Root for persistent repository clones; `~` is expanded at runtime. */
+export const DEFAULT_WORKSPACE_ROOT = '~/workspace';
 
 export const DEFAULT_LIMITS: Limits = {
   maxSteps: 200,

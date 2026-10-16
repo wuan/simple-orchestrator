@@ -8,7 +8,8 @@ import { GhCliCloner } from './provider/github/clone.js';
 import { GhCliTransport } from './provider/github/gh-cli.js';
 import { GitHubProvider } from './provider/github/provider.js';
 import type { RepoProvider } from './provider/types.js';
-import { EphemeralWorkspaceSandbox } from './runtime/sandbox.js';
+import { RepositoryStore } from './runtime/repository-store.js';
+import { WorktreeSandbox } from './runtime/sandbox.js';
 import type { AgentRuntime } from './runtime/types.js';
 import { UnconfiguredRuntime } from './runtime/unconfigured.js';
 import { NodeCommandRunner } from './system/commands.js';
@@ -66,12 +67,18 @@ export async function createService(
   const providerFactory = options.providerFactory ?? defaultProviderFactory;
   const runtime = options.runtime ?? new UnconfiguredRuntime();
   const openspec = options.openspec ?? new NodeOpenspecCli(new NodeCommandRunner());
+  const store = new RepositoryStore({ root: config.workspace.root });
 
   const repositories = config.repositories.map((repo): ServiceRepository => {
     const key = repoKey(repo);
     const credential = credentials.get(key) ?? '';
     const provider = providerFactory(repo, credential);
-    const sandbox = new EphemeralWorkspaceSandbox({ provider });
+    const sandbox = new WorktreeSandbox({
+      store,
+      source: provider,
+      baseBranch: repo.baseBranch,
+      root: config.workspace.worktrees,
+    });
     const poller = new Poller({
       provider,
       runtime,

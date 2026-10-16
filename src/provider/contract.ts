@@ -109,5 +109,10 @@ export function runProviderContractTests(name: string, makeFixture: () => Provid
         provider.clone({ branch: pr.branch, destination: '/tmp/contract-work' }),
       ).resolves.toBeUndefined();
     });
+
+    it('fetches into an existing clone', async () => {
+      const { provider } = makeFixture();
+      await expect(provider.fetch({ destination: '/tmp/contract-work' })).resolves.toBeUndefined();
+    });
   });
 }

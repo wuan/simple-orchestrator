@@ -19,6 +19,9 @@ describe('documented example config', () => {
     expect(repo?.pollIntervalSeconds).toBe(60);
     expect(repo?.labels.trigger).toBe(DEFAULT_LABELS.trigger);
 
+    expect(config.workspace.root).toBe('~/workspace');
+    expect(config.workspace.worktrees).toBe('/tmp');
+
     const resolved = await resolveCredentials(
       config,
       new EnvCredentialResolver({ GITHUB_TOKEN: 'example-token' }),

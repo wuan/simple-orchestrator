@@ -59,6 +59,13 @@ export interface CreatePullRequestInput {
 export interface CloneInput {
   branch: string;
   destination: string;
+  /** Clone full history and every branch; omitted means a shallow single-branch clone. */
+  full?: boolean;
+}
+
+export interface FetchInput {
+  /** An existing clone to refresh from the host. */
+  destination: string;
 }
 
 /** Branch naming convention for a workflow started from an issue. */
@@ -96,4 +103,6 @@ export interface RepoProvider {
   listReviews(pullRequest: PullRequestRef): Promise<ProviderReview[]>;
 
   clone(input: CloneInput): Promise<void>;
+  /** Refresh an existing clone with the host's latest refs, using clone's credentials. */
+  fetch(input: FetchInput): Promise<void>;
 }

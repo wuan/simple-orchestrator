@@ -2,6 +2,7 @@ import type { Actor, IssueRef, PullRequestRef, RepoRef, ReviewState } from '../.
 import type {
   CloneInput,
   CreatePullRequestInput,
+  FetchInput,
   ProviderComment,
   ProviderIssue,
   ProviderPullRequest,
@@ -42,6 +43,7 @@ export class FakeProvider implements RepoProvider {
   private clock = Date.parse('2026-01-01T00:00:00.000Z');
 
   readonly clones: CloneInput[] = [];
+  readonly fetches: FetchInput[] = [];
   readonly commentLog: { target: ThreadTarget; body: string }[] = [];
 
   constructor(options: FakeProviderOptions = {}) {
@@ -221,5 +223,9 @@ export class FakeProvider implements RepoProvider {
 
   async clone(input: CloneInput): Promise<void> {
     this.clones.push({ ...input });
+  }
+
+  async fetch(input: FetchInput): Promise<void> {
+    this.fetches.push({ ...input });
   }
 }

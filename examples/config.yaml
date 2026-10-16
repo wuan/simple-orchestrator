@@ -12,3 +12,6 @@ limits:
   maxSteps: 200
   maxTokens: 200000
   maxDurationMs: 1800000
+workspace:
+  root: ~/workspace
+  worktrees: /tmp

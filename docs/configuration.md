@@ -15,6 +15,7 @@ the `gh` CLI.
 |-------|----------|---------|-------------|
 | `repositories` | yes | — | Non-empty list of repositories to serve. |
 | `limits` | no | see below | Per-turn cost caps. |
+| `workspace` | no | see below | Where repository clones and per-turn worktrees live. |
 
 ### `repositories[]`
 
@@ -47,6 +48,18 @@ the `gh` CLI.
 | `maxSteps` | `200` | Agent steps allowed per turn. |
 | `maxTokens` | `200000` | Tokens allowed per turn. |
 | `maxDurationMs` | `1800000` | Wall-clock limit per turn (30 minutes). |
+
+### `workspace`
+
+| Field | Required | Default | Description |
+|-------|----------|---------|-------------|
+| `root` | no | `~/workspace` | Root holding one persistent clone per repository, at `<root>/<owner>/<name>`. |
+| `worktrees` | no | OS temp directory | Parent directory for ephemeral per-turn git worktrees. |
+
+A leading `~` in either path is expanded to the operator's home directory. The
+orchestrator clones each repository once into `root` and reuses it across turns,
+while each turn runs in a throwaway git worktree of that clone, created under
+`worktrees` and removed when the turn ends.
 
 ## Credential schemes
 
@@ -81,6 +94,9 @@ limits:
   maxSteps: 200
   maxTokens: 200000
   maxDurationMs: 1800000
+workspace:
+  root: ~/workspace
+  worktrees: /tmp
 ```
 
 A copy of this example lives at `examples/config.yaml`. With `GITHUB_TOKEN` set

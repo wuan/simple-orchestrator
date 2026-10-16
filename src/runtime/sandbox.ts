@@ -2,7 +2,9 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import type { RepoProvider } from '../provider/types.js';
+import { NodeCommandRunner, type CommandRunner, type CommandResult } from '../system/commands.js';
+import { expandHome } from '../system/paths.js';
+import type { RepositorySource, RepositoryStore } from './repository-store.js';
 
 export interface SandboxHandle {
   readonly workspace: string;
@@ -13,35 +15,69 @@ export interface Sandbox {
   create(input: { branch: string }): Promise<SandboxHandle>;
 }
 
-export interface EphemeralWorkspaceSandboxOptions {
-  provider: RepoProvider;
-  /** Parent directory for workspaces; defaults to the OS temp directory. */
+export interface WorktreeSandboxOptions {
+  /** Holds the persistent per-repository clone the worktree is created from. */
+  store: RepositoryStore;
+  /** Provides the authenticated git transport used to clone and refresh the store. */
+  source: RepositorySource;
+  /** Branch a workflow branches from; the store is checked out here. */
+  baseBranch: string;
+  /** Parent directory for worktrees; defaults to the OS temp directory. */
   root?: string;
   prefix?: string;
+  commands?: CommandRunner;
 }
 
 /**
- * Provisions a fresh, throwaway workspace per turn by cloning the workflow
- * branch into a unique directory, and removes it when the turn ends. No two
- * turns share a workspace.
+ * Provisions a fresh, throwaway workspace per turn as a git worktree of the
+ * persistent repository store, checked out on the workflow branch, and removes
+ * it when the turn ends. No two turns share a working tree, and the store
+ * survives so the next turn does not re-clone the repository.
  */
-export class EphemeralWorkspaceSandbox implements Sandbox {
-  private readonly provider: RepoProvider;
+export class WorktreeSandbox implements Sandbox {
+  private readonly store: RepositoryStore;
+  private readonly source: RepositorySource;
+  private readonly baseBranch: string;
   private readonly root: string;
   private readonly prefix: string;
+  private readonly commands: CommandRunner;
 
-  constructor(options: EphemeralWorkspaceSandboxOptions) {
-    this.provider = options.provider;
-    this.root = options.root ?? tmpdir();
+  constructor(options: WorktreeSandboxOptions) {
+    this.store = options.store;
+    this.source = options.source;
+    this.baseBranch = options.baseBranch;
+    this.root = expandHome(options.root ?? tmpdir());
     this.prefix = options.prefix ?? 'orchestrator-turn-';
+    this.commands = options.commands ?? new NodeCommandRunner();
+  }
+
+  private git(args: string[]): Promise<CommandResult> {
+    return this.commands.run('git', args);
   }
 
   async create(input: { branch: string }): Promise<SandboxHandle> {
-    const workspace = await mkdtemp(join(this.root, this.prefix));
+    const store = await this.store.ensure({ baseBranch: this.baseBranch, source: this.source });
+    const base = await mkdtemp(join(this.root, this.prefix));
+    const workspace = join(base, 'worktree');
     try {
-      await this.provider.clone({ branch: input.branch, destination: workspace });
+      // Drop any stale registration left by a crashed turn before adding.
+      await this.git(['-C', store, 'worktree', 'prune']);
+      const added = await this.git([
+        '-C',
+        store,
+        'worktree',
+        'add',
+        '--track',
+        '-B',
+        input.branch,
+        workspace,
+        `origin/${input.branch}`,
+      ]);
+      if (added.code !== 0) {
+        throw new Error(`git worktree add failed (${added.code}): ${added.stderr.trim()}`);
+      }
     } catch (error) {
-      await rm(workspace, { recursive: true, force: true });
+      await rm(base, { recursive: true, force: true });
       throw error;
     }
 
@@ -51,7 +87,12 @@ export class EphemeralWorkspaceSandbox implements Sandbox {
       dispose: async () => {
         if (disposed) return;
         disposed = true;
-        await rm(workspace, { recursive: true, force: true });
+        // Tolerate a missing registration or already-deleted branch; the temp
+        // directory removal below is the guaranteed cleanup.
+        await this.git(['-C', store, 'worktree', 'remove', '--force', workspace]);
+        await this.git(['-C', store, 'branch', '-D', input.branch]);
+        await this.git(['-C', store, 'worktree', 'prune']);
+        await rm(base, { recursive: true, force: true });
       },
     };
   }
