@@ -32,6 +32,9 @@ Two host facts shape the approach:
   the issue scopes the transition to a successful apply.
 - Converting a pull request back to draft.
 - Changing how apply or archive is recorded, or how merge is detected.
+- Releasing a pull request whose apply turn was interrupted between publishing
+  its commits and the release call, or backfilling draft pull requests opened
+  before this change ships; see Open Questions.
 
 ## Decisions
 
@@ -109,3 +112,12 @@ next build and restart. Rollback is a revert.
 - Whether operators also want the propose-phase pull request released early for
   visibility. Deferred; the issue scopes the transition to apply and the release
   call site can move without changing the provider work.
+- Whether the poller should idempotently release an `implementing` pull request
+  that is still draft, covering an apply turn interrupted between publishing its
+  commits and the release (the phase is already `implementing`, so `recover` does
+  not touch it) and a workflow left over from before this deploy. Deferred; the
+  issue scopes the release to the apply success path, the operation is idempotent
+  so a follow-up is cheap, and an operator can release the pull request from the
+  host meanwhile.
+- Whether draft pull requests opened before this change ships need a backfill.
+  Deferred; the orchestrator only acts on workflows it is driving.
