@@ -117,7 +117,7 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<number>
     for (const repository of service.repositories) {
       const report = await repository.poller.pollOnce();
       out(
-        `${repository.key}: started ${report.started.length}, actions ${report.actions.length}\n`,
+        `${repository.key}: started ${report.started.length}, recovered ${report.recovered.length}, actions ${report.actions.length}\n`,
       );
     }
     return 0;
@@ -160,9 +160,13 @@ export async function runLoop(service: Service, deps: MainDeps = {}): Promise<vo
         due.set(repository.key, Date.now() + repository.intervalSeconds * 1000);
         try {
           const report = await repository.poller.pollOnce();
-          if (report.started.length > 0 || report.actions.length > 0) {
+          if (
+            report.started.length > 0 ||
+            report.recovered.length > 0 ||
+            report.actions.length > 0
+          ) {
             err(
-              `${repository.key}: started ${report.started.length}, actions ${report.actions.length}\n`,
+              `${repository.key}: started ${report.started.length}, recovered ${report.recovered.length}, actions ${report.actions.length}\n`,
             );
           }
         } catch (error) {
