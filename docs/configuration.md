@@ -16,6 +16,7 @@ the `gh` CLI.
 | `repositories` | yes      | —         | Non-empty list of repositories to serve.             |
 | `limits`       | no       | see below | Per-turn cost caps.                                  |
 | `workspace`    | no       | see below | Where repository clones and per-turn worktrees live. |
+| `agent`        | no       | see below | Embedded OpenCode host model and database.           |
 
 ### `repositories[]`
 
@@ -61,6 +62,20 @@ orchestrator clones each repository once into `root` and reuses it across turns,
 while each turn runs in a throwaway git worktree of that clone, created under
 `worktrees` and removed when the turn ends.
 
+### `agent`
+
+| Field      | Required | Default                       | Description                                                                           |
+| ---------- | -------- | ----------------------------- | ------------------------------------------------------------------------------------- |
+| `model`    | no       | `greenpt/deepseek-v4.1-flash` | OpenCode model (`provider/model` or `provider/model#variant`) the host runs turns on. |
+| `agent`    | no       | host default                  | OpenCode agent to run for a turn.                                                     |
+| `database` | no       | SDK default (in-memory)       | Path to the OpenCode database holding provider auth and model definitions.            |
+
+The embedded OpenCode host runs in-process, so it needs the same provider
+authentication the `opencode` CLI uses. Point `database` at that database (find
+it with `opencode debug paths db`) or set `OPENCODE_DB`; unlike the CLI, the
+SDK's default database is in-memory and holds no auth or model definitions, so
+the free-tier default model is refused and the turn fails.
+
 ## Credential schemes
 
 | Reference  | Source                                    |
@@ -97,6 +112,9 @@ limits:
 workspace:
   root: ~/workspace
   worktrees: /tmp
+agent:
+  model: greenpt/deepseek-v4.1-flash
+  database: ~/.local/share/opencode/opencode.db
 ```
 
 A copy of this example lives at `examples/config.yaml`. With `GITHUB_TOKEN` set

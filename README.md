@@ -191,6 +191,13 @@ closed when the service stops.
 `@opencode/sdk` uses explicit resource management and therefore requires
 **Node.js 24+** (Node 22 cannot load it).
 
+The host runs each turn on the model in the `agent` configuration block
+(`agent.model`, default `greenpt/deepseek-v4.1-flash`) and reuses the provider
+authentication in the OpenCode database (`agent.database`, or `OPENCODE_DB`).
+After a turn succeeds the orchestrator pushes the workflow branch itself, so the
+turn's commits appear on the pull request; a turn that errors, or a push that
+fails, marks the workflow failed instead of advancing it.
+
 When building the service yourself, supply a runtime when calling `createService`
 in `src/service.ts`; the `OpenCodeRuntime` in `src/runtime/opencode/` is the
 adapter, and `createEmbeddedHostFactory` in `src/runtime/opencode/sdk-host.ts`

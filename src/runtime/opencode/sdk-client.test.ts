@@ -1,10 +1,15 @@
 import { describe, expect, it } from 'vitest';
 
 import type { OpenCodeSkillRequest } from './client.js';
-import { EmbeddedOpenCodeClient, type OpenCodeHost } from './sdk-client.js';
+import { EmbeddedOpenCodeClient, type OpenCodeHost, type SessionModel } from './sdk-client.js';
 
 class FakeHost implements OpenCodeHost {
-  readonly sessions: { directory: string; title: string }[] = [];
+  readonly sessions: {
+    directory: string;
+    title: string;
+    model?: SessionModel;
+    agent?: string;
+  }[] = [];
   readonly prompts: { sessionID: string; text: string; signal?: AbortSignal }[] = [];
   closed = 0;
 
@@ -13,7 +18,12 @@ class FakeHost implements OpenCodeHost {
     private readonly onRun?: (prompt: { sessionID: string; text: string }) => void,
   ) {}
 
-  async createSession(input: { directory: string; title: string }): Promise<{ id: string }> {
+  async createSession(input: {
+    directory: string;
+    title: string;
+    model?: SessionModel;
+    agent?: string;
+  }): Promise<{ id: string }> {
     this.sessions.push(input);
     return { id: `session-${this.sessions.length}` };
   }
@@ -93,6 +103,21 @@ describe('EmbeddedOpenCodeClient', () => {
     await expect(
       client.runSkill({ ...request('propose'), signal: controller.signal }),
     ).rejects.toThrowError(/aborted/i);
+  });
+
+  it('runs every session on the configured model and agent', async () => {
+    const host = new FakeHost();
+    const client = new EmbeddedOpenCodeClient(async () => host, {
+      model: { providerID: 'greenpt', id: 'deepseek-v4.1-flash' },
+      agent: 'build',
+    });
+
+    await client.runSkill(request('propose'));
+
+    expect(host.sessions[0]).toMatchObject({
+      model: { providerID: 'greenpt', id: 'deepseek-v4.1-flash' },
+      agent: 'build',
+    });
   });
 
   it('closes the host on dispose and is a no-op before any turn', async () => {

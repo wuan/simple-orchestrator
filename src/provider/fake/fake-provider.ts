@@ -7,6 +7,7 @@ import type {
   ProviderIssue,
   ProviderPullRequest,
   ProviderReview,
+  PushInput,
   RepoProvider,
   ThreadTarget,
 } from '../types.js';
@@ -44,6 +45,7 @@ export class FakeProvider implements RepoProvider {
 
   readonly clones: CloneInput[] = [];
   readonly fetches: FetchInput[] = [];
+  readonly pushes: PushInput[] = [];
   readonly commentLog: { target: ThreadTarget; body: string }[] = [];
 
   constructor(options: FakeProviderOptions = {}) {
@@ -229,5 +231,9 @@ export class FakeProvider implements RepoProvider {
 
   async fetch(input: FetchInput): Promise<void> {
     this.fetches.push({ ...input });
+  }
+
+  async push(input: PushInput): Promise<void> {
+    this.pushes.push({ ...input });
   }
 }

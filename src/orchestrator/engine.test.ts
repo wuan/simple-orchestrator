@@ -53,9 +53,14 @@ interface Harness {
 }
 
 function harness(
-  options: { ready?: boolean; maxReviseRounds?: number; runtime?: AgentRuntime } = {},
+  options: {
+    ready?: boolean;
+    maxReviseRounds?: number;
+    runtime?: AgentRuntime;
+    provider?: FakeProvider;
+  } = {},
 ): Harness {
-  const provider = new FakeProvider();
+  const provider = options.provider ?? new FakeProvider();
   const runtime = new FakeRuntime();
   const openspec = new FakeOpenspecCli();
   if (options.ready === true) openspec.markReady('add-x');
@@ -347,5 +352,36 @@ describe('WorkflowEngine.recover', () => {
 
     expect(await labelsOf(h.provider, 100)).toContain(DEFAULT_LABELS.failed);
     expect(h.provider.commentLog.some((c) => c.body.includes('Workflow failed'))).toBe(true);
+  });
+});
+
+describe('WorkflowEngine turn publishing', () => {
+  class PushFailingProvider extends FakeProvider {
+    override async push(): Promise<void> {
+      throw new Error('push rejected');
+    }
+  }
+
+  it('pushes the workflow branch after a successful turn', async () => {
+    const h = harness();
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+
+    await h.engine.start(issue);
+
+    expect(h.provider.pushes).toHaveLength(1);
+    expect(h.provider.pushes[0]?.branch).toBe('openspec/issue-1');
+    expect(h.provider.pushes[0]?.destination).toContain('openspec-issue-1');
+  });
+
+  it('marks the workflow failed when the push fails', async () => {
+    const h = harness({ provider: new PushFailingProvider() });
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+
+    await h.engine.start(issue);
+
+    expect(await labelsOf(h.provider, 100)).toContain(DEFAULT_LABELS.failed);
+    expect(h.provider.commentLog.some((c) => c.body.includes('push rejected'))).toBe(true);
   });
 });

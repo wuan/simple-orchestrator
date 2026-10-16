@@ -1,5 +1,12 @@
 import type { OpenCodeClient, OpenCodeSkillRequest, OpenCodeSkillResult } from './client.js';
 
+/** A provider/model reference for a session. */
+export interface SessionModel {
+  providerID: string;
+  id: string;
+  variant?: string;
+}
+
 /**
  * A running embedded OpenCode host, reduced to the operations a turn needs.
  * Declared structurally so the adapter stays independent of the SDK's generated
@@ -7,10 +14,15 @@ import type { OpenCodeClient, OpenCodeSkillRequest, OpenCodeSkillResult } from '
  */
 export interface OpenCodeHost {
   /** Create a fresh session rooted at a workspace directory. */
-  createSession(input: { directory: string; title: string }): Promise<{ id: string }>;
+  createSession(input: {
+    directory: string;
+    title: string;
+    model?: SessionModel;
+    agent?: string;
+  }): Promise<{ id: string }>;
   /**
    * Send one prompt and resolve with the agent's final text once the session is
-   * idle again. Rejects when `signal` aborts.
+   * idle again. Rejects when the turn failed or when `signal` aborts.
    */
   runPrompt(input: { sessionID: string; text: string; signal?: AbortSignal }): Promise<string>;
   /** Release the host and its resources. */
@@ -19,6 +31,13 @@ export interface OpenCodeHost {
 
 /** Creates the single embedded host a client reuses. Called at most once. */
 export type OpenCodeHostFactory = () => Promise<OpenCodeHost>;
+
+export interface EmbeddedOpenCodeClientOptions {
+  /** Model every session runs on; the host's default when omitted. */
+  model?: SessionModel;
+  /** OpenCode agent every session runs; the host's default when omitted. */
+  agent?: string;
+}
 
 /**
  * Runs OpenSpec skills through an embedded, in-process OpenCode host.
@@ -36,7 +55,10 @@ export type OpenCodeHostFactory = () => Promise<OpenCodeHost>;
 export class EmbeddedOpenCodeClient implements OpenCodeClient {
   private hostPromise: Promise<OpenCodeHost> | undefined;
 
-  constructor(private readonly createHost: OpenCodeHostFactory) {}
+  constructor(
+    private readonly createHost: OpenCodeHostFactory,
+    private readonly options: EmbeddedOpenCodeClientOptions = {},
+  ) {}
 
   private host(): Promise<OpenCodeHost> {
     this.hostPromise ??= this.createHost();
@@ -48,6 +70,8 @@ export class EmbeddedOpenCodeClient implements OpenCodeClient {
     const session = await host.createSession({
       directory: request.workspace,
       title: `OpenSpec ${request.skill} turn`,
+      ...(this.options.model === undefined ? {} : { model: this.options.model }),
+      ...(this.options.agent === undefined ? {} : { agent: this.options.agent }),
     });
     const summary = await host.runPrompt({
       sessionID: session.id,

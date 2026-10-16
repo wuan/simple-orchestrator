@@ -7,6 +7,7 @@ import type {
   ProviderIssue,
   ProviderPullRequest,
   ProviderReview,
+  PushInput,
   RepoProvider,
   ThreadTarget,
 } from '../types.js';
@@ -272,5 +273,9 @@ export class GitHubProvider implements RepoProvider {
 
   async fetch(input: FetchInput): Promise<void> {
     await this.cloner.fetch(input);
+  }
+
+  async push(input: PushInput): Promise<void> {
+    await this.cloner.push(input);
   }
 }

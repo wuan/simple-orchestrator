@@ -114,5 +114,13 @@ export function runProviderContractTests(name: string, makeFixture: () => Provid
       const { provider } = makeFixture();
       await expect(provider.fetch({ destination: '/tmp/contract-work' })).resolves.toBeUndefined();
     });
+
+    it('pushes the workflow branch', async () => {
+      const fixture = makeFixture();
+      const pr = await startWorkflow(fixture);
+      await expect(
+        fixture.provider.push({ branch: pr.branch, destination: '/tmp/contract-work' }),
+      ).resolves.toBeUndefined();
+    });
   });
 }

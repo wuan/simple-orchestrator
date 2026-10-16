@@ -18,7 +18,7 @@ import type {
   ThreadTarget,
 } from '../provider/types.js';
 import { LimitExceededError } from '../runtime/limits.js';
-import { PermissionError } from '../runtime/policy.js';
+import { assertPushAllowed, PermissionError } from '../runtime/policy.js';
 import type { Sandbox } from '../runtime/sandbox.js';
 import type { AgentRuntime } from '../runtime/types.js';
 import { decide, type WorkflowAction } from './decision.js';
@@ -281,6 +281,11 @@ export class WorkflowEngine {
       const result = await this.withRetry(() =>
         this.runtime.run({ context, workspace: handle.workspace, limits: this.limits }),
       );
+      // A turn's commits live only in the throwaway worktree, so publish the
+      // workflow branch before anything else observes the turn. Least-privilege
+      // is enforced here: the orchestrator only ever pushes its own branch.
+      assertPushAllowed({ branch: pullRequest.branch, protectedBranches: [this.baseBranch] });
+      await this.provider.push({ branch: pullRequest.branch, destination: handle.workspace });
       await this.postTurn(pullRequest, result);
 
       if (skill === 'propose') {

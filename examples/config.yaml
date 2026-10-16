@@ -15,3 +15,9 @@ limits:
 workspace:
   root: ~/workspace
   worktrees: /tmp
+agent:
+  # OpenCode model the embedded host runs. The default is greenpt/deepseek-v4.1-flash.
+  model: greenpt/deepseek-v4.1-flash
+  # Point at the OpenCode database that holds provider auth and models when it is
+  # not the SDK default (or set OPENCODE_DB instead).
+  # database: ~/.local/share/opencode/opencode.db

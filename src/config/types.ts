@@ -40,10 +40,20 @@ export interface WorkspaceConfig {
   worktrees?: string;
 }
 
+export interface AgentConfig {
+  /** OpenCode model in `provider/model` (or `provider/model#variant`) form. */
+  model: string;
+  /** OpenCode agent to run; the host's default when omitted. */
+  agent?: string;
+  /** OpenCode database holding provider auth and model definitions; the SDK default when omitted. */
+  database?: string;
+}
+
 export interface OrchestratorConfig {
   repositories: RepositoryConfig[];
   limits: Limits;
   workspace: WorkspaceConfig;
+  agent: AgentConfig;
 }
 
 export const DEFAULT_LABELS: LabelConfig = {
@@ -61,6 +71,13 @@ export const DEFAULT_MAX_REVISE_ROUNDS = 3;
 
 /** Root for persistent repository clones; `~` is expanded at runtime. */
 export const DEFAULT_WORKSPACE_ROOT = '~/workspace';
+
+/**
+ * The OpenCode model an embedded host uses by default. The SDK's own default is
+ * a free-tier model that refuses non-CLI clients, so the orchestrator names a
+ * model explicitly and lets operators override it.
+ */
+export const DEFAULT_AGENT_MODEL = 'greenpt/deepseek-v4.1-flash';
 
 export const DEFAULT_LIMITS: Limits = {
   maxSteps: 200,

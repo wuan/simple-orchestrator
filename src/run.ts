@@ -1,15 +1,35 @@
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
+import type { OrchestratorConfig } from './config/types.js';
 import { main } from './index.js';
 import { OpenCodeRuntime } from './runtime/opencode/opencode-runtime.js';
 import { EmbeddedOpenCodeClient } from './runtime/opencode/sdk-client.js';
-import {
-  createEmbeddedHostFactory,
-  type EmbedOpenCodeOptions,
-} from './runtime/opencode/sdk-host.js';
+import { createEmbeddedHostFactory, parseModelRef } from './runtime/opencode/sdk-host.js';
 
-export type { EmbedOpenCodeOptions } from './runtime/opencode/sdk-host.js';
+export { parseModelRef } from './runtime/opencode/sdk-host.js';
+
+/**
+ * Build the embedded OpenCode runtime from configuration. The model comes from
+ * `agent.model`; `agent.database` (or `OPENCODE_DB`) points the embedded host at
+ * the OpenCode database that holds provider auth and model definitions, which
+ * the SDK's in-memory default does not have.
+ */
+function embeddedRuntime(config: OrchestratorConfig): {
+  runtime: OpenCodeRuntime;
+  dispose: () => Promise<void>;
+} {
+  const model = parseModelRef(config.agent.model);
+  const database = config.agent.database ?? process.env.OPENCODE_DB;
+  const client = new EmbeddedOpenCodeClient(
+    createEmbeddedHostFactory(database === undefined ? {} : { database }),
+    {
+      ...(model === undefined ? {} : { model }),
+      ...(config.agent.agent === undefined ? {} : { agent: config.agent.agent }),
+    },
+  );
+  return { runtime: new OpenCodeRuntime(client), dispose: () => client.dispose() };
+}
 
 /**
  * The deployable entry point: the stock CLI (`main`) with an embedded OpenCode
@@ -20,17 +40,20 @@ export type { EmbedOpenCodeOptions } from './runtime/opencode/sdk-host.js';
  * OpenCode server is required. The host is created on the first turn and closed
  * when the service stops, which also lets `--once` exit cleanly.
  */
-export async function run(
-  argv: string[] = process.argv.slice(2),
-  options: EmbedOpenCodeOptions = {},
-): Promise<number> {
-  const client = new EmbeddedOpenCodeClient(createEmbeddedHostFactory(options));
+export async function run(argv: string[] = process.argv.slice(2)): Promise<number> {
+  let dispose: (() => Promise<void>) | undefined;
   try {
     return await main(argv, {
-      serviceOptions: { runtime: new OpenCodeRuntime(client) },
+      serviceOptions: {
+        runtimeFactory: (config) => {
+          const embedded = embeddedRuntime(config);
+          dispose = embedded.dispose;
+          return embedded.runtime;
+        },
+      },
     });
   } finally {
-    await client.dispose();
+    await dispose?.();
   }
 }
 
