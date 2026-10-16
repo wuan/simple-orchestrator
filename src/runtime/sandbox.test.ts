@@ -159,6 +159,67 @@ describe('WorktreeSandbox', () => {
     await recovered.dispose();
   });
 
+  it('integrates base commits the branch gained after it was cut', async () => {
+    const f = await fixture();
+    const sandbox = sandboxFor(f);
+    const first = await sandbox.create({ branch: 'openspec/issue-1' });
+    await first.dispose();
+
+    // Advance the base on the remote after the branch already exists.
+    await git(['-C', f.seed, 'checkout', 'main']);
+    await writeFile(join(f.seed, 'main-only.md'), 'base\n');
+    await git(['-C', f.seed, 'add', '.']);
+    await git(['-C', f.seed, 'commit', '-m', 'base advance']);
+    await git(['-C', f.seed, 'push', 'origin', 'main']);
+
+    const second = await sandbox.create({ branch: 'openspec/issue-1' });
+
+    expect(existsSync(join(second.workspace, 'main-only.md'))).toBe(true);
+    expect(await second.baseIntegrated()).toBe(true);
+    await second.dispose();
+  });
+
+  it('leaves a conflicted base merge unresolved for the turn', async () => {
+    const f = await fixture();
+    // Both the branch and the base change README.md differently.
+    await writeFile(join(f.seed, 'README.md'), 'branch version\n');
+    await git(['-C', f.seed, 'add', '.']);
+    await git(['-C', f.seed, 'commit', '-m', 'branch edits README']);
+    await git(['-C', f.seed, 'push', 'origin', 'openspec/issue-1']);
+    await git(['-C', f.seed, 'checkout', 'main']);
+    await writeFile(join(f.seed, 'README.md'), 'main version\n');
+    await git(['-C', f.seed, 'add', '.']);
+    await git(['-C', f.seed, 'commit', '-m', 'base edits README']);
+    await git(['-C', f.seed, 'push', 'origin', 'main']);
+
+    const handle = await sandboxFor(f).create({ branch: 'openspec/issue-1' });
+
+    expect(await handle.baseIntegrated()).toBe(false);
+    const status = await commands.run('git', ['-C', handle.workspace, 'status', '--porcelain']);
+    expect(status.stdout).toContain('UU README.md');
+    await handle.dispose();
+  });
+
+  it('creates no merge commit when the base is already integrated', async () => {
+    const f = await fixture();
+    const handle = await sandboxFor(f).create({ branch: 'openspec/issue-1' });
+
+    // `rev-list --parents` prints the commit and its parents: a single parent
+    // means no merge commit was created.
+    const parents = await commands.run('git', [
+      '-C',
+      handle.workspace,
+      'rev-list',
+      '--parents',
+      '-n',
+      '1',
+      'HEAD',
+    ]);
+    expect(parents.stdout.trim().split(' ')).toHaveLength(2);
+    expect(await handle.baseIntegrated()).toBe(true);
+    await handle.dispose();
+  });
+
   it('cleans up when cloning fails', async () => {
     const f = await fixture();
     const failing: RepositorySource = {

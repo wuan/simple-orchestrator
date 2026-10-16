@@ -17,7 +17,7 @@ class ScriptedClient implements OpenCodeClient {
 
 const REPO = { owner: 'acme', name: 'widget' };
 
-function context(skill: TurnSkill): TurnContext {
+function context(skill: TurnSkill, pendingBaseIntegration?: boolean): TurnContext {
   return {
     skill,
     repo: REPO,
@@ -28,6 +28,7 @@ function context(skill: TurnSkill): TurnContext {
     changeName: 'add-x',
     transcript: [],
     pendingFeedback: [],
+    ...(pendingBaseIntegration === undefined ? {} : { pendingBaseIntegration }),
   };
 }
 
@@ -62,6 +63,13 @@ describe('buildSkillPrompt', () => {
 
   it('instructs the apply skill to archive', () => {
     expect(buildSkillPrompt(context('apply'))).toContain('openspec archive');
+  });
+
+  it('tells the turn to resolve a pending base merge only when flagged', () => {
+    expect(buildSkillPrompt(context('propose', true))).toContain(
+      'unresolved merge of the base branch `main`',
+    );
+    expect(buildSkillPrompt(context('propose', false))).not.toContain('unresolved merge');
   });
 });
 

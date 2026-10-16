@@ -78,8 +78,15 @@ turn and refreshed with `git fetch` before each later turn. Every turn then runs
 in a throwaway `git worktree` of that clone, checked out on the workflow branch
 and created under `<workspace.worktrees>` (default the OS temp directory). The
 worktree is removed when the turn ends, so turns stay isolated while the clone
-is reused. See [docs/configuration.md](docs/configuration.md) for the
-`workspace` fields.
+is reused.
+
+Because the base branch keeps moving while a change is in flight, provisioning
+also merges the current base branch into the workflow branch: a clean merge is
+committed, and a conflicted merge is deliberately left in the worktree for the
+turn to resolve. A turn that finishes without the base integrated is failed
+(naming the base branch) rather than pushing a stale branch, and a branch left
+behind by an earlier attempt is not reused when a workflow starts. See
+[docs/configuration.md](docs/configuration.md) for the `workspace` fields.
 
 ## Requirements
 

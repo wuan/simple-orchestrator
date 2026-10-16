@@ -50,6 +50,7 @@ interface Harness {
   runtime: FakeRuntime;
   engine: WorkflowEngine;
   openspec: FakeOpenspecCli;
+  sandbox: FakeSandbox;
   messages: string[];
 }
 
@@ -68,19 +69,20 @@ function harness(
   if (options.ready === true) openspec.markReady('add-x');
   else openspec.markInProgress('add-x');
 
+  const sandbox = new FakeSandbox();
   const messages: string[] = [];
   const logger = options.logger ?? ((message: string) => void messages.push(message));
   const engine = new WorkflowEngine({
     provider,
     runtime: options.runtime ?? runtime,
-    sandbox: new FakeSandbox(),
+    sandbox,
     openspec,
     labels: DEFAULT_LABELS,
     baseBranch: 'main',
     maxReviseRounds: options.maxReviseRounds ?? 3,
     logger,
   });
-  return { provider, runtime, engine, openspec, messages };
+  return { provider, runtime, engine, openspec, sandbox, messages };
 }
 
 async function seedIssue(
@@ -470,5 +472,46 @@ describe('WorkflowEngine turn publishing', () => {
 
     expect(await labelsOf(h.provider, 100)).toContain(DEFAULT_LABELS.failed);
     expect(h.provider.commentLog.some((c) => c.body.includes('push rejected'))).toBe(true);
+  });
+});
+
+describe('WorkflowEngine base integration', () => {
+  it('flags a pending base integration on the turn context', async () => {
+    const h = harness();
+    // Pending before the turn, integrated after it.
+    h.sandbox.baseIntegrationResults = [false, true];
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+
+    await h.engine.start(issue);
+
+    expect(h.runtime.requests[0]?.context.pendingBaseIntegration).toBe(true);
+    expect(h.provider.pushes).toHaveLength(1);
+  });
+
+  it('does not flag a pending base integration when the base is already merged', async () => {
+    const { provider, runtime, engine } = harness();
+    const issue = await seedIssue(provider);
+    runtime.enqueue(proposeResult());
+
+    await engine.start(issue);
+
+    expect(runtime.requests[0]?.context.pendingBaseIntegration).toBe(false);
+  });
+
+  it('fails the workflow without pushing when the base is left unintegrated', async () => {
+    const h = harness();
+    // Pending before the turn and still unresolved after it.
+    h.sandbox.baseIntegrationResults = [false, false];
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+
+    await h.engine.start(issue);
+
+    expect(await labelsOf(h.provider, 100)).toContain(DEFAULT_LABELS.failed);
+    expect(h.provider.pushes).toHaveLength(0);
+    expect(
+      h.provider.commentLog.some((c) => c.body.includes("base branch 'main' was not integrated")),
+    ).toBe(true);
   });
 });

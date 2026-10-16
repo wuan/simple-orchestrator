@@ -122,10 +122,10 @@ export class GitHubProvider implements RepoProvider {
    * first propose turn commits, so the branch is seeded with an empty commit
    * (the base tree with a new parent) that the pull request can target.
    *
-   * `branch` may already exist: a start that failed after creating it (or a
-   * resumed workflow) leaves it behind. It is only advanced when it still
-   * points at the base commit; a branch that already carries commits is left
-   * untouched so resumed work is never lost.
+   * `branch` may already exist, left behind by an earlier attempt. Because this
+   * runs only when the issue has no active pull request, such a branch is reset
+   * to the current base rather than reused: a stale branch is what let a
+   * workflow start many commits behind the base.
    */
   private async ensureWorkflowBranch(branch: string, baseSha: string): Promise<void> {
     const seedSha = await this.seedCommit(baseSha);
@@ -135,15 +135,9 @@ export class GitHubProvider implements RepoProvider {
       });
     } catch (error) {
       if (!(error instanceof GitHubApiError) || error.status !== 422) throw error;
-      const existing = await this.transport.json<{ object: { sha: string } }>(
-        'GET',
-        `${this.repoPath()}/git/ref/heads/${branch}`,
-      );
-      if (existing.data?.object.sha === baseSha) {
-        await this.transport.json('PATCH', `${this.repoPath()}/git/refs/heads/${branch}`, {
-          body: { sha: seedSha },
-        });
-      }
+      await this.transport.json('PATCH', `${this.repoPath()}/git/refs/heads/${branch}`, {
+        body: { sha: seedSha, force: true },
+      });
     }
   }
 
