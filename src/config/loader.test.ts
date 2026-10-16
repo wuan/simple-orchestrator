@@ -109,4 +109,21 @@ workspace:
 `;
     expect(() => parseConfig(bad)).toThrowError(/worktrees/);
   });
+
+  it('defaults verbose logging to off when the block is omitted', () => {
+    expect(parseConfig(MINIMAL).logging.verbose).toBe(false);
+  });
+
+  it('accepts logging.verbose when provided', () => {
+    expect(parseConfig(`${MINIMAL}\nlogging:\n  verbose: true\n`).logging.verbose).toBe(true);
+  });
+
+  it('rejects a non-boolean verbose value', () => {
+    const bad = `
+${MINIMAL}
+logging:
+  verbose: 3
+`;
+    expect(() => parseConfig(bad)).toThrowError(/verbose/);
+  });
 });

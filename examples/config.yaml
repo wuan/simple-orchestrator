@@ -15,3 +15,5 @@ limits:
 workspace:
   root: ~/workspace
   worktrees: /tmp
+logging:
+  verbose: false

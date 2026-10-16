@@ -40,6 +40,7 @@ function makePoller(
   provider: FakeProvider,
   runtime: FakeRuntime,
   openspec: FakeOpenspecCli,
+  logger?: (message: string) => void,
 ): Poller {
   return new Poller({
     provider,
@@ -48,6 +49,7 @@ function makePoller(
     openspec,
     labels: DEFAULT_LABELS,
     baseBranch: 'main',
+    logger,
   });
 }
 
@@ -111,6 +113,40 @@ describe('end-to-end workflow', () => {
     // Restart: a fresh poller with no local memory.
     await makePoller(provider, runtime, openspec).pollOnce();
     expect(runtime.requests.length).toBe(turnsAfterPropose);
+  });
+
+  it('produces poll-cycle and turn diagnostics when verbose is enabled', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+
+    const messages: string[] = [];
+    const poller = makePoller(provider, runtime, openspec, (message) => messages.push(message));
+    runtime.enqueue(proposeResult('proposed the change'));
+    await poller.pollOnce();
+
+    const log = messages.join('\n');
+    expect(log).toContain('polling fake:acme/widget');
+    expect(log).toContain('started workflow for issue #1 (PR #100)');
+    expect(log).toContain('starting propose turn');
+    expect(log).toContain('readiness');
+  });
+
+  it('emits no diagnostics when verbose is disabled', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+
+    // No logger is injected, exactly as when verbose is off.
+    runtime.enqueue(proposeResult('proposed the change'));
+    const report = await makePoller(provider, runtime, openspec).pollOnce();
+
+    expect(report.started).toEqual([1]);
+    expect(runtime.requests).toHaveLength(1);
   });
 });
 

@@ -50,10 +50,16 @@ interface Harness {
   runtime: FakeRuntime;
   engine: WorkflowEngine;
   openspec: FakeOpenspecCli;
+  messages: string[];
 }
 
 function harness(
-  options: { ready?: boolean; maxReviseRounds?: number; runtime?: AgentRuntime } = {},
+  options: {
+    ready?: boolean;
+    maxReviseRounds?: number;
+    runtime?: AgentRuntime;
+    logger?: (message: string) => void;
+  } = {},
 ): Harness {
   const provider = new FakeProvider();
   const runtime = new FakeRuntime();
@@ -61,6 +67,8 @@ function harness(
   if (options.ready === true) openspec.markReady('add-x');
   else openspec.markInProgress('add-x');
 
+  const messages: string[] = [];
+  const logger = options.logger ?? ((message: string) => void messages.push(message));
   const engine = new WorkflowEngine({
     provider,
     runtime: options.runtime ?? runtime,
@@ -69,8 +77,9 @@ function harness(
     labels: DEFAULT_LABELS,
     baseBranch: 'main',
     maxReviseRounds: options.maxReviseRounds ?? 3,
+    logger,
   });
-  return { provider, runtime, engine, openspec };
+  return { provider, runtime, engine, openspec, messages };
 }
 
 async function seedIssue(
@@ -258,6 +267,85 @@ describe('WorkflowEngine.drive', () => {
   });
 });
 
+describe('WorkflowEngine verbose diagnostics', () => {
+  it('reports an idle decision and its reason', async () => {
+    const h = harness();
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    const started = await h.engine.start(issue);
+    h.messages.length = 0;
+
+    const pr = await h.provider.getPullRequest({
+      repo: h.provider.repo,
+      number: started.pullRequest?.ref.number ?? -1,
+    });
+    await h.engine.drive(pr!);
+
+    expect(h.messages.join('\n')).toContain('decision idle (no new human activity)');
+  });
+
+  it('reports an action decision and its reason', async () => {
+    const h = harness();
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    const started = await h.engine.start(issue);
+    const number = started.pullRequest?.ref.number ?? -1;
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'fix X' });
+    h.runtime.enqueue(proposeResult({ summary: 'revised' }));
+    h.messages.length = 0;
+
+    await h.engine.drive((await h.provider.getPullRequest({ repo: h.provider.repo, number }))!);
+
+    expect(h.messages.join('\n')).toContain('decision revise (new reviewer feedback)');
+  });
+
+  it('reports a successful propose turn and its readiness result', async () => {
+    const h = harness({ ready: true });
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    h.messages.length = 0;
+
+    await h.engine.start(issue);
+
+    const log = h.messages.join('\n');
+    expect(log).toContain('starting propose turn (branch openspec/issue-1)');
+    expect(log).toContain('succeeded with commits c1');
+    expect(log).toContain('readiness ready (change is complete and valid)');
+  });
+
+  it('reports a successful apply turn', async () => {
+    const h = harness({ ready: true });
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    const started = await h.engine.start(issue);
+    const number = started.pullRequest?.ref.number ?? -1;
+    h.provider.seedReview(number, { state: 'approved', body: 'lgtm' });
+    h.runtime.enqueue(applyResult({ commits: ['code-commit', 'archive-commit'] }));
+    h.messages.length = 0;
+
+    await h.engine.drive((await h.provider.getPullRequest({ repo: h.provider.repo, number }))!);
+
+    const log = h.messages.join('\n');
+    expect(log).toContain('starting apply turn (branch openspec/issue-1)');
+    expect(log).toContain('succeeded with commits code-commit, archive-commit');
+  });
+
+  it('reports a failing turn and the workflow failure', async () => {
+    const scripted = new ScriptedRuntime(async () => {
+      throw new Error('boom');
+    });
+    const h = harness({ runtime: scripted });
+    const issue = await seedIssue(h.provider);
+    h.messages.length = 0;
+
+    await h.engine.start(issue);
+
+    const log = h.messages.join('\n');
+    expect(log).toContain('propose turn failed: boom');
+    expect(log).toContain('failed: boom');
+  });
+});
+
 describe('WorkflowEngine failure handling', () => {
   it('retries a transient failure once and succeeds', async () => {
     const scripted = new ScriptedRuntime(async (call) => {
@@ -270,6 +358,9 @@ describe('WorkflowEngine failure handling', () => {
     await h.engine.start(issue);
     expect(scripted.calls).toBe(2);
     expect(await labelsOf(h.provider, 100)).toContain(DEFAULT_LABELS.proposing);
+    expect(h.messages.join('\n')).toContain(
+      'propose turn: retrying after transient failure: transient',
+    );
   });
 
   it('fails permanently after the retry also fails', async () => {

@@ -25,14 +25,30 @@ export class Poller {
 
   async pollOnce(): Promise<PollReport> {
     const { provider, labels } = this.options;
+    const log = this.options.logger ?? (() => {});
+    const repoId = `${provider.id}:${provider.repo.owner}/${provider.repo.name}`;
     const report: PollReport = { started: [], actions: [] };
 
+    log(`polling ${repoId}`);
     const issues = await provider.listTriggerIssues(labels.trigger);
+    log(
+      issues.length === 0
+        ? `${repoId}: no issues with the trigger label '${labels.trigger}'`
+        : `${repoId}: discovered issue(s) ${issues.map((issue) => `#${issue.ref.number}`).join(', ')}`,
+    );
     for (const issue of issues) {
       const existing = await provider.listPullRequestsForIssue(issue.ref);
-      if (existing.some((pullRequest) => pullRequest.state === 'open')) continue;
+      if (existing.some((pullRequest) => pullRequest.state === 'open')) {
+        log(`${repoId}: issue #${issue.ref.number} already has an open pull request`);
+        continue;
+      }
       const result = await this.engine.start(issue);
-      if (result.started) report.started.push(issue.ref.number);
+      if (result.started) {
+        report.started.push(issue.ref.number);
+        log(
+          `${repoId}: started workflow for issue #${issue.ref.number} (PR #${result.pullRequest?.ref.number ?? '?'})`,
+        );
+      }
     }
 
     const seen = new Set<number>();
@@ -43,9 +59,12 @@ export class Poller {
         seen.add(pullRequest.ref.number);
         const action = await this.engine.drive(pullRequest);
         report.actions.push({ pullRequest: pullRequest.ref.number, kind: action.kind });
+        const reason = 'reason' in action ? ` (${action.reason})` : '';
+        log(`${repoId}: PR #${pullRequest.ref.number} -> ${action.kind}${reason}`);
       }
     }
 
+    log(`${repoId}: polled, started ${report.started.length}, actions ${report.actions.length}`);
     return report;
   }
 }

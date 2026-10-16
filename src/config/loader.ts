@@ -6,11 +6,13 @@ import {
   DEFAULT_BASE_BRANCH,
   DEFAULT_LABELS,
   DEFAULT_LIMITS,
+  DEFAULT_LOGGING,
   DEFAULT_MAX_REVISE_ROUNDS,
   DEFAULT_POLL_INTERVAL_SECONDS,
   DEFAULT_WORKSPACE_ROOT,
   type LabelConfig,
   type Limits,
+  type LoggingConfig,
   type OrchestratorConfig,
   type RepositoryConfig,
   type WorkspaceConfig,
@@ -170,6 +172,16 @@ function parseWorkspace(raw: unknown): WorkspaceConfig {
   return workspace;
 }
 
+function parseLogging(raw: unknown): LoggingConfig {
+  if (raw === undefined) return { ...DEFAULT_LOGGING };
+  const record = asRecord(raw, 'logging');
+  const verbose = record['verbose'];
+  if (verbose !== undefined && typeof verbose !== 'boolean') {
+    throw new ConfigError("logging: 'verbose' must be a boolean when provided");
+  }
+  return { verbose: verbose ?? DEFAULT_LOGGING.verbose };
+}
+
 /**
  * Parse and validate an orchestrator configuration object or YAML string.
  * Throws {@link ConfigError} on any structural problem.
@@ -188,6 +200,7 @@ export function parseConfig(raw: unknown): OrchestratorConfig {
     repositories,
     limits: parseLimits(record['limits']),
     workspace: parseWorkspace(record['workspace']),
+    logging: parseLogging(record['logging']),
   };
 }
 
