@@ -14,11 +14,13 @@ const GITHUB_REVIEW_STATES: Record<string, ReviewState> = {
 };
 
 /**
- * Map a GitHub review state to the normalized model. Returns `null` for states
- * the orchestrator ignores (for example `dismissed` or `pending`).
+ * Map a GitHub review state to the normalized model. GitHub's REST API reports
+ * review states in upper case (`CHANGES_REQUESTED`), so matching is
+ * case-insensitive. Returns `null` for states the orchestrator ignores (for
+ * example `dismissed` or `pending`).
  */
 export function normalizeGithubReviewState(native: string): ReviewState | null {
-  return GITHUB_REVIEW_STATES[native] ?? null;
+  return GITHUB_REVIEW_STATES[native.toLowerCase()] ?? null;
 }
 
 /** The normalized event kind a submitted review of a given state produces. */

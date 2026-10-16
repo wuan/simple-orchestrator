@@ -12,9 +12,16 @@ describe('normalizeGithubReviewState', () => {
     expect(normalizeGithubReviewState('commented')).toBe('commented');
   });
 
+  it("accepts the REST API's upper-case review states", () => {
+    expect(normalizeGithubReviewState('APPROVED')).toBe('approved');
+    expect(normalizeGithubReviewState('CHANGES_REQUESTED')).toBe('changes_requested');
+    expect(normalizeGithubReviewState('COMMENTED')).toBe('commented');
+  });
+
   it('ignores states that carry no action', () => {
     expect(normalizeGithubReviewState('dismissed')).toBeNull();
     expect(normalizeGithubReviewState('pending')).toBeNull();
+    expect(normalizeGithubReviewState('DISMISSED')).toBeNull();
   });
 });
 
