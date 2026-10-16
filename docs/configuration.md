@@ -70,11 +70,14 @@ while each turn runs in a throwaway git worktree of that clone, created under
 | `agent`    | no       | host default                  | OpenCode agent to run for a turn.                                                     |
 | `database` | no       | SDK default (in-memory)       | Path to the OpenCode database holding provider auth and model definitions.            |
 
-The embedded OpenCode host runs in-process, so it needs the same provider
-authentication the `opencode` CLI uses. Point `database` at that database (find
-it with `opencode debug paths db`) or set `OPENCODE_DB`; unlike the CLI, the
-SDK's default database is in-memory and holds no auth or model definitions, so
-the free-tier default model is refused and the turn fails.
+The embedded OpenCode host runs in-process, so it needs provider authentication.
+The simplest source is the provider's API-key environment variable (for example
+`GREENPT_API_KEY`; `opencode auth export` prints stored credentials), which lets
+the host use its own private database. Alternatively, `database` (or
+`OPENCODE_DB`) points the host at the `opencode` CLI's database to reuse stored
+auth (find it with `opencode debug paths db`) — but do **not** point it at a
+database a running OpenCode service is using: two hosts on one database disrupt
+each other.
 
 ## Credential schemes
 

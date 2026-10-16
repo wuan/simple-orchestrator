@@ -192,8 +192,10 @@ closed when the service stops.
 **Node.js 24+** (Node 22 cannot load it).
 
 The host runs each turn on the model in the `agent` configuration block
-(`agent.model`, default `greenpt/deepseek-v4.1-flash`) and reuses the provider
-authentication in the OpenCode database (`agent.database`, or `OPENCODE_DB`).
+(`agent.model`, default `greenpt/deepseek-v4.1-flash`) and authenticates with the
+provider's API-key environment variable (for example `GREENPT_API_KEY`); set
+`agent.database` (or `OPENCODE_DB`) only to reuse the `opencode` CLI's stored
+auth, and never point it at a database a running OpenCode service is using.
 After a turn succeeds the orchestrator pushes the workflow branch itself, so the
 turn's commits appear on the pull request; a turn that errors, or a push that
 fails, marks the workflow failed instead of advancing it.

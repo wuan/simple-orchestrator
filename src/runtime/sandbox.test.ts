@@ -142,6 +142,23 @@ describe('WorktreeSandbox', () => {
     await second.dispose();
   });
 
+  it('reclaims the branch from a worktree left by a crashed turn', async () => {
+    const f = await fixture();
+    const sandbox = sandboxFor(f);
+
+    // A turn that was interrupted before `dispose` leaves its worktree on the
+    // branch; the next turn must still be able to check it out.
+    const crashed = await sandbox.create({ branch: 'openspec/issue-1' });
+    expect(existsSync(crashed.workspace)).toBe(true);
+
+    const recovered = await sandbox.create({ branch: 'openspec/issue-1' });
+
+    expect(existsSync(recovered.workspace)).toBe(true);
+    expect(recovered.workspace).not.toBe(crashed.workspace);
+    expect(existsSync(crashed.workspace)).toBe(false);
+    await recovered.dispose();
+  });
+
   it('cleans up when cloning fails', async () => {
     const f = await fixture();
     const failing: RepositorySource = {
