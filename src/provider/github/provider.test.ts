@@ -67,6 +67,56 @@ describe('GitHubProvider', () => {
     expect(forIssue.map((pr) => pr.ref.number)).toEqual([created.ref.number]);
   });
 
+  it('seeds the workflow branch with a commit so the pull request is accepted', async () => {
+    const { provider, github } = setup();
+    github.seedIssue({ number: 8, labels: ['openspec'] });
+
+    const created = await provider.createDraftPullRequest({
+      issue: { repo: provider.repo, number: 8 },
+      baseBranch: 'main',
+      title: 'Issue 8',
+      body: 'Closes #8',
+      draft: true,
+    });
+
+    // A branch identical to the base is rejected by GitHub ("no commits
+    // between"); the head must now be ahead of main.
+    expect(github.branchSha(created.branch)).not.toBe('base-sha');
+  });
+
+  it('advances an existing empty workflow branch left by a failed start', async () => {
+    const { provider, github } = setup();
+    github.seedIssue({ number: 9, labels: ['openspec'] });
+    github.seedRef('openspec/issue-9', 'base-sha');
+
+    const created = await provider.createDraftPullRequest({
+      issue: { repo: provider.repo, number: 9 },
+      baseBranch: 'main',
+      title: 'Issue 9',
+      body: 'Closes #9',
+      draft: true,
+    });
+
+    expect(created.branch).toBe('openspec/issue-9');
+    expect(github.branchSha('openspec/issue-9')).not.toBe('base-sha');
+  });
+
+  it('leaves a workflow branch that already carries commits untouched', async () => {
+    const { provider, github } = setup();
+    github.seedIssue({ number: 11, labels: ['openspec'] });
+    github.seedRef('openspec/issue-11', 'existing-commit');
+
+    await provider.createDraftPullRequest({
+      issue: { repo: provider.repo, number: 11 },
+      baseBranch: 'main',
+      title: 'Issue 11',
+      body: 'Closes #11',
+      draft: true,
+    });
+
+    expect(github.branchSha('openspec/issue-11')).toBe('existing-commit');
+  });
+
   it('manages lifecycle labels on a pull request', async () => {
     const { provider, github } = setup();
     github.seedPull({ number: 10, head: 'openspec/issue-1' });
@@ -83,6 +133,31 @@ describe('GitHubProvider', () => {
     );
     pr = await provider.getPullRequest({ repo: provider.repo, number: 10 });
     expect(pr?.labels).not.toContain('openspec:proposing');
+  });
+
+  it('defines a missing lifecycle label before applying it', async () => {
+    const { provider, github } = setup();
+    github.seedPull({ number: 13, head: 'openspec/issue-13' });
+
+    await provider.addLabels({ kind: 'pull_request', ref: { repo: provider.repo, number: 13 } }, [
+      'openspec:ready',
+    ]);
+
+    expect(github.repoLabelNames()).toContain('openspec:ready');
+    const pr = await provider.getPullRequest({ repo: provider.repo, number: 13 });
+    expect(pr?.labels).toContain('openspec:ready');
+  });
+
+  it('ignores removing a label that is not applied', async () => {
+    const { provider, github } = setup();
+    github.seedPull({ number: 12, head: 'openspec/issue-12' });
+
+    await expect(
+      provider.removeLabel(
+        { kind: 'pull_request', ref: { repo: provider.repo, number: 12 } },
+        'openspec:ready',
+      ),
+    ).resolves.toBeUndefined();
   });
 
   it('posts and lists comments', async () => {

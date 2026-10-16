@@ -92,9 +92,7 @@ export class GitHubProvider implements RepoProvider {
     if (sha === undefined) {
       throw new GitHubApiError(`could not resolve base ref '${input.baseBranch}'`, baseRef.status);
     }
-    await this.transport.json('POST', `${this.repoPath()}/git/refs`, {
-      body: { ref: `refs/heads/${branch}`, sha },
-    });
+    await this.ensureWorkflowBranch(branch, sha);
     const created = await this.transport.json<GithubPullPayload>(
       'POST',
       `${this.repoPath()}/pulls`,
@@ -114,6 +112,60 @@ export class GitHubProvider implements RepoProvider {
     const pullRequest = mapPullRequest(this.repo, created.data);
     pullRequest.linkedIssue = input.issue;
     return pullRequest;
+  }
+
+  /**
+   * Create `branch` so it has at least one commit ahead of the base. GitHub
+   * rejects a pull request when its head branch has no commits between it and
+   * the base, but the orchestrator opens the draft pull request before the
+   * first propose turn commits, so the branch is seeded with an empty commit
+   * (the base tree with a new parent) that the pull request can target.
+   *
+   * `branch` may already exist: a start that failed after creating it (or a
+   * resumed workflow) leaves it behind. It is only advanced when it still
+   * points at the base commit; a branch that already carries commits is left
+   * untouched so resumed work is never lost.
+   */
+  private async ensureWorkflowBranch(branch: string, baseSha: string): Promise<void> {
+    const seedSha = await this.seedCommit(baseSha);
+    try {
+      await this.transport.json('POST', `${this.repoPath()}/git/refs`, {
+        body: { ref: `refs/heads/${branch}`, sha: seedSha },
+      });
+    } catch (error) {
+      if (!(error instanceof GitHubApiError) || error.status !== 422) throw error;
+      const existing = await this.transport.json<{ object: { sha: string } }>(
+        'GET',
+        `${this.repoPath()}/git/ref/heads/${branch}`,
+      );
+      if (existing.data?.object.sha === baseSha) {
+        await this.transport.json('PATCH', `${this.repoPath()}/git/refs/heads/${branch}`, {
+          body: { sha: seedSha },
+        });
+      }
+    }
+  }
+
+  /** A commit with the base commit's tree but one commit ahead of `baseSha`. */
+  private async seedCommit(baseSha: string): Promise<string> {
+    const baseCommit = await this.transport.json<{ tree: { sha: string } }>(
+      'GET',
+      `${this.repoPath()}/git/commits/${baseSha}`,
+    );
+    const tree = baseCommit.data?.tree.sha;
+    if (tree === undefined) {
+      throw new GitHubApiError('could not resolve base commit tree', baseCommit.status);
+    }
+    const created = await this.transport.json<{ sha: string }>(
+      'POST',
+      `${this.repoPath()}/git/commits`,
+      { body: { message: 'Start OpenSpec workflow', tree, parents: [baseSha] } },
+    );
+    const sha = created.data?.sha;
+    if (sha === undefined) {
+      throw new GitHubApiError('could not create workflow seed commit', created.status);
+    }
+    return sha;
   }
 
   async getPullRequest(pullRequest: PullRequestRef): Promise<ProviderPullRequest | null> {
@@ -155,16 +207,43 @@ export class GitHubProvider implements RepoProvider {
   }
 
   async addLabels(target: ThreadTarget, labels: string[]): Promise<void> {
+    await this.ensureLabelsExist(labels);
     await this.transport.json('POST', `${this.repoPath()}/issues/${target.ref.number}/labels`, {
       body: { labels },
     });
   }
 
+  /**
+   * GitHub only applies labels that are defined on the repository, so a
+   * lifecycle label (proposing, ready, ...) is created on first use. This keeps
+   * a fresh repository zero-setup: labeling an issue `openspec` is enough.
+   */
+  private async ensureLabelsExist(labels: string[]): Promise<void> {
+    if (labels.length === 0) return;
+    const existing = await this.transport.paginate<{ name: string }>(`${this.repoPath()}/labels`);
+    const known = new Set(existing.map((label) => label.name));
+    for (const name of labels) {
+      if (known.has(name)) continue;
+      await this.transport.json('POST', `${this.repoPath()}/labels`, {
+        body: { name, color: 'ededed' },
+      });
+      known.add(name);
+    }
+  }
+
   async removeLabel(target: ThreadTarget, label: string): Promise<void> {
-    await this.transport.json(
-      'DELETE',
-      `${this.repoPath()}/issues/${target.ref.number}/labels/${encodeURIComponent(label)}`,
-    );
+    try {
+      await this.transport.json(
+        'DELETE',
+        `${this.repoPath()}/issues/${target.ref.number}/labels/${encodeURIComponent(label)}`,
+      );
+    } catch (error) {
+      // GitHub answers 404 when the label is not currently applied to the
+      // target. Removing a label that is not there is a no-op, so phase
+      // transitions must not fail on it.
+      if (error instanceof GitHubApiError && error.status === 404) return;
+      throw error;
+    }
   }
 
   async comment(target: ThreadTarget, body: string): Promise<void> {
