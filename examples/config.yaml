@@ -1,0 +1,14 @@
+repositories:
+  - provider: github
+    owner: acme
+    name: widget
+    credential: env:GITHUB_TOKEN
+    baseBranch: main
+    pollIntervalSeconds: 60
+    maxReviseRounds: 3
+    labels:
+      trigger: openspec
+limits:
+  maxSteps: 200
+  maxTokens: 200000
+  maxDurationMs: 1800000

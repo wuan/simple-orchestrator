@@ -1,0 +1,190 @@
+# openspec-workflow-orchestrator
+
+A workflow orchestrator that turns a repository issue into a reviewed,
+executable **OpenSpec** change and then implements it — with a human approval
+gate in between. It connects to source hosts (GitHub first), polls them, and
+drives the OpenSpec lifecycle from the issue's problem description.
+
+## How it works
+
+```
+  issue + label "openspec"
+        |  orchestrator: create branch + draft PR, run PROPOSE turn
+        v
+   +-------------+     objective predicate     +----------+
+   | PROPOSING   | ------------------------->  |  READY   |
+   | (label)     |  <---------------------     | (label)  |
+   +-------------+   review: changes requested +----------+
+        ^                                          |
+        |                                          | review: approved
+        |                                          v
+        |                                   +----------------+
+        +-------- (new feedback) ---------- | IMPLEMENTING   |
+                                            | (label: claim) |
+                                            +----------------+
+                                                   | merged
+                                                   v
+                                              +----------+
+                                              |   DONE   |  (change archived in the PR)
+                                              +----------+
+```
+
+- An issue carrying the trigger label starts a workflow: one branch and one
+  draft pull request carrying an OpenSpec change.
+- The agent runs **bounded turns**: a propose turn drafts/revises the change,
+  reading the whole review transcript each time; a submitted review triggers a
+  revise turn; an approval is the gate; plain comments do nothing.
+- **READY** is computed objectively from `openspec status --json` and
+  `openspec validate --strict`, never from agent prose.
+- On approval the orchestrator claims the approval (label `openspec:implementing`)
+  *before* running the apply turn, so a later push cannot re-trigger apply.
+- The apply turn implements the tasks and folds `openspec archive` into its
+  final commit; merging the PR completes the workflow.
+
+There is no database: phase lives in host labels, and the watermark is the
+timestamp of the last human review versus the orchestrator's last turn comment.
+The service polls (outbound-only) and can restart at any time without
+duplicating work.
+
+## Architecture
+
+```
+ +---------------------------------------------------------------+
+ | Poller  ->  WorkflowEngine  ->  decision (labels + timestamps) |
+ |                    |                                           |
+ |                    v                                           |
+ |             Sandbox (ephemeral workspace)                      |
+ |                    |                                           |
+ |                    v                                           |
+ |             AgentRuntime  (plugin)  -- OpenCode adapter        |
+ |                    |                                           |
+ |                    v                                           |
+ |             RepoProvider  (plugin)  -- GitHub adapter          |
+ +---------------------------------------------------------------+
+```
+
+Two seams isolate everything external:
+
+- **`RepoProvider`** — issues, comments, labels, pull requests, review state,
+  clone. A GitHub adapter ships first; GitLab is an extension point.
+- **`AgentRuntime`** — runs exactly one OpenSpec skill (`propose` or `apply`) per
+  turn in a sandbox and returns a structured result.
+
+## Requirements
+
+- Node.js 22+ and git
+- The `openspec` CLI on `PATH` (used for the readiness predicate)
+- A container runtime (Docker) if you want container-level turn isolation
+- An agent runtime (see [Agent runtime](#agent-runtime))
+
+## Install and build
+
+```bash
+npm install
+npm run build
+```
+
+## Configure
+
+The service is single-tenant and config-driven. See
+[docs/configuration.md](docs/configuration.md) for every field and default.
+
+```yaml
+repositories:
+  - provider: github
+    owner: acme
+    name: widget
+    credential: env:GITHUB_TOKEN
+    baseBranch: main
+limits:
+  maxSteps: 200
+  maxTokens: 200000
+  maxDurationMs: 1800000
+```
+
+Credentials are references resolved from the environment (`env:NAME`); secrets
+are never stored in the config. Startup fails fast, naming the repository, when
+a credential reference is missing or its variable is unset.
+
+## Run
+
+```bash
+# one poll cycle across every repository, then exit
+GITHUB_TOKEN=... node dist/index.js --config examples/config.yaml --once
+
+# long-running poller (polls each repository on its interval)
+GITHUB_TOKEN=... node dist/index.js --config examples/config.yaml
+```
+
+Label an issue with `openspec` to start a workflow. Lifecycle labels
+`openspec:proposing`, `openspec:ready`, `openspec:implementing`,
+`openspec:done`, and `openspec:failed` are managed on the pull request.
+
+### Local smoke test
+
+The built-in `fake` provider keeps everything in memory so you can confirm the
+service starts without any network access:
+
+```yaml
+repositories:
+  - provider: fake
+    owner: acme
+    name: widget
+    credential: env:ANY_VALUE
+```
+
+```bash
+ANY_VALUE=1 node dist/index.js --config fake.yaml --once
+```
+
+## Agent runtime
+
+Turns run through an `AgentRuntime`. The shipped **OpenCode adapter** runs the
+OpenSpec `propose` and `apply` skills, and is written against a narrow
+`OpenCodeClient` interface so it can be pointed at your OpenCode server.
+
+By default the service uses an `UnconfiguredRuntime` that **fails loudly** the
+first time a turn runs rather than silently doing nothing. To run real turns,
+supply a configured runtime when building the service (see
+`createService` in `src/service.ts` and `OpenCodeRuntime` in
+`src/runtime/opencode/`). Wiring the client to a live OpenCode server is
+deployment-specific and is not exercised by the test suite.
+
+## Deploy
+
+The service is a stateless, outbound-only poller: it needs no inbound ports,
+no webhooks, and no database, so it runs identically on a laptop, a VM, or in a
+cluster.
+
+- Provide credentials via the environment (a secret manager is fine).
+- Give it the `openspec` CLI and git on `PATH`.
+- For container-isolated turns, make a container runtime available and run the
+  turn command via the provided container args (`buildDockerRunArgs`).
+- Restart freely: on start it re-discovers in-flight workflows from their
+  lifecycle labels and resumes without duplicating turns.
+
+## Testing
+
+```bash
+npm test          # unit + integration (fakes; no network)
+npm run lint
+npm run typecheck
+```
+
+The end-to-end tests cover the full lifecycle against fakes and verify that
+`openspec archive` folds a change's requirements into the main specs.
+
+## Project layout
+
+```
+src/
+  config/         configuration model, loader, credential resolution
+  domain/         core domain types (events, phases, turns)
+  provider/       RepoProvider seam, GitHub adapter, fake, contract suite
+  runtime/        AgentRuntime seam, limits, sandbox, policy, OpenCode adapter
+  orchestrator/   poller, engine, decision, readiness, labels
+  service.ts      composition root
+  index.ts        CLI
+docs/             operator documentation
+examples/         example configuration
+```
