@@ -10,7 +10,7 @@ import { DEFAULT_LABELS } from './types.js';
 const EXAMPLE = fileURLToPath(new URL('../../examples/config.yaml', import.meta.url));
 
 describe('documented example config', () => {
-  it('parses and resolves credentials', () => {
+  it('parses and resolves credentials', async () => {
     const config = loadConfigFile(EXAMPLE);
     expect(config.repositories).toHaveLength(1);
 
@@ -19,7 +19,7 @@ describe('documented example config', () => {
     expect(repo?.pollIntervalSeconds).toBe(60);
     expect(repo?.labels.trigger).toBe(DEFAULT_LABELS.trigger);
 
-    const resolved = resolveCredentials(
+    const resolved = await resolveCredentials(
       config,
       new EnvCredentialResolver({ GITHUB_TOKEN: 'example-token' }),
     );

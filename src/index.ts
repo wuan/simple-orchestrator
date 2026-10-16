@@ -1,9 +1,10 @@
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
-import { EnvCredentialResolver } from './config/credentials.js';
+import { EnvCredentialResolver, FallbackCredentialResolver, GhCredentialResolver } from './config/credentials.js';
 import { loadConfigFile } from './config/loader.js';
 import { createService, type BuildServiceOptions, type Service } from './service.js';
+import { NodeCommandRunner } from './system/commands.js';
 import { VERSION } from './version.js';
 
 const USAGE = `openspec-workflow-orchestrator ${VERSION}
@@ -96,8 +97,11 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<number>
 
   let service: Service;
   try {
-    service = createService(config, {
-      credentials: new EnvCredentialResolver(deps.env ?? process.env),
+    service = await createService(config, {
+      credentials: new FallbackCredentialResolver([
+        new EnvCredentialResolver(deps.env ?? process.env),
+        new GhCredentialResolver({ commands: new NodeCommandRunner() }),
+      ]),
       ...deps.serviceOptions,
     });
   } catch (error) {

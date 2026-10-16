@@ -30,6 +30,6 @@ Teams that work from repository issues have no repeatable way to turn an issue i
 ## Impact
 
 - **New code**: orchestrator service (poller, state machine, turn dispatcher, job runner) plus provider and runtime adapters. Greenfield repository.
-- **External dependencies**: GitHub REST/GraphQL APIs; a headless agent harness (OpenCode first); a container runtime for sandboxed jobs; the OpenSpec CLI.
-- **Operational**: outbound-only networking; per-repo fine-grained tokens; no inbound ports or webhook configuration; a stateful component is avoided by design.
+- **External dependencies**: the GitHub CLI (`gh`) or GitHub REST/GraphQL APIs; a headless agent harness (OpenCode first); a container runtime for sandboxed jobs; the OpenSpec CLI.
+- **Operational**: outbound-only networking; per-repo credentials from environment variables or the operator's `gh` session; no inbound ports or webhook configuration; a stateful component is avoided by design.
 - **Future**: GitLab adapter (review state is GraphQL-only and its blocking semantics are a paid tier), additional runtime adapters, and an optional move to a multi-tenant install flow without redesigning the provider seam.

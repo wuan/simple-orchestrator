@@ -50,7 +50,7 @@ Risks: GitHub reviews have no `since` filter, so the poller must fetch recent re
 
 ### Decision: Polling instead of webhooks
 
-The service polls each configured repository. Reads use conditional requests, pagination, and ETag/`since` where the host supports it.
+The service polls each configured repository. Reads paginate; where the transport supports it, reads also use conditional requests and ETag/`since`.
 
 Alternatives considered: webhooks (rejected: require a public endpoint and per-repo configuration, reducing portability); CI-native execution (rejected: must be built twice, least app-like).
 
@@ -74,9 +74,17 @@ READY is computed by the orchestrator from `openspec status --change <name> --js
 
 Alternatives considered: a single fixed harness (rejected: couples orchestration to one vendor); building an in-house agent loop (rejected: reimplements tool use, editing, sandboxing with no near-term benefit).
 
+### Decision: GitHub access through the `gh` CLI
+
+The GitHub provider performs API operations and clones through the operator's `gh` CLI, authenticated by the configured credential or by the operator's existing `gh auth login` session. Host calls sit behind a transport seam, so the direct REST implementation (bearer auth, ETag caching, pagination, rate-limit backoff) remains available and selectable.
+
+Alternatives considered: a bespoke REST client only (rejected as the default: forces token provisioning even when `gh` is already authenticated); wiring both transports per repository from configuration (deferred: adds configuration surface with no current demand).
+
+Consequence: no token provisioning is required when `gh` is installed and authenticated, and authentication follows the operator's session. Cost: the `gh` CLI becomes a runtime dependency, and conditional-request and rate-limit backoff move into `gh` rather than the provider, so polling-efficiency guarantees are weaker unless the REST transport is selected.
+
 ### Decision: Least-privilege, sandboxed turns
 
-Each turn runs as an ephemeral container cloned at the workflow branch, with a fine-grained token scoped to that repository. The turn may push only to its branch: no default-branch writes, no force-push, no merge. The bot has a distinct identity and marks its own output so the poller can exclude it.
+Each turn runs as an ephemeral container cloned at the workflow branch, using the repository's configured credential or the operator's authenticated `gh` session. The turn may push only to its branch: no default-branch writes, no force-push, no merge. The bot has a distinct identity and marks its own output so the poller can exclude it.
 
 ### Decision: Archive inside the apply commit
 
@@ -86,7 +94,8 @@ The apply turn runs `openspec archive` and commits code, updated specs, and the 
 
 - [Timestamp watermark races (dismissed/edited reviews, clock skew)] -> The `implementing` claim makes approval consumption idempotent; treat timestamps as a hint, not an authority, and compare against the last bot turn rather than wall-clock alone.
 - [GitHub has no `since` for reviews] -> Fetch a bounded recent window and compare timestamps; accept a small overlap.
-- [Polling cost and rate limits at scale] -> Conditional requests, pagination, per-repo fairness, and backoff below quota.
+- [Polling cost and rate limits at scale] -> Pagination, per-repo fairness, and backoff below quota where the transport supports it; the REST transport provides conditional requests.
+- [`gh` CLI is a runtime dependency and weakens conditional-request/backoff guarantees] -> Confine host access to the transport seam and keep the REST transport selectable.
 - [Provider divergence] -> Confine host differences to the provider; encode GitLab's GraphQL-only review state and paid-tier blocking semantics in the adapter, never in orchestration.
 - [One PR carries plan and code, so it can grow large] -> Accepted; the plan is small and the code review happens after the apply turn.
 - [Approval dismissal on push] -> Consume the approval before pushing (the claim).
@@ -95,7 +104,7 @@ The apply turn runs `openspec archive` and commits code, updated specs, and the 
 
 ## Migration Plan
 
-Greenfield, no migration. Deployment: build and run the service with a config listing repositories and externally sourced credentials. Rollback: stop the service; because it is stateless, no state cleanup is required.
+Greenfield, no migration. Deployment: build and run the service with a config listing repositories and externally sourced credentials (environment variables or an authenticated `gh` session). Rollback: stop the service; because it is stateless, no state cleanup is required.
 
 ## Open Questions
 

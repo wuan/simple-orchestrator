@@ -5,8 +5,9 @@
 - [x] 1.1 Select the implementation language/runtime and scaffold the service project so that build, lint, and the test runner all execute against an empty suite
 - [x] 1.2 Define core domain types (normalized event set, workflow phase, turn context, structured turn result) and verify unit tests cover event/phase validity
 - [x] 1.3 Implement the configuration model and loader per `orchestrator-configuration` (declarative repo list, credential references, label and interval overrides) and verify startup fails fast, naming the repo, when a credential reference is missing
-- [x] 1.4 Resolve credentials from environment or an external secret source and verify a config that references a token never requires the secret to be inlined
+- [x] 1.4 Resolve credentials from an environment variable or an external secret source (including the `gh` CLI) and verify a config that references a token never requires the secret to be inlined
 - [x] 1.5 Document configuration fields, defaults, and an example in docs/configuration.md and verify the documented example parses and starts
+- [x] 1.6 Implement ordered credential fallback (environment variable, then `gh auth token`) and verify startup succeeds against an authenticated `gh` with the variable unset, and fails fast naming the repository when neither source provides a token
 
 ## 2. RepoProvider
 
@@ -16,8 +17,10 @@
 - [x] 2.4 Implement branch and draft pull request creation plus lifecycle label management and verify labels are set and cleared as specified
 - [x] 2.5 Implement review-state reads from pull request review events with timestamps and verify the newest human review is reported while bot reviews are excluded
 - [x] 2.6 Implement clone-at-branch and bot identity detection and verify bot comments and reviews are classified as non-human
-- [x] 2.7 Add conditional requests, pagination, and rate-limit backoff and verify unchanged resources are skipped and a low quota threshold triggers backoff
+- [x] 2.7 Add conditional requests, pagination, and rate-limit backoff to the direct REST transport and verify unchanged resources are skipped and a low quota threshold triggers backoff
 - [x] 2.8 Publish a provider contract test suite and run it against the GitHub adapter so future providers can reuse it
+- [x] 2.9 Extract a transport seam from the GitHub provider and implement a `gh` CLI transport (`gh api`) with pagination, and verify host operations execute through `gh`
+- [x] 2.10 Clone the workflow branch through `gh repo clone` and verify both the clone and API calls use the operator's `gh` session when no token is configured
 
 ## 3. AgentRuntime
 
@@ -45,6 +48,7 @@
 - [x] 5.1 End-to-end test against a fake provider and runtime (issue -> propose -> request changes -> revise -> approve -> apply -> merge) and verify the change is archived and its requirements fold into the main specs
 - [x] 5.2 Verify an end-to-end restart mid-workflow resumes without duplicating turns
 - [x] 5.3 Write operator documentation (README with run, deploy, and config steps plus an architecture overview) and verify a new operator can start the service from the documented steps alone
+- [x] 5.4 Document the `gh` CLI prerequisite and the credential fallback in the README and configuration docs, and verify the documented steps start the service with only `gh auth login`
 
 ## Workflow follow-up
 

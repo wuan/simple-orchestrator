@@ -102,17 +102,26 @@ limits:
   maxDurationMs: 1800000
 ```
 
-Credentials are references resolved from the environment (`env:NAME`); secrets
-are never stored in the config. Startup fails fast, naming the repository, when
-a credential reference is missing or its variable is unset.
+Credentials are references (`env:NAME` or `gh:token`); secrets are never stored
+in the config. The GitHub provider calls the API and clones through the `gh`
+CLI, so authentication can come from an environment variable or from `gh auth
+login`. Startup fails fast, naming the repository, when a credential reference
+is missing or cannot be resolved.
 
 ## Run
 
+The GitHub provider requires the [`gh` CLI](https://cli.github.com/) on `PATH`:
+
 ```bash
+gh auth login   # once; or provide GITHUB_TOKEN instead
+
 # one poll cycle across every repository, then exit
-GITHUB_TOKEN=... node dist/index.js --config examples/config.yaml --once
+node dist/index.js --config examples/config.yaml --once
 
 # long-running poller (polls each repository on its interval)
+node dist/index.js --config examples/config.yaml
+
+# a token in the environment still takes precedence for env: references
 GITHUB_TOKEN=... node dist/index.js --config examples/config.yaml
 ```
 

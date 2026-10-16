@@ -14,11 +14,22 @@ The orchestrator SHALL be configured from a declarative list of repositories, ea
 - **THEN** it polls each listed repository for new work
 
 ### Requirement: Credentials are external
-The orchestrator MUST obtain credentials from the environment or an external secret source and MUST NOT require secrets to be committed to the repository.
+The orchestrator MUST obtain credentials from an environment variable or an external secret source and MUST NOT require secrets to be committed to the repository.
 
 #### Scenario: Credential is referenced, not inlined
 - **WHEN** a repository entry needs authentication
 - **THEN** it references a credential resolved at runtime rather than embedding the secret in configuration
+
+### Requirement: GitHub credential fallback
+The orchestrator SHALL support resolving GitHub credentials from the operator's authenticated GitHub CLI session, and SHALL fall back to that session when a referenced environment variable is unset.
+
+#### Scenario: Credential resolved from the GitHub CLI
+- **WHEN** a repository references a GitHub CLI credential, or references an environment variable that is unset
+- **THEN** the orchestrator obtains the token from the operator's authenticated GitHub CLI session
+
+#### Scenario: No credential source is available
+- **WHEN** neither the referenced environment variable nor the GitHub CLI can provide a credential
+- **THEN** startup fails fast with an error naming the affected repository
 
 ### Requirement: Configurable labels and interval
 Trigger and lifecycle label names and the poll interval SHALL be configurable, with documented defaults applied when they are omitted.

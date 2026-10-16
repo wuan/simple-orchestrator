@@ -1,16 +1,15 @@
 import type { HttpClient } from '../../http/client.js';
 import { RateLimitError, RateLimitTracker, resetTimeFromHeaders } from '../../http/ratelimit.js';
+import {
+  GitHubApiError,
+  type GitHubTransport,
+  type JsonOptions,
+  type JsonResult,
+  type QueryValue,
+} from './transport.js';
 
-/** Raised for a non-2xx GitHub response other than a rate-limit condition. */
-export class GitHubApiError extends Error {
-  readonly status: number;
-
-  constructor(message: string, status: number) {
-    super(message);
-    this.name = 'GitHubApiError';
-    this.status = status;
-  }
-}
+export { GitHubApiError };
+export type { JsonOptions, JsonResult, QueryValue };
 
 /** Extract the `rel="next"` URL from a `Link` header, if present. */
 export function nextLink(header: string | undefined): string | null {
@@ -22,8 +21,6 @@ export function nextLink(header: string | undefined): string | null {
   return null;
 }
 
-export type QueryValue = string | number | boolean | undefined;
-
 export interface GitHubRestOptions {
   token: string;
   http: HttpClient;
@@ -33,25 +30,11 @@ export interface GitHubRestOptions {
   rateLimitFloor?: number;
 }
 
-export interface JsonResult<T> {
-  status: number;
-  data: T | null;
-  /** True when a conditional request was answered with 304 Not Modified. */
-  notModified: boolean;
-}
-
-export interface JsonOptions {
-  body?: unknown;
-  query?: Record<string, QueryValue>;
-  /** When set, an ETag is stored and sent as If-None-Match on repeat calls. */
-  cacheKey?: string;
-}
-
 /**
  * A thin GitHub REST client that adds bearer auth, ETag caching for conditional
  * requests, pagination, and rate-limit backoff.
  */
-export class GitHubRest {
+export class GitHubRest implements GitHubTransport {
   private readonly baseUrl: string;
   private readonly token: string;
   private readonly http: HttpClient;

@@ -4,6 +4,8 @@ import { repoKey, type OrchestratorConfig, type RepositoryConfig } from './confi
 import { Poller } from './orchestrator/poller.js';
 import { NodeOpenspecCli, type OpenspecCli } from './orchestrator/readiness.js';
 import { FakeProvider } from './provider/fake/fake-provider.js';
+import { GhCliCloner } from './provider/github/clone.js';
+import { GhCliTransport } from './provider/github/gh-cli.js';
 import { GitHubProvider } from './provider/github/provider.js';
 import type { RepoProvider } from './provider/types.js';
 import { EphemeralWorkspaceSandbox } from './runtime/sandbox.js';
@@ -32,10 +34,19 @@ export interface BuildServiceOptions {
   logger?: (message: string) => void;
 }
 
-/** Build the built-in providers. `fake` is an in-memory provider for smoke tests. */
+/**
+ * Build the built-in providers. `github` talks to GitHub through the `gh` CLI;
+ * `fake` is an in-memory provider for smoke tests.
+ */
 export function defaultProviderFactory(repo: RepositoryConfig, credential: string): RepoProvider {
   if (repo.provider === 'github') {
-    return new GitHubProvider({ repo: { owner: repo.owner, name: repo.name }, token: credential });
+    const commands = new NodeCommandRunner();
+    const location = { owner: repo.owner, name: repo.name };
+    return new GitHubProvider({
+      repo: location,
+      transport: new GhCliTransport({ commands, token: credential }),
+      cloner: new GhCliCloner({ commands, token: credential, ...location }),
+    });
   }
   if (repo.provider === 'fake') {
     return new FakeProvider({ repo: { owner: repo.owner, name: repo.name } });
@@ -47,8 +58,11 @@ export function defaultProviderFactory(repo: RepositoryConfig, credential: strin
  * Compose the service from configuration: resolve credentials, build one
  * provider + sandbox + poller per repository, and wire the runtime.
  */
-export function createService(config: OrchestratorConfig, options: BuildServiceOptions): Service {
-  const credentials = resolveCredentials(config, options.credentials);
+export async function createService(
+  config: OrchestratorConfig,
+  options: BuildServiceOptions,
+): Promise<Service> {
+  const credentials = await resolveCredentials(config, options.credentials);
   const providerFactory = options.providerFactory ?? defaultProviderFactory;
   const runtime = options.runtime ?? new UnconfiguredRuntime();
   const openspec = options.openspec ?? new NodeOpenspecCli(new NodeCommandRunner());

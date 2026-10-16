@@ -4,6 +4,7 @@ import { join } from 'node:path';
 
 import { describe, expect, it } from 'vitest';
 
+import { EnvCredentialResolver } from './config/credentials.js';
 import { main, parseCliArgs } from './index.js';
 
 const FAKE_CONFIG = `
@@ -87,7 +88,11 @@ repositories:
 `,
       );
       const err = collect();
-      const code = await main(['--config', configPath, '--once'], { env: {}, stderr: err.write });
+      const code = await main(['--config', configPath, '--once'], {
+        env: {},
+        serviceOptions: { credentials: new EnvCredentialResolver({}) },
+        stderr: err.write,
+      });
       expect(code).toBe(1);
       expect(err.sink.join('')).toContain('acme/widget');
     } finally {

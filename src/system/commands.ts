@@ -9,6 +9,8 @@ export interface CommandResult {
 export interface CommandRunOptions {
   cwd?: string;
   env?: NodeJS.ProcessEnv;
+  /** Text written to the child's stdin; the stream is closed afterwards. */
+  stdin?: string;
 }
 
 /** Runs external commands; injectable so behavior can be tested. */
@@ -31,6 +33,9 @@ export class NodeCommandRunner implements CommandRunner {
       child.stderr.on('data', (chunk: Buffer) => {
         stderr += chunk.toString();
       });
+      if (options.stdin !== undefined) {
+        child.stdin.end(options.stdin);
+      }
       child.on('error', reject);
       child.on('close', (code) => {
         resolve({ code: code ?? -1, stdout, stderr });

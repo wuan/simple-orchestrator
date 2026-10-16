@@ -1,10 +1,9 @@
-# Spec Delta
+# repo-provider Specification
 
 ## Purpose
-
 Provides a host-agnostic interface and normalized model for issues, comments, labels, pull requests, and review states, so the orchestrator can target GitHub now and GitLab or other hosts later.
 
-## ADDED Requirements
+## Requirements
 
 ### Requirement: Provider-agnostic interface
 The orchestrator SHALL interact with source hosts only through a provider interface exposing issue, comment, label, pull request (or merge request), review-state, and clone operations, so hosts can be added or replaced without changes to core orchestration.
@@ -25,7 +24,7 @@ Providers SHALL translate host-specific activity into a common event set (workfl
 - **THEN** both are presented to the orchestrator as a changes-requested event
 
 ### Requirement: GitHub provider
-The system SHALL include a GitHub provider supporting trigger-label discovery, draft pull request creation, lifecycle label management, and review state derived from pull request review events.
+The system SHALL include a GitHub provider supporting trigger-label discovery, draft pull request creation, lifecycle label management, and review state derived from pull request review events. The provider SHALL authenticate with the configured credential or the operator's authenticated GitHub CLI session.
 
 #### Scenario: Review state is derived
 - **WHEN** a pull request review is submitted on GitHub
@@ -34,6 +33,10 @@ The system SHALL include a GitHub provider supporting trigger-label discovery, d
 #### Scenario: Draft pull request is created
 - **WHEN** the orchestrator starts a workflow on GitHub
 - **THEN** the provider opens a draft pull request for the workflow branch
+
+#### Scenario: Authentication is delegated
+- **WHEN** the provider is given no usable credential
+- **THEN** it relies on the operator's authenticated GitHub CLI session rather than failing
 
 ### Requirement: GitLab extension point
 The provider interface SHALL accommodate a GitLab provider whose review state is read through GraphQL, without requiring changes to core orchestration.
@@ -50,12 +53,16 @@ The provider SHALL identify activity authored by the orchestrator's own bot iden
 - **THEN** the provider reports it as non-human and the orchestrator takes no turn
 
 ### Requirement: Polling efficiency and rate-limit compliance
-Provider read operations SHALL use conditional requests and pagination and SHALL respect host rate limits, so polling at the configured interval stays within quota.
+Provider read operations SHALL paginate results and SHALL avoid exhausting host rate limits, so polling at the configured interval stays within quota. Conditional-request and backoff behavior MAY be delegated to the underlying client when the provider reads through one.
+
+#### Scenario: Paginated reads are complete
+- **WHEN** a provider reads a list that spans multiple pages
+- **THEN** it retrieves every page
 
 #### Scenario: Unchanged resource is skipped
-- **WHEN** a polled resource has not changed since the previous read
+- **WHEN** the provider reads through a transport that supports conditional requests and a polled resource has not changed
 - **THEN** the provider avoids re-fetching its full body
 
 #### Scenario: Rate limit is approached
-- **WHEN** the remaining request quota falls below the configured threshold
+- **WHEN** the provider reads through a transport that tracks remaining quota and the quota falls below the configured threshold
 - **THEN** the provider backs off to avoid exhausting the quota

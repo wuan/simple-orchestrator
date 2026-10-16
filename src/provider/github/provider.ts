@@ -1,5 +1,4 @@
 import type { Actor, IssueRef, PullRequestRef, RepoRef } from '../../domain/types.js';
-import { FetchHttpClient, type HttpClient } from '../../http/client.js';
 import type {
   CloneInput,
   CreatePullRequestInput,
@@ -11,7 +10,7 @@ import type {
   ThreadTarget,
 } from '../types.js';
 import { defaultIssueBranch } from '../types.js';
-import { NodeCommandRunner, type CommandRunner } from './commands.js';
+import type { GitHubCloner } from './clone.js';
 import {
   isPullRequestPayload,
   mapActor,
@@ -25,41 +24,28 @@ import {
   type GithubReviewPayload,
   type GithubUser,
 } from './map.js';
-import { GitHubApiError, GitHubRest } from './rest.js';
+import { GitHubApiError, type GitHubTransport } from './transport.js';
 
 export interface GitHubProviderOptions {
   repo: RepoRef;
-  token: string;
-  http?: HttpClient;
-  commands?: CommandRunner;
-  apiBaseUrl?: string;
-  gitBaseUrl?: string;
-  userAgent?: string;
-  rateLimitFloor?: number;
+  /** Executes host operations; inject `gh` or direct REST as appropriate. */
+  transport: GitHubTransport;
+  /** Clones the workflow branch into a turn workspace. */
+  cloner: GitHubCloner;
 }
 
-/** A `RepoProvider` backed by the GitHub REST API. */
+/** A `RepoProvider` backed by GitHub, over an injectable transport. */
 export class GitHubProvider implements RepoProvider {
   readonly id = 'github';
   readonly repo: RepoRef;
-  readonly rest: GitHubRest;
+  readonly transport: GitHubTransport;
 
-  private readonly token: string;
-  private readonly commands: CommandRunner;
-  private readonly gitBaseUrl: string;
+  private readonly cloner: GitHubCloner;
 
   constructor(options: GitHubProviderOptions) {
     this.repo = options.repo;
-    this.token = options.token;
-    this.rest = new GitHubRest({
-      token: options.token,
-      http: options.http ?? new FetchHttpClient(),
-      baseUrl: options.apiBaseUrl,
-      userAgent: options.userAgent,
-      rateLimitFloor: options.rateLimitFloor,
-    });
-    this.commands = options.commands ?? new NodeCommandRunner();
-    this.gitBaseUrl = options.gitBaseUrl ?? 'https://github.com';
+    this.transport = options.transport;
+    this.cloner = options.cloner;
   }
 
   private repoPath(): string {
@@ -67,13 +53,13 @@ export class GitHubProvider implements RepoProvider {
   }
 
   async botIdentity(): Promise<Actor> {
-    const { data, status } = await this.rest.json<GithubUser>('GET', '/user');
+    const { data, status } = await this.transport.json<GithubUser>('GET', '/user');
     if (data === null) throw new GitHubApiError('GET /user returned no body', status);
     return mapActor(data);
   }
 
   async getIssue(issue: IssueRef): Promise<ProviderIssue | null> {
-    const { data, status } = await this.rest.json<GithubIssuePayload>(
+    const { data, status } = await this.transport.json<GithubIssuePayload>(
       'GET',
       `${this.repoPath()}/issues/${issue.number}`,
     );
@@ -82,7 +68,7 @@ export class GitHubProvider implements RepoProvider {
   }
 
   async listTriggerIssues(triggerLabel: string): Promise<ProviderIssue[]> {
-    const payloads = await this.rest.paginate<GithubIssuePayload>(`${this.repoPath()}/issues`, {
+    const payloads = await this.transport.paginate<GithubIssuePayload>(`${this.repoPath()}/issues`, {
       state: 'open',
       labels: triggerLabel,
     });
@@ -94,7 +80,7 @@ export class GitHubProvider implements RepoProvider {
   async createDraftPullRequest(input: CreatePullRequestInput): Promise<ProviderPullRequest> {
     const branch = input.branch ?? defaultIssueBranch(input.issue);
 
-    const baseRef = await this.rest.json<{ object: { sha: string } }>(
+    const baseRef = await this.transport.json<{ object: { sha: string } }>(
       'GET',
       `${this.repoPath()}/git/ref/heads/${input.baseBranch}`,
     );
@@ -102,10 +88,10 @@ export class GitHubProvider implements RepoProvider {
     if (sha === undefined) {
       throw new GitHubApiError(`could not resolve base ref '${input.baseBranch}'`, baseRef.status);
     }
-    await this.rest.json('POST', `${this.repoPath()}/git/refs`, {
+    await this.transport.json('POST', `${this.repoPath()}/git/refs`, {
       body: { ref: `refs/heads/${branch}`, sha },
     });
-    const created = await this.rest.json<GithubPullPayload>('POST', `${this.repoPath()}/pulls`, {
+    const created = await this.transport.json<GithubPullPayload>('POST', `${this.repoPath()}/pulls`, {
       body: {
         title: input.title,
         body: input.body,
@@ -123,7 +109,7 @@ export class GitHubProvider implements RepoProvider {
   }
 
   async getPullRequest(pullRequest: PullRequestRef): Promise<ProviderPullRequest | null> {
-    const { data, status } = await this.rest.json<GithubPullPayload>(
+    const { data, status } = await this.transport.json<GithubPullPayload>(
       'GET',
       `${this.repoPath()}/pulls/${pullRequest.number}`,
     );
@@ -133,7 +119,7 @@ export class GitHubProvider implements RepoProvider {
 
   async listPullRequestsForIssue(issue: IssueRef): Promise<ProviderPullRequest[]> {
     const branch = defaultIssueBranch(issue);
-    const payloads = await this.rest.paginate<GithubPullPayload>(`${this.repoPath()}/pulls`, {
+    const payloads = await this.transport.paginate<GithubPullPayload>(`${this.repoPath()}/pulls`, {
       state: 'all',
       head: `${this.repo.owner}:${branch}`,
     });
@@ -141,7 +127,7 @@ export class GitHubProvider implements RepoProvider {
   }
 
   async listPullRequestsWithLabel(label: string): Promise<ProviderPullRequest[]> {
-    const payloads = await this.rest.paginate<GithubIssuePayload>(`${this.repoPath()}/issues`, {
+    const payloads = await this.transport.paginate<GithubIssuePayload>(`${this.repoPath()}/issues`, {
       state: 'all',
       labels: label,
     });
@@ -158,55 +144,39 @@ export class GitHubProvider implements RepoProvider {
   }
 
   async addLabels(target: ThreadTarget, labels: string[]): Promise<void> {
-    await this.rest.json('POST', `${this.repoPath()}/issues/${target.ref.number}/labels`, {
+    await this.transport.json('POST', `${this.repoPath()}/issues/${target.ref.number}/labels`, {
       body: { labels },
     });
   }
 
   async removeLabel(target: ThreadTarget, label: string): Promise<void> {
-    await this.rest.json(
+    await this.transport.json(
       'DELETE',
       `${this.repoPath()}/issues/${target.ref.number}/labels/${encodeURIComponent(label)}`,
     );
   }
 
   async comment(target: ThreadTarget, body: string): Promise<void> {
-    await this.rest.json('POST', `${this.repoPath()}/issues/${target.ref.number}/comments`, {
+    await this.transport.json('POST', `${this.repoPath()}/issues/${target.ref.number}/comments`, {
       body: { body },
     });
   }
 
   async listComments(target: ThreadTarget): Promise<ProviderComment[]> {
-    const payloads = await this.rest.paginate<GithubCommentPayload>(
+    const payloads = await this.transport.paginate<GithubCommentPayload>(
       `${this.repoPath()}/issues/${target.ref.number}/comments`,
     );
     return payloads.map(mapComment);
   }
 
   async listReviews(pullRequest: PullRequestRef): Promise<ProviderReview[]> {
-    const payloads = await this.rest.paginate<GithubReviewPayload>(
+    const payloads = await this.transport.paginate<GithubReviewPayload>(
       `${this.repoPath()}/pulls/${pullRequest.number}/reviews`,
     );
     return payloads.map(mapReview).filter((review): review is ProviderReview => review !== null);
   }
 
   async clone(input: CloneInput): Promise<void> {
-    const url = `${this.gitBaseUrl}/${this.repo.owner}/${this.repo.name}.git`;
-    // The token is passed through git's environment-based config so it never
-    // appears in the process argument list.
-    const env: NodeJS.ProcessEnv = {
-      ...process.env,
-      GIT_CONFIG_COUNT: '1',
-      GIT_CONFIG_KEY_0: 'http.extraheader',
-      GIT_CONFIG_VALUE_0: `Authorization: Bearer ${this.token}`,
-    };
-    const result = await this.commands.run(
-      'git',
-      ['clone', '--branch', input.branch, '--single-branch', '--depth', '1', url, input.destination],
-      { env },
-    );
-    if (result.code !== 0) {
-      throw new GitHubApiError(`git clone failed (${result.code}): ${result.stderr}`, result.code);
-    }
+    await this.cloner.clone(input);
   }
 }

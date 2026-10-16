@@ -4,7 +4,8 @@ The orchestrator is configured from a single declarative file (YAML or JSON).
 It is single-tenant: one operator, one shared file, no per-user accounts.
 
 Secrets are **never** stored in this file. A credential is a *reference* such as
-`env:GITHUB_TOKEN`, resolved from the environment at runtime.
+`env:GITHUB_TOKEN` or `gh:token`, resolved at runtime from the environment or
+the `gh` CLI.
 
 ## Fields
 
@@ -49,9 +50,19 @@ Secrets are **never** stored in this file. A credential is a *reference* such as
 
 ## Credential schemes
 
-Only `env:NAME` is supported: the value of environment variable `NAME` is used
-as the secret. Startup fails fast, naming the affected repository, when a
-repository omits `credential`, or when the referenced variable is unset.
+| Reference | Source |
+|-----------|--------|
+| `env:NAME` | The value of environment variable `NAME`. |
+| `gh:token` | The token printed by `gh auth token`. |
+
+The GitHub provider talks to the API through the `gh` CLI, so authentication is
+delegated to `gh`. The resolved credential is exported to `gh` as `GH_TOKEN`;
+when it is the `gh:` scheme (or an `env:` reference whose variable is unset and
+resolved via `gh auth token`), `gh`'s own stored authentication is used.
+
+Startup fails fast, naming the affected repository, when a repository omits
+`credential`, or when the reference cannot be resolved from either the
+environment or an authenticated `gh` (run `gh auth login`).
 
 ## Example
 
@@ -73,4 +84,5 @@ limits:
 ```
 
 A copy of this example lives at `examples/config.yaml`. With `GITHUB_TOKEN` set
-in the environment, the service starts and begins polling `acme/widget`.
+in the environment — or, without it, an authenticated `gh` (`gh auth login`) —
+the service starts and begins polling `acme/widget`.

@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
+import { TokenCloner } from './clone.js';
 import { GitHubProvider } from './provider.js';
+import { GitHubRest } from './rest.js';
 import { InMemoryGitHub } from './testing/in-memory-github.js';
 import { RecordingCommands } from './testing/recording-commands.js';
 
@@ -9,10 +11,18 @@ function setup(): { provider: GitHubProvider; github: InMemoryGitHub; commands: 
   const commands = new RecordingCommands();
   const provider = new GitHubProvider({
     repo: { owner: github.owner, name: github.repo },
-    token: 'secret-token',
-    http: github,
-    commands,
-    gitBaseUrl: 'https://github.com',
+    transport: new GitHubRest({
+      token: 'secret-token',
+      http: github,
+      baseUrl: 'https://api.github.com',
+    }),
+    cloner: new TokenCloner({
+      owner: github.owner,
+      name: github.repo,
+      token: 'secret-token',
+      commands,
+      gitBaseUrl: 'https://github.com',
+    }),
   });
   return { provider, github, commands };
 }
