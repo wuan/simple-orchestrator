@@ -5,7 +5,7 @@
   "description": "A workflow orchestrator that drives OpenSpec changes from repository issues through propose, review, approval, and apply.",
   "type": "module",
   "engines": {
-    "node": ">=22"
+    "node": ">=24"
   },
   "bin": {
     "orchestrator": "./dist/index.js"
@@ -24,7 +24,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
-    "@types/node": "^22.7.5",
+    "@types/node": "^24.19.2",
     "eslint": "^9.13.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.10",
@@ -33,6 +33,7 @@
     "vitest": "^2.1.3"
   },
   "dependencies": {
+    "@opencode/sdk": "^2.0.31",
     "yaml": "^2.9.1"
   }
 }

@@ -83,10 +83,11 @@ is reused. See [docs/configuration.md](docs/configuration.md) for the
 
 ## Requirements
 
-- Node.js 22+ and git
+- Node.js 24+ and git
 - The `openspec` CLI on `PATH` (used for the readiness predicate)
 - A container runtime (Docker) if you want container-level turn isolation
-- An agent runtime (see [Agent runtime](#agent-runtime))
+- An agent runtime (see [Agent runtime](#agent-runtime)); the shipped one embeds
+  OpenCode, so no separate OpenCode server is needed
 
 ## Install and build
 
@@ -130,14 +131,18 @@ The GitHub provider requires the [`gh` CLI](https://cli.github.com/) on `PATH`:
 gh auth login   # once; or provide GITHUB_TOKEN instead
 
 # one poll cycle across every repository, then exit
-node dist/index.js --config examples/config.yaml --once
+node dist/run.js --config config.yaml --once
 
 # long-running poller (polls each repository on its interval)
-node dist/index.js --config examples/config.yaml
+node dist/run.js --config config.yaml
 
 # a token in the environment still takes precedence for env: references
-GITHUB_TOKEN=... node dist/index.js --config examples/config.yaml
+GITHUB_TOKEN=... node dist/run.js --config config.yaml
 ```
+
+`dist/run.js` supplies the embedded OpenCode runtime. `dist/index.js` is the
+stock CLI without one: it uses an `UnconfiguredRuntime` that fails loudly on the
+first turn, which is what the fake-provider smoke test below relies on.
 
 Label an issue with `openspec` to start a workflow. Lifecycle labels
 `openspec:proposing`, `openspec:ready`, `openspec:implementing`,
@@ -164,14 +169,21 @@ ANY_VALUE=1 node dist/index.js --config fake.yaml --once
 
 Turns run through an `AgentRuntime`. The shipped **OpenCode adapter** runs the
 OpenSpec `propose` and `apply` skills, and is written against a narrow
-`OpenCodeClient` interface so it can be pointed at your OpenCode server.
+`OpenCodeClient` interface. `dist/run.js` wires in the embedded client, which
+hosts OpenCode **inside the orchestrator process** through `@opencode/sdk` — no
+separate OpenCode server, port, or `OPENCODE_URL` to run. The host is created on
+the first turn, gives each turn its own session at the turn workspace, and is
+closed when the service stops.
 
-By default the service uses an `UnconfiguredRuntime` that **fails loudly** the
-first time a turn runs rather than silently doing nothing. To run real turns,
-supply a configured runtime when building the service (see
-`createService` in `src/service.ts` and `OpenCodeRuntime` in
-`src/runtime/opencode/`). Wiring the client to a live OpenCode server is
-deployment-specific and is not exercised by the test suite.
+`@opencode/sdk` uses explicit resource management and therefore requires
+**Node.js 24+** (Node 22 cannot load it).
+
+When building the service yourself, supply a runtime when calling `createService`
+in `src/service.ts`; the `OpenCodeRuntime` in `src/runtime/opencode/` is the
+adapter, and `createEmbeddedHostFactory` in `src/runtime/opencode/sdk-host.ts`
+provides the embedded host. Without a runtime the service uses an
+`UnconfiguredRuntime` that **fails loudly** the first time a turn runs rather
+than silently doing nothing.
 
 ## Deploy
 
@@ -180,6 +192,8 @@ no webhooks, and no database, so it runs identically on a laptop, a VM, or in a
 cluster.
 
 - Provide credentials via the environment (a secret manager is fine).
+- Run on **Node.js 24+**; OpenCode is embedded in the process, so there is no
+  separate OpenCode server to deploy or port to open.
 - Give it the `openspec` CLI and git on `PATH`.
 - Give it a writable workspace root (default `~/workspace`) for the persistent
   per-repository clones, plus a writable temp directory for turn worktrees.
