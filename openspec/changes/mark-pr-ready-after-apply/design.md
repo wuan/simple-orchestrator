@@ -47,8 +47,9 @@ review requests until implementation is done.
 This assumes GitHub still accepts reviews (including approvals) on a draft pull
 request - only merging and automatic review requests are blocked - so the
 existing approval gate keeps working while the pull request is a draft. If that
-assumption is wrong, the release must move to the READY transition; see Open
-Questions.
+assumption is wrong, the release must move to the READY transition, which is a
+small change because the transition is one engine call site; the risk is tracked
+below.
 
 ### Decision: a provider operation, not host calls in the engine
 
@@ -88,7 +89,7 @@ that is already ready is a no-op, so a retry is safe.
 - [GitHub blocks reviews on draft pull requests after all] -> the approval gate
   would be unreachable while draft, and the release would have to move to the
   READY transition. The transition is one engine call site, so moving it is
-  small; see Open Questions.
+  small.
 - [A release failure fails an otherwise successful implementation] -> intended: a
   change that cannot be reviewed and merged is not complete, and the failure is
   reported with its reason.
