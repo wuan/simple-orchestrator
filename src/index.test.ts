@@ -25,8 +25,15 @@ describe('parseCliArgs', () => {
     expect(parseCliArgs(['--config', 'a.yaml', '--once'])).toEqual({
       config: 'a.yaml',
       once: true,
+      verbose: false,
       help: false,
     });
+  });
+
+  it('parses --verbose and its short form -v', () => {
+    expect(parseCliArgs(['--config', 'a.yaml', '--verbose']).verbose).toBe(true);
+    expect(parseCliArgs(['--config', 'a.yaml', '-v']).verbose).toBe(true);
+    expect(parseCliArgs(['--config', 'a.yaml']).verbose).toBe(false);
   });
 
   it('rejects unknown arguments', () => {
@@ -68,6 +75,87 @@ describe('main', () => {
       });
       expect(code).toBe(0);
       expect(out.sink.join('')).toContain('fake:acme/widget');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('stays concise by default: no poll diagnostics on stderr', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orchestrator-cli-'));
+    try {
+      const configPath = join(dir, 'config.yaml');
+      writeFileSync(configPath, FAKE_CONFIG);
+      const out = collect();
+      const err = collect();
+      const code = await main(['--config', configPath, '--once'], {
+        env: { ANY_VALUE: '1' },
+        stdout: out.write,
+        stderr: err.write,
+      });
+      expect(code).toBe(0);
+      expect(out.sink.join('')).toContain('fake:acme/widget');
+      expect(err.sink.join('')).not.toContain('polling');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('enables verbose diagnostics from the command-line option', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orchestrator-cli-'));
+    try {
+      const configPath = join(dir, 'config.yaml');
+      writeFileSync(configPath, FAKE_CONFIG);
+      const out = collect();
+      const err = collect();
+      const code = await main(['--config', configPath, '--once', '--verbose'], {
+        env: { ANY_VALUE: '1' },
+        stdout: out.write,
+        stderr: err.write,
+      });
+      expect(code).toBe(0);
+      expect(err.sink.join('')).toContain('polling fake:acme/widget');
+      // The machine-readable report on stdout stays clean.
+      expect(out.sink.join('')).not.toContain('polling');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('enables verbose diagnostics from the configuration file', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orchestrator-cli-'));
+    try {
+      const configPath = join(dir, 'config.yaml');
+      writeFileSync(configPath, `${FAKE_CONFIG}\nlogging:\n  verbose: true\n`);
+      const out = collect();
+      const err = collect();
+      const code = await main(['--config', configPath, '--once'], {
+        env: { ANY_VALUE: '1' },
+        stdout: out.write,
+        stderr: err.write,
+      });
+      expect(code).toBe(0);
+      expect(err.sink.join('')).toContain('polling fake:acme/widget');
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('never writes the resolved credential value to verbose output', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'orchestrator-cli-'));
+    try {
+      const configPath = join(dir, 'config.yaml');
+      writeFileSync(configPath, FAKE_CONFIG);
+      const out = collect();
+      const err = collect();
+      const code = await main(['--config', configPath, '--once', '--verbose'], {
+        env: { ANY_VALUE: 'top-secret-token-value' },
+        stdout: out.write,
+        stderr: err.write,
+      });
+      expect(code).toBe(0);
+      const combined = `${out.sink.join('')}${err.sink.join('')}`;
+      expect(combined).toContain('polling fake:acme/widget');
+      expect(combined).not.toContain('top-secret-token-value');
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }

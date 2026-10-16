@@ -35,6 +35,12 @@ export interface BuildServiceOptions {
   runtimeFactory?: (config: OrchestratorConfig) => AgentRuntime;
   openspec?: OpenspecCli;
   logger?: (message: string) => void;
+  /**
+   * Build the poller logger from the credentials resolved at startup. When
+   * supplied (and no explicit `logger` is given) the returned sink is used for
+   * verbose diagnostics; the resolved secrets seed its redactor.
+   */
+  loggerFactory?: (credentials: Map<string, string>) => (message: string) => void;
 }
 
 /**
@@ -70,6 +76,7 @@ export async function createService(
   const runtime = options.runtime ?? options.runtimeFactory?.(config) ?? new UnconfiguredRuntime();
   const openspec = options.openspec ?? new NodeOpenspecCli(new NodeCommandRunner());
   const store = new RepositoryStore({ root: config.workspace.root });
+  const logger = options.logger ?? options.loggerFactory?.(credentials);
 
   const repositories = config.repositories.map((repo): ServiceRepository => {
     const key = repoKey(repo);
@@ -90,7 +97,7 @@ export async function createService(
       baseBranch: repo.baseBranch,
       limits: config.limits,
       maxReviseRounds: repo.maxReviseRounds,
-      logger: options.logger,
+      logger,
     });
     return { key, repo, intervalSeconds: repo.pollIntervalSeconds, poller };
   });

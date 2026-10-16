@@ -7,6 +7,7 @@ import {
   GhCredentialResolver,
 } from './config/credentials.js';
 import { loadConfigFile } from './config/loader.js';
+import { createLogger } from './logging.js';
 import { createService, type BuildServiceOptions, type Service } from './service.js';
 import { NodeCommandRunner } from './system/commands.js';
 import { VERSION } from './version.js';
@@ -14,11 +15,13 @@ import { VERSION } from './version.js';
 const USAGE = `openspec-workflow-orchestrator ${VERSION}
 
 Usage:
-  orchestrator --config <path> [--once]
+  orchestrator --config <path> [--once] [--verbose]
 
 Options:
   --config <path>   Path to the YAML/JSON configuration file (required).
   --once            Run a single poll cycle for every repository, then exit.
+  -v, --verbose     Emit verbose per-poll-cycle and per-turn diagnostics to
+                    standard error. Equivalent to setting logging.verbose.
   -h, --help        Show this help.
 
 The service polls configured repositories (outbound only) and drives OpenSpec
@@ -27,6 +30,7 @@ changes from issues through propose, review, approval, and apply.`;
 export interface CliOptions {
   config?: string;
   once: boolean;
+  verbose: boolean;
   help: boolean;
 }
 
@@ -35,7 +39,7 @@ function message(error: unknown): string {
 }
 
 export function parseCliArgs(argv: string[]): CliOptions {
-  const options: CliOptions = { once: false, help: false };
+  const options: CliOptions = { once: false, verbose: false, help: false };
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
     switch (arg) {
@@ -50,6 +54,10 @@ export function parseCliArgs(argv: string[]): CliOptions {
       }
       case '--once':
         options.once = true;
+        break;
+      case '--verbose':
+      case '-v':
+        options.verbose = true;
         break;
       case '--help':
       case '-h':
@@ -99,6 +107,10 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<number>
     return 1;
   }
 
+  // Verbose is on when either source asks for it; the redactor is seeded from
+  // the credentials resolved during service construction.
+  const verbose = options.verbose || config.logging.verbose;
+
   let service: Service;
   try {
     service = await createService(config, {
@@ -106,6 +118,7 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<number>
         new EnvCredentialResolver(deps.env ?? process.env),
         new GhCredentialResolver({ commands: new NodeCommandRunner() }),
       ]),
+      loggerFactory: verbose ? (credentials) => createLogger(err, credentials.values()) : undefined,
       ...deps.serviceOptions,
     });
   } catch (error) {

@@ -115,6 +115,8 @@ limits:
 workspace:
   root: ~/workspace
   worktrees: /tmp
+logging:
+  verbose: false
 ```
 
 Credentials are references (`env:NAME` or `gh:token`); secrets are never stored
@@ -122,6 +124,11 @@ in the config. The GitHub provider calls the API and clones through the `gh`
 CLI, so authentication can come from an environment variable or from `gh auth
 login`. Startup fails fast, naming the repository, when a credential reference
 is missing or cannot be resolved.
+
+Set `logging.verbose: true` (or pass `--verbose`) to emit per-poll-cycle and
+per-turn diagnostics for troubleshooting. Diagnostics go to standard error and
+never include credential values, so the concise default and the `--once` report
+on standard output are unchanged when verbosity is off.
 
 ## Run
 
@@ -135,6 +142,9 @@ node dist/run.js --config config.yaml --once
 
 # long-running poller (polls each repository on its interval)
 node dist/run.js --config config.yaml
+
+# verbose diagnostics (per-poll-cycle and per-turn) on standard error
+node dist/index.js --config examples/config.yaml --verbose
 
 # a token in the environment still takes precedence for env: references
 GITHUB_TOKEN=... node dist/run.js --config config.yaml

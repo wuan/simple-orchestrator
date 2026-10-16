@@ -24,6 +24,7 @@ function makePoller(
   provider: FakeProvider,
   runtime: FakeRuntime,
   openspec: FakeOpenspecCli,
+  logger?: (message: string) => void,
 ): Poller {
   return new Poller({
     provider,
@@ -32,6 +33,7 @@ function makePoller(
     openspec,
     labels: DEFAULT_LABELS,
     baseBranch: 'main',
+    logger,
   });
 }
 
@@ -197,5 +199,55 @@ describe('Poller.pollOnce', () => {
     const report = await makePoller(provider, runtime, openspec).pollOnce();
     expect(report.recovered).toEqual([1]);
     expect(runtime.requests).toHaveLength(2);
+  });
+});
+
+describe('Poller verbose diagnostics', () => {
+  it('reports the cycle, discovery, and started workflow when a logger is injected', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    runtime.enqueue(proposeResult());
+
+    const messages: string[] = [];
+    await makePoller(provider, runtime, openspec, (message) => messages.push(message)).pollOnce();
+
+    const log = messages.join('\n');
+    expect(log).toContain('polling fake:acme/widget');
+    expect(log).toContain('discovered issue(s) #1');
+    expect(log).toContain('started workflow for issue #1 (PR #100)');
+    expect(log).toContain('polled, started 1, recovered 0, actions 1');
+  });
+
+  it('reports the action taken for an in-flight workflow', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    runtime.enqueue(proposeResult());
+
+    const messages: string[] = [];
+    const poller = makePoller(provider, runtime, openspec, (message) => messages.push(message));
+    await poller.pollOnce();
+    messages.length = 0;
+
+    await poller.pollOnce();
+    expect(messages.join('\n')).toContain('PR #100 -> idle (no new human activity)');
+  });
+
+  it('still reports the repository when there is nothing to do', async () => {
+    const provider = new FakeProvider();
+    const messages: string[] = [];
+    await makePoller(provider, new FakeRuntime(), new FakeOpenspecCli(), (message) =>
+      messages.push(message),
+    ).pollOnce();
+
+    const log = messages.join('\n');
+    expect(log).toContain('polling fake:acme/widget');
+    expect(log).toContain("no issues with the trigger label 'openspec'");
+    expect(log).toContain('polled, started 0, recovered 0, actions 0');
   });
 });

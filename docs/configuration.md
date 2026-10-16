@@ -16,6 +16,7 @@ the `gh` CLI.
 | `repositories` | yes      | —         | Non-empty list of repositories to serve.             |
 | `limits`       | no       | see below | Per-turn cost caps.                                  |
 | `workspace`    | no       | see below | Where repository clones and per-turn worktrees live. |
+| `logging`      | no       | see below | Diagnostic verbosity.                                |
 | `agent`        | no       | see below | Embedded OpenCode host model and database.           |
 
 ### `repositories[]`
@@ -61,6 +62,21 @@ A leading `~` in either path is expanded to the operator's home directory. The
 orchestrator clones each repository once into `root` and reuses it across turns,
 while each turn runs in a throwaway git worktree of that clone, created under
 `worktrees` and removed when the turn ends.
+
+### `logging`
+
+| Field     | Required | Default | Description                                                             |
+| --------- | -------- | ------- | ----------------------------------------------------------------------- |
+| `verbose` | no       | `false` | Emit verbose per-poll-cycle and per-turn diagnostics on standard error. |
+
+With `verbose` enabled the orchestrator reports each poll cycle (the repository,
+the issues discovered, the workflows started, and the action taken for each
+in-flight workflow) and each turn (the skill, its branch, its outcome, and the
+readiness result). Diagnostics are written to standard error, so the `--once`
+report on standard output stays machine-readable. The `--verbose` (`-v`)
+command-line option turns the same diagnostics on for a single run; effective
+verbosity is the option OR this field. Credentials and tokens are never written
+to output, at any verbosity.
 
 ### `agent`
 
@@ -115,6 +131,8 @@ limits:
 workspace:
   root: ~/workspace
   worktrees: /tmp
+logging:
+  verbose: false
 agent:
   model: greenpt/deepseek-v4.1-flash
   database: ~/.local/share/opencode/opencode.db

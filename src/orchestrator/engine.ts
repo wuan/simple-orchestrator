@@ -207,6 +207,9 @@ export class WorkflowEngine {
       maxReviseRounds: this.maxReviseRounds,
     });
 
+    const reason = 'reason' in action ? ` (${action.reason})` : '';
+    this.logger(`PR #${pullRequest.ref.number}: decision ${action.kind}${reason}`);
+
     await this.perform(action, pullRequest, reviews, comments);
     return action;
   }
@@ -219,7 +222,6 @@ export class WorkflowEngine {
   ): Promise<void> {
     switch (action.kind) {
       case 'idle':
-        this.logger(`PR #${pullRequest.ref.number}: idle (${action.reason})`);
         return;
       case 'revise':
         await this.runTurn('propose', pullRequest, reviews, comments, action.trigger);
@@ -275,10 +277,14 @@ export class WorkflowEngine {
     comments: ProviderComment[],
     trigger: NormalizedEvent | null,
   ): Promise<void> {
+    const turn = `PR #${pullRequest.ref.number} ${skill} turn`;
+    this.logger(
+      `PR #${pullRequest.ref.number}: starting ${skill} turn (branch ${pullRequest.branch})`,
+    );
     const handle = await this.sandbox.create({ branch: pullRequest.branch });
     try {
       const context = this.buildContext(skill, pullRequest, reviews, comments, trigger);
-      const result = await this.withRetry(() =>
+      const result = await this.withRetry(turn, () =>
         this.runtime.run({ context, workspace: handle.workspace, limits: this.limits }),
       );
       // A turn's commits live only in the throwaway worktree, so publish the
@@ -287,9 +293,15 @@ export class WorkflowEngine {
       assertPushAllowed({ branch: pullRequest.branch, protectedBranches: [this.baseBranch] });
       await this.provider.push({ branch: pullRequest.branch, destination: handle.workspace });
       await this.postTurn(pullRequest, result);
+      const commits =
+        result.commits.length === 0 ? 'no commits' : `commits ${result.commits.join(', ')}`;
+      this.logger(`${turn} succeeded with ${commits}`);
 
       if (skill === 'propose') {
         const readiness = await evaluateReadiness(this.openspec, handle.workspace);
+        this.logger(
+          `${turn}: readiness ${readiness.ready ? 'ready' : 'not ready'} (${readiness.reason})`,
+        );
         await this.setPhase(pullRequest, readiness.ready ? 'ready' : 'proposing');
         if (readiness.ready) {
           await this.provider.comment(
@@ -301,18 +313,19 @@ export class WorkflowEngine {
         await this.setPhase(pullRequest, 'implementing');
       }
     } catch (error) {
+      this.logger(`${turn} failed: ${describeError(error)}`);
       await this.signalFailure(pullRequest, error);
     } finally {
       await handle.dispose();
     }
   }
 
-  private async withRetry<T>(operation: () => Promise<T>): Promise<T> {
+  private async withRetry<T>(context: string, operation: () => Promise<T>): Promise<T> {
     try {
       return await operation();
     } catch (error) {
       if (!isRetryable(error)) throw error;
-      this.logger(`retrying after transient failure: ${describeError(error)}`);
+      this.logger(`${context}: retrying after transient failure: ${describeError(error)}`);
       return operation();
     }
   }

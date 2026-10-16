@@ -21,6 +21,7 @@ describe('documented example config', () => {
 
     expect(config.workspace.root).toBe('~/workspace');
     expect(config.workspace.worktrees).toBe('/tmp');
+    expect(config.logging.verbose).toBe(false);
 
     const resolved = await resolveCredentials(
       config,

@@ -40,6 +40,11 @@ export interface WorkspaceConfig {
   worktrees?: string;
 }
 
+export interface LoggingConfig {
+  /** When true, emit verbose per-poll-cycle and per-turn diagnostics. */
+  verbose: boolean;
+}
+
 export interface AgentConfig {
   /** OpenCode model in `provider/model` (or `provider/model#variant`) form. */
   model: string;
@@ -53,6 +58,7 @@ export interface OrchestratorConfig {
   repositories: RepositoryConfig[];
   limits: Limits;
   workspace: WorkspaceConfig;
+  logging: LoggingConfig;
   agent: AgentConfig;
 }
 
@@ -83,6 +89,11 @@ export const DEFAULT_LIMITS: Limits = {
   maxSteps: 200,
   maxTokens: 200_000,
   maxDurationMs: 30 * 60 * 1000,
+};
+
+/** Verbose diagnostics are off unless the operator opts in. */
+export const DEFAULT_LOGGING: LoggingConfig = {
+  verbose: false,
 };
 
 /** Stable identifier for a configured repository. */
