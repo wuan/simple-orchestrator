@@ -55,8 +55,11 @@ export class InMemoryGitHub implements HttpClient {
   private readonly reviews = new Map<number, ReviewRecord[]>();
   private readonly comments = new Map<number, CommentRecord[]>();
   private readonly refs = new Map<string, string>();
+  private readonly commits = new Map<string, { tree: string; parents: string[] }>();
+  private readonly repoLabels = new Set<string>();
   private nextNumber = 100;
   private nextId = 1;
+  private nextCommit = 1;
   private clock = Date.parse('2026-01-01T00:00:00.000Z');
 
   readonly calls: { method: string; path: string }[] = [];
@@ -66,6 +69,7 @@ export class InMemoryGitHub implements HttpClient {
     this.repo = options.repo ?? 'widget';
     this.botLogin = options.botLogin ?? 'openspec-bot';
     this.refs.set('main', 'base-sha');
+    this.commits.set('base-sha', { tree: 'base-tree', parents: [] });
   }
 
   private tick(): string {
@@ -140,6 +144,26 @@ export class InMemoryGitHub implements HttpClient {
     this.comments.set(input.target, list);
   }
 
+  /** Create or move a branch ref, e.g. to simulate a leftover workflow branch. */
+  seedRef(branch: string, sha: string): void {
+    this.refs.set(branch, sha);
+  }
+
+  /** The commit SHA a branch currently points at, or undefined when it is gone. */
+  branchSha(branch: string): string | undefined {
+    return this.refs.get(branch);
+  }
+
+  /** Labels defined on the repository, as opposed to applied to an issue. */
+  repoLabelNames(): string[] {
+    return [...this.repoLabels];
+  }
+
+  /** Add a label to the repository's label set. */
+  seedRepoLabel(name: string): void {
+    this.repoLabels.add(name);
+  }
+
   private resolveLabels(number: number): string[] | undefined {
     return this.pulls.get(number)?.labels ?? this.issues.get(number)?.labels;
   }
@@ -181,6 +205,21 @@ export class InMemoryGitHub implements HttpClient {
       return json(200, { login: this.botLogin, type: 'Bot' });
     }
 
+    const repoLabelsMatch = /^\/repos\/[^/]+\/[^/]+\/labels$/.exec(path);
+    if (repoLabelsMatch !== null) {
+      if (input.method === 'GET') {
+        return json(
+          200,
+          [...this.repoLabels].map((name) => ({ name })),
+        );
+      }
+      if (input.method === 'POST') {
+        const name = String(body?.['name'] ?? '');
+        this.repoLabels.add(name);
+        return json(201, { name });
+      }
+    }
+
     const issuesMatch = /^\/repos\/[^/]+\/[^/]+\/issues$/.exec(path);
     if (issuesMatch !== null && input.method === 'GET') {
       const labelFilter = url.searchParams.get('labels');
@@ -220,6 +259,10 @@ export class InMemoryGitHub implements HttpClient {
       const number = Number(labelsMatch[1]);
       const target = this.resolveLabels(number);
       const incoming = (body?.['labels'] as string[] | undefined) ?? [];
+      // GitHub refuses to apply a label that is not defined on the repository.
+      if (incoming.some((label) => !this.repoLabels.has(label))) {
+        return json(422, { message: 'Validation Failed' });
+      }
       if (target !== undefined) {
         for (const label of incoming) if (!target.includes(label)) target.push(label);
       }
@@ -234,10 +277,11 @@ export class InMemoryGitHub implements HttpClient {
       const number = Number(labelMatch[1]);
       const label = decodeURIComponent(labelMatch[2] ?? '');
       const target = this.resolveLabels(number);
-      if (target !== undefined) {
-        const index = target.indexOf(label);
-        if (index >= 0) target.splice(index, 1);
+      const index = target?.indexOf(label) ?? -1;
+      if (target === undefined || index < 0) {
+        return json(404, { message: 'Label does not exist' });
       }
+      target.splice(index, 1);
       return { status: 200, headers: {}, text: '' };
     }
 
@@ -267,16 +311,52 @@ export class InMemoryGitHub implements HttpClient {
       return json(200, { ref: `refs/heads/${branch}`, object: { sha } });
     }
 
+    const commitMatch = /^\/repos\/[^/]+\/[^/]+\/git\/commits\/(.+)$/.exec(path);
+    if (commitMatch !== null && input.method === 'GET') {
+      const sha = commitMatch[1] ?? '';
+      const commit = this.commits.get(sha);
+      if (commit === undefined) return json(404, { message: 'Not Found' });
+      return json(200, { sha, tree: { sha: commit.tree }, parents: commit.parents });
+    }
+
+    const commitsMatch = /^\/repos\/[^/]+\/[^/]+\/git\/commits$/.exec(path);
+    if (commitsMatch !== null && input.method === 'POST') {
+      const tree = String(body?.['tree'] ?? '');
+      const parents = (body?.['parents'] as string[] | undefined) ?? [];
+      const sha = `commit-${this.nextCommit++}`;
+      this.commits.set(sha, { tree, parents });
+      return json(201, { sha, tree: { sha: tree }, parents });
+    }
+
     const refsMatch = /^\/repos\/[^/]+\/[^/]+\/git\/refs$/.exec(path);
     if (refsMatch !== null && input.method === 'POST') {
       const ref = String(body?.['ref'] ?? '');
-      this.refs.set(ref.replace('refs/heads/', ''), String(body?.['sha'] ?? ''));
+      const branch = ref.replace('refs/heads/', '');
+      if (this.refs.has(branch)) {
+        return json(422, { message: 'Reference already exists' });
+      }
+      this.refs.set(branch, String(body?.['sha'] ?? ''));
       return json(201, { ref, object: { sha: body?.['sha'] } });
+    }
+
+    const refBranchMatch = /^\/repos\/[^/]+\/[^/]+\/git\/refs\/heads\/(.+)$/.exec(path);
+    if (refBranchMatch !== null && input.method === 'PATCH') {
+      const branch = refBranchMatch[1] ?? '';
+      if (!this.refs.has(branch)) return json(404, { message: 'Not Found' });
+      const sha = String(body?.['sha'] ?? '');
+      this.refs.set(branch, sha);
+      return json(200, { ref: `refs/heads/${branch}`, object: { sha } });
     }
 
     const pullsMatch = /^\/repos\/[^/]+\/[^/]+\/pulls$/.exec(path);
     if (pullsMatch !== null && input.method === 'POST') {
       const head = String(body?.['head'] ?? '');
+      const base = String(body?.['base'] ?? 'main');
+      const headSha = this.refs.get(head);
+      if (headSha === undefined || headSha === this.refs.get(base)) {
+        // GitHub refuses a pull request whose head has no commits ahead of base.
+        return json(422, { message: `No commits between ${base} and ${head}` });
+      }
       const record: PullRecord = {
         number: this.nextNumber++,
         title: String(body?.['title'] ?? ''),
@@ -285,7 +365,7 @@ export class InMemoryGitHub implements HttpClient {
         merged: false,
         draft: Boolean(body?.['draft']),
         head,
-        base: String(body?.['base'] ?? 'main'),
+        base,
         labels: [],
       };
       this.pulls.set(record.number, record);
