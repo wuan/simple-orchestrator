@@ -199,6 +199,20 @@ npm run typecheck
 The end-to-end tests cover the full lifecycle against fakes and verify that
 `openspec archive` folds a change's requirements into the main specs.
 
+`npm run verify` runs the whole gate — lint, typecheck, tests, and OpenSpec
+validation — and is what both the git hook and CI invoke.
+
+### Git hooks
+
+`npm install` wires a tracked pre-commit hook (it sets `core.hooksPath` to
+`.githooks`). Every commit runs `npm run verify`: lint, typecheck, the unit and
+integration tests, and `openspec validate --strict` across the specs, the
+in-progress change, and the archived changes. Bypass it with
+`git commit --no-verify` only when you know why.
+
+CI (`.github/workflows/ci.yml`) runs the same gate on every pull request and on
+pushes to `main`.
+
 ## Project layout
 
 ```

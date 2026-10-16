@@ -1,0 +1,13 @@
+#!/bin/sh
+# Pre-commit gate: lint, typecheck, tests, and OpenSpec validation.
+# Wired up by `npm install` (see the "prepare" script in package.json),
+# which sets `core.hooksPath` to this directory. Bypass with `git commit -n`.
+set -e
+
+# Git exports repo-scoped variables into hooks (GIT_INDEX_FILE, GIT_DIR, ...).
+# The test suite shells out to its own temporary repositories, so clear them:
+# a leftover relative GIT_INDEX_FILE otherwise breaks `git worktree add`.
+unset GIT_DIR GIT_INDEX_FILE GIT_WORK_TREE GIT_PREFIX
+unset GIT_OBJECT_DIRECTORY GIT_ALTERNATE_OBJECT_DIRECTORIES
+
+npm run verify

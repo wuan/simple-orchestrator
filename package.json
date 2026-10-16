@@ -15,7 +15,10 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint ."
+    "lint": "eslint .",
+    "validate": "openspec validate --strict --all && openspec validate --strict --archived",
+    "verify": "npm run lint && npm run typecheck && npm test && npm run validate",
+    "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
     "@eslint/js": "^9.13.0",
