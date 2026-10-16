@@ -4,6 +4,7 @@ coverage/
 *.log
 .env
 .env.*
+.envrc
 !.env.example
 /config*.yaml
 
