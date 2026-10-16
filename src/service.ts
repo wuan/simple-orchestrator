@@ -31,6 +31,8 @@ export interface BuildServiceOptions {
   credentials: CredentialResolver;
   providerFactory?: ProviderFactory;
   runtime?: AgentRuntime;
+  /** Builds the runtime from configuration; used when `runtime` is not supplied. */
+  runtimeFactory?: (config: OrchestratorConfig) => AgentRuntime;
   openspec?: OpenspecCli;
   logger?: (message: string) => void;
   /**
@@ -71,7 +73,7 @@ export async function createService(
 ): Promise<Service> {
   const credentials = await resolveCredentials(config, options.credentials);
   const providerFactory = options.providerFactory ?? defaultProviderFactory;
-  const runtime = options.runtime ?? new UnconfiguredRuntime();
+  const runtime = options.runtime ?? options.runtimeFactory?.(config) ?? new UnconfiguredRuntime();
   const openspec = options.openspec ?? new NodeOpenspecCli(new NodeCommandRunner());
   const store = new RepositoryStore({ root: config.workspace.root });
   const logger = options.logger ?? options.loggerFactory?.(credentials);

@@ -1,5 +1,5 @@
 import { NodeCommandRunner, type CommandRunner } from '../../system/commands.js';
-import type { CloneInput, FetchInput } from '../types.js';
+import type { CloneInput, FetchInput, PushInput } from '../types.js';
 import { GitHubApiError } from './transport.js';
 
 /** Clones a branch into a workspace; the transport may authenticate differently. */
@@ -7,6 +7,8 @@ export interface GitHubCloner {
   clone(input: CloneInput): Promise<void>;
   /** Refresh an existing clone in place, authenticating the same way as `clone`. */
   fetch(input: FetchInput): Promise<void>;
+  /** Publish commits on the workflow branch, authenticating the same way as `clone`. */
+  push(input: PushInput): Promise<void>;
 }
 
 /** Path components of the repository to clone. */
@@ -81,6 +83,17 @@ export class TokenCloner implements GitHubCloner {
       throw new GitHubApiError(`git fetch failed (${result.code}): ${result.stderr}`, result.code);
     }
   }
+
+  async push(input: PushInput): Promise<void> {
+    const result = await this.commands.run(
+      'git',
+      ['-C', input.destination, 'push', 'origin', input.branch],
+      { env: this.authEnv() },
+    );
+    if (result.code !== 0) {
+      throw new GitHubApiError(`git push failed (${result.code}): ${result.stderr}`, result.code);
+    }
+  }
 }
 
 export interface GhCliClonerOptions extends RepoLocation {
@@ -150,6 +163,19 @@ export class GhCliCloner implements GitHubCloner {
     );
     if (result.code !== 0) {
       throw new GitHubApiError(`git fetch failed (${result.code}): ${result.stderr}`, result.code);
+    }
+  }
+
+  async push(input: PushInput): Promise<void> {
+    // Like fetch, publish through git so `gh`'s credential helper (or GH_TOKEN)
+    // authenticates the request without exposing the token in argv.
+    const result = await this.commands.run(
+      'git',
+      ['-C', input.destination, 'push', 'origin', input.branch],
+      { env: this.childEnv() },
+    );
+    if (result.code !== 0) {
+      throw new GitHubApiError(`git push failed (${result.code}): ${result.stderr}`, result.code);
     }
   }
 }

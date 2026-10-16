@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { DEFAULT_LABELS } from '../config/types.js';
 import type { TurnResult } from '../domain/types.js';
 import { FakeProvider } from '../provider/fake/fake-provider.js';
-import type { ProviderIssue } from '../provider/types.js';
+import type { ProviderIssue, ProviderPullRequest } from '../provider/types.js';
 import { FakeRuntime } from '../runtime/fake/fake-runtime.js';
 import { LimitExceededError } from '../runtime/limits.js';
 import type { AgentRuntime, TurnRequest } from '../runtime/types.js';
@@ -59,9 +59,10 @@ function harness(
     maxReviseRounds?: number;
     runtime?: AgentRuntime;
     logger?: (message: string) => void;
+    provider?: FakeProvider;
   } = {},
 ): Harness {
-  const provider = new FakeProvider();
+  const provider = options.provider ?? new FakeProvider();
   const runtime = new FakeRuntime();
   const openspec = new FakeOpenspecCli();
   if (options.ready === true) openspec.markReady('add-x');
@@ -386,5 +387,88 @@ describe('WorkflowEngine failure handling', () => {
     await h.engine.start(issue);
     expect(scripted.calls).toBe(1);
     expect(await labelsOf(h.provider, 100)).toContain(DEFAULT_LABELS.failed);
+  });
+});
+
+describe('WorkflowEngine.recover', () => {
+  async function failedPullRequest(h: Harness): Promise<ProviderPullRequest> {
+    await seedIssue(h.provider, 1);
+    h.provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      labels: [DEFAULT_LABELS.failed],
+      linkedIssue: 1,
+    });
+    const pullRequest = await h.provider.getPullRequest({ repo: h.provider.repo, number: 100 });
+    if (pullRequest === null) throw new Error('pull request not seeded');
+    return pullRequest;
+  }
+
+  it('re-runs the propose turn for a failed pull request', async () => {
+    const h = harness();
+    const pullRequest = await failedPullRequest(h);
+    h.runtime.enqueue(proposeResult());
+
+    const recovered = await h.engine.recover(pullRequest);
+
+    expect(recovered).toBe(true);
+    expect(h.runtime.requests).toHaveLength(1);
+    expect(h.runtime.requests[0]?.context.skill).toBe('propose');
+    expect(await labelsOf(h.provider, 100)).toContain(DEFAULT_LABELS.proposing);
+    expect(await labelsOf(h.provider, 100)).not.toContain(DEFAULT_LABELS.failed);
+  });
+
+  it('attempts recovery at most once per process', async () => {
+    const h = harness();
+    const pullRequest = await failedPullRequest(h);
+    h.runtime.enqueue(proposeResult());
+
+    expect(await h.engine.recover(pullRequest)).toBe(true);
+    expect(await h.engine.recover(pullRequest)).toBe(false);
+    expect(h.runtime.requests).toHaveLength(1);
+  });
+
+  it('signals failure and stays recoverable when the turn fails again', async () => {
+    const scripted = new ScriptedRuntime(async () => {
+      throw new Error('still broken');
+    });
+    const h = harness({ runtime: scripted });
+    const pullRequest = await failedPullRequest(h);
+
+    await h.engine.recover(pullRequest);
+
+    expect(await labelsOf(h.provider, 100)).toContain(DEFAULT_LABELS.failed);
+    expect(h.provider.commentLog.some((c) => c.body.includes('Workflow failed'))).toBe(true);
+  });
+});
+
+describe('WorkflowEngine turn publishing', () => {
+  class PushFailingProvider extends FakeProvider {
+    override async push(): Promise<void> {
+      throw new Error('push rejected');
+    }
+  }
+
+  it('pushes the workflow branch after a successful turn', async () => {
+    const h = harness();
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+
+    await h.engine.start(issue);
+
+    expect(h.provider.pushes).toHaveLength(1);
+    expect(h.provider.pushes[0]?.branch).toBe('openspec/issue-1');
+    expect(h.provider.pushes[0]?.destination).toContain('openspec-issue-1');
+  });
+
+  it('marks the workflow failed when the push fails', async () => {
+    const h = harness({ provider: new PushFailingProvider() });
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+
+    await h.engine.start(issue);
+
+    expect(await labelsOf(h.provider, 100)).toContain(DEFAULT_LABELS.failed);
+    expect(h.provider.commentLog.some((c) => c.body.includes('push rejected'))).toBe(true);
   });
 });

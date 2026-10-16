@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ConfigError, parseConfig } from './loader.js';
 import {
+  DEFAULT_AGENT_MODEL,
   DEFAULT_LABELS,
   DEFAULT_MAX_REVISE_ROUNDS,
   DEFAULT_POLL_INTERVAL_SECONDS,
@@ -125,5 +126,33 @@ logging:
   verbose: 3
 `;
     expect(() => parseConfig(bad)).toThrowError(/verbose/);
+  });
+
+  it('defaults the agent model when omitted', () => {
+    expect(parseConfig(MINIMAL).agent).toEqual({ model: DEFAULT_AGENT_MODEL });
+  });
+
+  it('accepts agent overrides', () => {
+    const config = parseConfig(`
+${MINIMAL}
+agent:
+  model: acme/model#fast
+  agent: build
+  database: /data/opencode.db
+`);
+    expect(config.agent).toEqual({
+      model: 'acme/model#fast',
+      agent: 'build',
+      database: '/data/opencode.db',
+    });
+  });
+
+  it('rejects an empty agent model', () => {
+    const bad = `
+${MINIMAL}
+agent:
+  model: ''
+`;
+    expect(() => parseConfig(bad)).toThrowError(/model/);
   });
 });

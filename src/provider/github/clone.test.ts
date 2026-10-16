@@ -61,6 +61,23 @@ describe('TokenCloner', () => {
     expect(run?.args.join(' ')).not.toContain('secret-token');
     expect(run?.env?.['GIT_CONFIG_VALUE_0']).toContain('secret-token');
   });
+
+  it('pushes the workflow branch without exposing the token in argv', async () => {
+    const commands = new RecordingCommands();
+    const cloner = new TokenCloner({
+      owner: 'acme',
+      name: 'widget',
+      token: 'secret-token',
+      commands,
+    });
+
+    await cloner.push({ branch: 'openspec/issue-7', destination: '/tmp/work' });
+    const [run] = commands.runs;
+    expect(run?.command).toBe('git');
+    expect(run?.args).toEqual(['-C', '/tmp/work', 'push', 'origin', 'openspec/issue-7']);
+    expect(run?.args.join(' ')).not.toContain('secret-token');
+    expect(run?.env?.['GIT_CONFIG_VALUE_0']).toContain('secret-token');
+  });
 });
 
 describe('GhCliCloner', () => {
@@ -134,6 +151,23 @@ describe('GhCliCloner', () => {
     const [run] = commands.runs;
     expect(run?.command).toBe('git');
     expect(run?.args).toEqual(['-C', '/tmp/store', 'fetch', '--prune', 'origin']);
+    expect(run?.env?.['GH_TOKEN']).toBe('secret-token');
+    expect(run?.args.join(' ')).not.toContain('secret-token');
+  });
+
+  it('pushes the workflow branch with GH_TOKEN set', async () => {
+    const commands = new RecordingCommands();
+    const cloner = new GhCliCloner({
+      owner: 'acme',
+      name: 'widget',
+      commands,
+      token: 'secret-token',
+    });
+
+    await cloner.push({ branch: 'openspec/issue-7', destination: '/tmp/work' });
+    const [run] = commands.runs;
+    expect(run?.command).toBe('git');
+    expect(run?.args).toEqual(['-C', '/tmp/work', 'push', 'origin', 'openspec/issue-7']);
     expect(run?.env?.['GH_TOKEN']).toBe('secret-token');
     expect(run?.args.join(' ')).not.toContain('secret-token');
   });

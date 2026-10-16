@@ -4,6 +4,7 @@ import { DEFAULT_LABELS } from '../config/types.js';
 import type { TurnResult } from '../domain/types.js';
 import { FakeProvider } from '../provider/fake/fake-provider.js';
 import { FakeRuntime } from '../runtime/fake/fake-runtime.js';
+import { LimitExceededError } from '../runtime/limits.js';
 import { Poller } from './poller.js';
 import { FakeOpenspecCli } from './testing/fake-openspec.js';
 import { FakeSandbox } from './testing/fake-sandbox.js';
@@ -92,6 +93,113 @@ describe('Poller.pollOnce', () => {
     expect(report.actions).toContainEqual({ pullRequest: 100, kind: 'revise' });
     expect(runtime.requests).toHaveLength(2);
   });
+
+  it('recovers an open pull request left without a phase', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    provider.seedPullRequest({ number: 100, branch: 'openspec/issue-1', linkedIssue: 1 });
+    runtime.enqueue(proposeResult());
+
+    const report = await makePoller(provider, runtime, openspec).pollOnce();
+
+    expect(report.started).toEqual([]);
+    expect(report.recovered).toEqual([1]);
+    expect(runtime.requests).toHaveLength(1);
+    const pullRequest = await provider.getPullRequest({ repo: provider.repo, number: 100 });
+    expect(pullRequest?.labels).toContain(DEFAULT_LABELS.proposing);
+  });
+
+  it('recovers an open pull request in the failed phase', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      linkedIssue: 1,
+      labels: [DEFAULT_LABELS.failed],
+    });
+    runtime.enqueue(proposeResult());
+
+    const report = await makePoller(provider, runtime, openspec).pollOnce();
+
+    expect(report.recovered).toEqual([1]);
+    expect(runtime.requests).toHaveLength(1);
+    expect(runtime.requests[0]?.context.skill).toBe('propose');
+  });
+
+  it('leaves an in-flight pull request to review-driven discovery', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      linkedIssue: 1,
+      labels: [DEFAULT_LABELS.proposing],
+    });
+
+    const report = await makePoller(provider, runtime, new FakeOpenspecCli()).pollOnce();
+
+    expect(report.recovered).toEqual([]);
+    expect(report.actions).toContainEqual({ pullRequest: 100, kind: 'idle' });
+    expect(runtime.requests).toHaveLength(0);
+  });
+
+  it('attempts recovery for a pull request at most once per process', async () => {
+    const provider = new FakeProvider();
+    // A permanent failure, so the turn is not retried and each attempt is one request.
+    const runtime = new FakeRuntime(() => {
+      throw new LimitExceededError('steps');
+    });
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      linkedIssue: 1,
+      labels: [DEFAULT_LABELS.failed],
+    });
+
+    const poller = makePoller(provider, runtime, new FakeOpenspecCli());
+    const first = await poller.pollOnce();
+    expect(first.recovered).toEqual([1]);
+    expect(runtime.requests).toHaveLength(1);
+
+    const second = await poller.pollOnce();
+    expect(second.recovered).toEqual([]);
+    expect(runtime.requests).toHaveLength(1);
+  });
+
+  it('grants one more recovery attempt after a restart', async () => {
+    const provider = new FakeProvider();
+    // The first process fails permanently, so recovery is not retried inside it.
+    const runtime = new FakeRuntime(() => {
+      throw new LimitExceededError('steps');
+    });
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      linkedIssue: 1,
+      labels: [DEFAULT_LABELS.failed],
+    });
+
+    await makePoller(provider, runtime, openspec).pollOnce();
+    expect(runtime.requests).toHaveLength(1);
+
+    // A new poller (a restart) is granted one more attempt.
+    runtime.enqueue(proposeResult());
+    const report = await makePoller(provider, runtime, openspec).pollOnce();
+    expect(report.recovered).toEqual([1]);
+    expect(runtime.requests).toHaveLength(2);
+  });
 });
 
 describe('Poller verbose diagnostics', () => {
@@ -110,7 +218,7 @@ describe('Poller verbose diagnostics', () => {
     expect(log).toContain('polling fake:acme/widget');
     expect(log).toContain('discovered issue(s) #1');
     expect(log).toContain('started workflow for issue #1 (PR #100)');
-    expect(log).toContain('polled, started 1, actions 1');
+    expect(log).toContain('polled, started 1, recovered 0, actions 1');
   });
 
   it('reports the action taken for an in-flight workflow', async () => {
@@ -140,6 +248,6 @@ describe('Poller verbose diagnostics', () => {
     const log = messages.join('\n');
     expect(log).toContain('polling fake:acme/widget');
     expect(log).toContain("no issues with the trigger label 'openspec'");
-    expect(log).toContain('polled, started 0, actions 0');
+    expect(log).toContain('polled, started 0, recovered 0, actions 0');
   });
 });

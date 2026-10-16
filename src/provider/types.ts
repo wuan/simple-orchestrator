@@ -61,6 +61,13 @@ export interface FetchInput {
   destination: string;
 }
 
+export interface PushInput {
+  /** The workflow branch to publish to the host. */
+  branch: string;
+  /** The working tree, on `branch`, whose commits are published. */
+  destination: string;
+}
+
 /** Branch naming convention for a workflow started from an issue. */
 export function defaultIssueBranch(issue: IssueRef): string {
   return `openspec/issue-${issue.number}`;
@@ -98,4 +105,6 @@ export interface RepoProvider {
   clone(input: CloneInput): Promise<void>;
   /** Refresh an existing clone with the host's latest refs, using clone's credentials. */
   fetch(input: FetchInput): Promise<void>;
+  /** Publish a turn's commits on the workflow branch, using clone's credentials. */
+  push(input: PushInput): Promise<void>;
 }

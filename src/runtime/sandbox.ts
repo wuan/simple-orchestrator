@@ -55,12 +55,39 @@ export class WorktreeSandbox implements Sandbox {
     return this.commands.run('git', args);
   }
 
+  /**
+   * Remove any worktree that still has `branch` checked out. A turn interrupted
+   * before `dispose` leaves its worktree registered on the branch, and git
+   * refuses to check the same branch out in a second worktree, so without this a
+   * single crashed turn would block every later turn on that workflow.
+   */
+  private async releaseBranch(store: string, branch: string): Promise<void> {
+    const listed = await this.git(['-C', store, 'worktree', 'list', '--porcelain']);
+    if (listed.code !== 0) return;
+    const ref = `refs/heads/${branch}`;
+    let path: string | undefined;
+    for (const line of listed.stdout.split('\n')) {
+      if (line.startsWith('worktree ')) {
+        path = line.slice('worktree '.length).trim();
+      } else if (
+        path !== undefined &&
+        line.startsWith('branch ') &&
+        line.slice('branch '.length).trim() === ref
+      ) {
+        await this.git(['-C', store, 'worktree', 'remove', '--force', path]);
+        path = undefined;
+      }
+    }
+  }
+
   async create(input: { branch: string }): Promise<SandboxHandle> {
     const store = await this.store.ensure({ baseBranch: this.baseBranch, source: this.source });
     const base = await mkdtemp(join(this.root, this.prefix));
     const workspace = join(base, 'worktree');
     try {
-      // Drop any stale registration left by a crashed turn before adding.
+      // Reclaim the branch from a crashed turn, then drop any stale registration
+      // before adding a fresh worktree.
+      await this.releaseBranch(store, input.branch);
       await this.git(['-C', store, 'worktree', 'prune']);
       const added = await this.git([
         '-C',

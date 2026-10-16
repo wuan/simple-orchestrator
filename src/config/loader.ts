@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
 
 import {
+  DEFAULT_AGENT_MODEL,
   DEFAULT_BASE_BRANCH,
   DEFAULT_LABELS,
   DEFAULT_LIMITS,
@@ -10,6 +11,7 @@ import {
   DEFAULT_MAX_REVISE_ROUNDS,
   DEFAULT_POLL_INTERVAL_SECONDS,
   DEFAULT_WORKSPACE_ROOT,
+  type AgentConfig,
   type LabelConfig,
   type Limits,
   type LoggingConfig,
@@ -156,6 +158,23 @@ function parseLimits(raw: unknown): Limits {
   };
 }
 
+function parseAgent(raw: unknown): AgentConfig {
+  if (raw === undefined) return { model: DEFAULT_AGENT_MODEL };
+  const record = asRecord(raw, 'agent');
+  const agent: AgentConfig = {
+    model: optionalNonEmptyString(record, 'model', 'agent', DEFAULT_AGENT_MODEL),
+  };
+  for (const key of ['agent', 'database'] as const) {
+    const value = record[key];
+    if (value === undefined) continue;
+    if (typeof value !== 'string' || value.trim() === '') {
+      throw new ConfigError(`agent: '${key}' must be a non-empty string when provided`);
+    }
+    agent[key] = value;
+  }
+  return agent;
+}
+
 function parseWorkspace(raw: unknown): WorkspaceConfig {
   if (raw === undefined) return { root: DEFAULT_WORKSPACE_ROOT };
   const record = asRecord(raw, 'workspace');
@@ -201,6 +220,7 @@ export function parseConfig(raw: unknown): OrchestratorConfig {
     limits: parseLimits(record['limits']),
     workspace: parseWorkspace(record['workspace']),
     logging: parseLogging(record['logging']),
+    agent: parseAgent(record['agent']),
   };
 }
 

@@ -17,6 +17,7 @@ the `gh` CLI.
 | `limits`       | no       | see below | Per-turn cost caps.                                  |
 | `workspace`    | no       | see below | Where repository clones and per-turn worktrees live. |
 | `logging`      | no       | see below | Diagnostic verbosity.                                |
+| `agent`        | no       | see below | Embedded OpenCode host model and database.           |
 
 ### `repositories[]`
 
@@ -77,6 +78,23 @@ command-line option turns the same diagnostics on for a single run; effective
 verbosity is the option OR this field. Credentials and tokens are never written
 to output, at any verbosity.
 
+### `agent`
+
+| Field      | Required | Default                       | Description                                                                           |
+| ---------- | -------- | ----------------------------- | ------------------------------------------------------------------------------------- |
+| `model`    | no       | `greenpt/deepseek-v4.1-flash` | OpenCode model (`provider/model` or `provider/model#variant`) the host runs turns on. |
+| `agent`    | no       | host default                  | OpenCode agent to run for a turn.                                                     |
+| `database` | no       | SDK default (in-memory)       | Path to the OpenCode database holding provider auth and model definitions.            |
+
+The embedded OpenCode host runs in-process, so it needs provider authentication.
+The simplest source is the provider's API-key environment variable (for example
+`GREENPT_API_KEY`; `opencode auth export` prints stored credentials), which lets
+the host use its own private database. Alternatively, `database` (or
+`OPENCODE_DB`) points the host at the `opencode` CLI's database to reuse stored
+auth (find it with `opencode debug paths db`) — but do **not** point it at a
+database a running OpenCode service is using: two hosts on one database disrupt
+each other.
+
 ## Credential schemes
 
 | Reference  | Source                                    |
@@ -115,6 +133,9 @@ workspace:
   worktrees: /tmp
 logging:
   verbose: false
+agent:
+  model: greenpt/deepseek-v4.1-flash
+  database: ~/.local/share/opencode/opencode.db
 ```
 
 A copy of this example lives at `examples/config.yaml`. With `GITHUB_TOKEN` set

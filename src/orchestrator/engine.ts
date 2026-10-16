@@ -18,7 +18,7 @@ import type {
   ThreadTarget,
 } from '../provider/types.js';
 import { LimitExceededError } from '../runtime/limits.js';
-import { PermissionError } from '../runtime/policy.js';
+import { assertPushAllowed, PermissionError } from '../runtime/policy.js';
 import type { Sandbox } from '../runtime/sandbox.js';
 import type { AgentRuntime } from '../runtime/types.js';
 import { decide, type WorkflowAction } from './decision.js';
@@ -102,6 +102,9 @@ export class WorkflowEngine {
   private botLogin: string | undefined;
   private botLoginLoaded = false;
 
+  /** Pull requests this process has already tried to recover (see `recover`). */
+  private readonly recovered = new Set<number>();
+
   constructor(options: WorkflowEngineOptions) {
     this.provider = options.provider;
     this.runtime = options.runtime;
@@ -152,6 +155,25 @@ export class WorkflowEngine {
     await this.runTurn('propose', pullRequest, [], [], null);
     this.logger(`started workflow for issue #${issue.ref.number} (PR #${pullRequest.ref.number})`);
     return { started: true, pullRequest };
+  }
+
+  /**
+   * Retry the propose turn for a pull request left behind by an interrupted or
+   * failed turn. The poller calls this for an open pull request whose phase is
+   * absent or `failed`, so a restart resumes the workflow instead of leaving it
+   * blocked behind its own pull request.
+   *
+   * Attempted at most once per pull request per process: a later restart (a new
+   * process) grants one more attempt, but the poll loop never retries in a loop.
+   */
+  async recover(pullRequest: ProviderPullRequest): Promise<boolean> {
+    if (this.recovered.has(pullRequest.ref.number)) return false;
+    this.recovered.add(pullRequest.ref.number);
+    const reviews = await this.provider.listReviews(pullRequest.ref);
+    const comments = await this.provider.listComments(this.target(pullRequest));
+    this.logger(`PR #${pullRequest.ref.number}: recovering after an interrupted or failed turn`);
+    await this.runTurn('propose', pullRequest, reviews, comments, null);
+    return true;
   }
 
   /** Evaluate and perform the next action for an in-flight workflow. */
@@ -265,6 +287,11 @@ export class WorkflowEngine {
       const result = await this.withRetry(turn, () =>
         this.runtime.run({ context, workspace: handle.workspace, limits: this.limits }),
       );
+      // A turn's commits live only in the throwaway worktree, so publish the
+      // workflow branch before anything else observes the turn. Least-privilege
+      // is enforced here: the orchestrator only ever pushes its own branch.
+      assertPushAllowed({ branch: pullRequest.branch, protectedBranches: [this.baseBranch] });
+      await this.provider.push({ branch: pullRequest.branch, destination: handle.workspace });
       await this.postTurn(pullRequest, result);
       const commits =
         result.commits.length === 0 ? 'no commits' : `commits ${result.commits.join(', ')}`;
