@@ -37,7 +37,10 @@ drives the OpenSpec lifecycle from the issue's problem description.
 - A propose turn that runs without a reviewer trigger is expected to produce the
   change. One that commits nothing did no work, so it fails the workflow
   (recoverable once per process) rather than leaving the pull request parked in
-  `openspec:proposing`, where no review would ever drive it again.
+  `openspec:proposing`, where no review would ever drive it again. A workflow
+  found parked in `openspec:proposing` whose branch carries no change at all is
+  likewise recovered: the propose turn is re-run once per process, so it either
+  produces the change or fails and reports on the pull request.
 - **READY** is computed objectively from `openspec status --json` and
   `openspec validate --strict`, never from agent prose.
 - On approval the orchestrator claims the approval (label `openspec:implementing`)

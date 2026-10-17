@@ -59,6 +59,13 @@ export class Poller {
       const phase = phaseFromLabels(labels, active.labels);
       if (phase === null || phase === 'failed') {
         if (await this.engine.recover(active)) report.recovered.push(issue.ref.number);
+      } else if (phase === 'proposing') {
+        // A workflow left in `proposing` with a branch that carries no proposal
+        // (an initial turn that committed nothing) has nothing for a human to
+        // review and no review will ever drive it again, so re-run the propose
+        // turn once per process; it either produces the change or fails and
+        // reports. A branch that already carries a proposal is left alone.
+        if (await this.engine.recoverStalled(active)) report.recovered.push(issue.ref.number);
       }
     }
 

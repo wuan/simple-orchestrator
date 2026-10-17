@@ -16,6 +16,12 @@ export class FakeSandbox implements Sandbox {
    * committed. Script two equal values to model a turn that committed nothing.
    */
   headResults: string[] = [];
+  /**
+   * Results returned by each handle's `hasChanges()`, consumed in order; when
+   * exhausted the branch is reported to carry a change. Script `false` to model
+   * a workflow branch with no proposal.
+   */
+  hasChangesResults: boolean[] = [];
   private headCalls = 0;
 
   async create(input: { branch: string }): Promise<SandboxHandle> {
@@ -25,6 +31,7 @@ export class FakeSandbox implements Sandbox {
       workspace,
       head: async () => this.headResults.shift() ?? `fake-head-${++this.headCalls}`,
       baseIntegrated: async () => this.baseIntegrationResults.shift() ?? true,
+      hasChanges: async () => this.hasChangesResults.shift() ?? true,
       dispose: async () => {
         this.disposed.push(workspace);
       },

@@ -20,6 +20,12 @@ export interface SandboxHandle {
    * workspace holds an unresolved base merge the turn must resolve.
    */
   baseIntegrated(): Promise<boolean>;
+  /**
+   * Whether the workspace's branch differs from the current base branch. A
+   * freshly seeded workflow branch carries no change, so a workflow left in
+   * `proposing` with no changes has no proposal for a human to review.
+   */
+  hasChanges(): Promise<boolean>;
   dispose(): Promise<void>;
 }
 
@@ -140,6 +146,25 @@ export class WorktreeSandbox implements Sandbox {
     return result.stdout.trim();
   }
 
+  /**
+   * Whether the workspace's branch differs from the current base branch. `git
+   * diff --quiet` exits 1 when there is a difference between the two trees and
+   * 0 when they match; anything else is a real failure.
+   */
+  private async branchHasChanges(workspace: string): Promise<boolean> {
+    const result = await this.git([
+      '-C',
+      workspace,
+      'diff',
+      '--quiet',
+      `origin/${this.baseBranch}`,
+      'HEAD',
+    ]);
+    if (result.code === 0) return false;
+    if (result.code === 1) return true;
+    throw new Error(`git diff failed (${result.code}): ${result.stderr.trim()}`);
+  }
+
   /** Unmerged paths left behind by a conflicted merge (`git status --porcelain`). */
   private async hasUnmergedPaths(workspace: string): Promise<boolean> {
     const status = await this.git(['-C', workspace, 'status', '--porcelain']);
@@ -205,6 +230,7 @@ export class WorktreeSandbox implements Sandbox {
       workspace,
       head: () => this.headSha(workspace),
       baseIntegrated: () => this.isBaseIntegrated(workspace),
+      hasChanges: () => this.branchHasChanges(workspace),
       dispose: async () => {
         if (disposed) return;
         disposed = true;
