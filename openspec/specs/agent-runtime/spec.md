@@ -24,7 +24,7 @@ Each turn SHALL invoke exactly one OpenSpec skill (propose or apply) and SHALL N
 - **THEN** the runtime invokes only the apply workflow
 
 ### Requirement: Ephemeral sandbox per turn
-Each turn SHALL execute in an isolated, ephemeral environment, provisioned from the persistent repository store, that is discarded after the turn completes.
+Each turn SHALL execute in an isolated, ephemeral environment, provisioned from the persistent repository store, that is discarded after the turn completes, and the orchestrator SHALL reclaim a workflow branch left checked out by an interrupted turn so a later turn can still provision its workspace.
 
 #### Scenario: No shared workspace across turns
 - **WHEN** a turn finishes and a later turn begins
@@ -38,8 +38,12 @@ Each turn SHALL execute in an isolated, ephemeral environment, provisioned from 
 - **WHEN** a turn finishes and its workspace is discarded
 - **THEN** the repository store remains for later turns
 
+#### Scenario: Abandoned worktree does not block a later turn
+- **WHEN** a previous turn was interrupted and left its worktree on the workflow branch
+- **THEN** the next turn reclaims the branch and runs in a fresh worktree
+
 ### Requirement: Least-privilege repository access
-A turn MUST push only to the workflow branch and MUST NOT write to the default branch, force-push, or merge.
+A turn MUST push only to the workflow branch and MUST NOT write to the default branch, force-push, or merge. The orchestrator SHALL publish a successful turn's commits to the workflow branch, using the provider, so turn work reaches the pull request instead of being discarded with the ephemeral worktree.
 
 #### Scenario: Push to default branch is rejected
 - **WHEN** a turn attempts to write to the default branch
@@ -48,6 +52,10 @@ A turn MUST push only to the workflow branch and MUST NOT write to the default b
 #### Scenario: Merge is not performed by the turn
 - **WHEN** implementation work is complete
 - **THEN** the turn leaves merging to a human and does not merge
+
+#### Scenario: Turn commits are published
+- **WHEN** a turn finishes successfully
+- **THEN** the orchestrator pushes only the workflow branch so the commits reach the pull request
 
 ### Requirement: Bounded turn cost
 The orchestrator SHALL enforce per-turn limits on agent steps, tokens, and wall-clock time, and SHALL fail the turn when a limit is exceeded.
@@ -68,8 +76,45 @@ A turn SHALL report a structured result including the commit or commits produced
 - **THEN** the result marks the turn as needing input and the orchestrator posts the questions on the pull request
 
 ### Requirement: OpenCode adapter
-The system SHALL include a runtime adapter that runs the OpenSpec propose and apply skills through OpenCode, as the first supported runtime.
+The system SHALL include a runtime adapter that runs the OpenSpec propose and apply skills through OpenCode, as the first supported runtime. The adapter SHALL host OpenCode in-process through the embedded OpenCode SDK, so it does not require an operator-managed OpenCode server.
 
 #### Scenario: Skill runs via OpenCode
 - **WHEN** a propose or apply turn runs with the OpenCode adapter configured
-- **THEN** the skill is executed through OpenCode and its result is returned to the orchestrator
+- **THEN** the skill is executed through the embedded OpenCode host and its result is returned to the orchestrator
+
+#### Scenario: No external server is required
+- **WHEN** the OpenCode adapter runs a turn
+- **THEN** it creates and owns the OpenCode host itself, without connecting to a separately managed server
+
+### Requirement: Runtime host lifecycle
+The OpenCode adapter SHALL create at most one embedded host per service process, SHALL reuse it across turns, and SHALL release the host when the service stops so its resources are reclaimed.
+
+#### Scenario: Host reused across turns
+- **WHEN** the adapter runs a second turn
+- **THEN** it reuses the host created for the first turn rather than creating another
+
+#### Scenario: Host released on shutdown
+- **WHEN** the service stops
+- **THEN** the adapter closes the host it created and no host resources remain
+
+#### Scenario: Host is not created until a turn runs
+- **WHEN** the service starts and stops without running a turn
+- **THEN** no embedded host is created
+
+### Requirement: Agent failures fail the turn
+The OpenCode adapter SHALL treat an errored agent turn, or a session that ends in failure, as a failed turn, so the orchestrator signals failure instead of advancing the workflow.
+
+#### Scenario: Agent error fails the turn
+- **WHEN** the agent's turn errors or the session ends in failure
+- **THEN** the adapter reports the failure and the orchestrator marks the workflow failed
+
+### Requirement: Configured embedded host
+The embedded OpenCode host SHALL run every turn's session on a configured model and, when a database is configured, SHALL use that database for provider authentication and model definitions.
+
+#### Scenario: Configured model is used
+- **WHEN** an agent model is configured
+- **THEN** every turn's session runs on that model
+
+#### Scenario: Provider authentication is reused
+- **WHEN** an OpenCode database is configured
+- **THEN** the embedded host uses it for provider auth and model definitions
