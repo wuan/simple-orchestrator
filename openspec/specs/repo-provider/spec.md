@@ -6,7 +6,7 @@ Provides a host-agnostic interface and normalized model for issues, comments, la
 ## Requirements
 
 ### Requirement: Provider-agnostic interface
-The orchestrator SHALL interact with source hosts only through a provider interface exposing issue, comment, label, pull request (or merge request), review-state, and clone operations, so hosts can be added or replaced without changes to core orchestration. The interface SHALL also expose a fetch operation that refreshes an existing clone.
+The orchestrator SHALL interact with source hosts only through a provider interface exposing issue, comment, label, pull request (or merge request), review-state, clone, fetch, and push operations, so hosts can be added or replaced without changes to core orchestration. The interface SHALL expose a fetch operation that refreshes an existing clone and a push operation that publishes a workflow branch.
 
 #### Scenario: Core has no host-specific branches
 - **WHEN** the orchestrator performs host operations
@@ -20,6 +20,10 @@ The orchestrator SHALL interact with source hosts only through a provider interf
 - **WHEN** the repository store needs the latest refs for a repository
 - **THEN** the provider fetches them into the existing clone using the same credentials it uses to clone
 
+#### Scenario: The workflow branch is published
+- **WHEN** the orchestrator publishes a turn's commits
+- **THEN** the provider pushes the workflow branch using the same credentials it uses to clone
+
 ### Requirement: Normalized event model
 Providers SHALL translate host-specific activity into a common event set (workflow start, changes requested, approval, conversation comment, cancellation) so orchestration logic is host-independent.
 
@@ -28,11 +32,15 @@ Providers SHALL translate host-specific activity into a common event set (workfl
 - **THEN** both are presented to the orchestrator as a changes-requested event
 
 ### Requirement: GitHub provider
-The system SHALL include a GitHub provider supporting trigger-label discovery, draft pull request creation, lifecycle label management, and review state derived from pull request review events. The provider SHALL authenticate with the configured credential or the operator's authenticated GitHub CLI session.
+The system SHALL include a GitHub provider supporting trigger-label discovery, draft pull request creation, lifecycle label management, and review state derived from pull request review events. The provider SHALL authenticate with the configured credential or the operator's authenticated GitHub CLI session. Review-state normalization SHALL accept the casing the host returns, including the REST API's upper-case states.
 
 #### Scenario: Review state is derived
 - **WHEN** a pull request review is submitted on GitHub
 - **THEN** the provider reports the corresponding normalized event with its timestamp
+
+#### Scenario: Native review-state casing is accepted
+- **WHEN** GitHub reports a review state in upper case, such as `CHANGES_REQUESTED` or `APPROVED`
+- **THEN** the provider normalizes it to the corresponding changes-requested or approval event
 
 #### Scenario: Draft pull request is created
 - **WHEN** the orchestrator starts a workflow on GitHub
