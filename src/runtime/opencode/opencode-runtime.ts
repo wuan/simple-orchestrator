@@ -11,7 +11,8 @@ const SKILL_INSTRUCTIONS: Record<TurnContext['skill'], string> = {
 
 /**
  * Compose the instruction handed to the agent for a turn. The agent is told to
- * commit only to the current branch and to report a structured outcome.
+ * commit only to the workflow branch - the orchestrator publishes it - and to
+ * report a structured outcome.
  */
 export function buildSkillPrompt(context: TurnContext): string {
   const changeLine =
@@ -24,7 +25,7 @@ export function buildSkillPrompt(context: TurnContext): string {
           .join('\n');
 
   const constraints = [
-    '- Commit all work to the current branch only. Never push to another branch and never merge the pull request.',
+    `- Commit all work to the workflow branch \`${context.branch}\` only. The orchestrator publishes that branch after the turn, so do not push, do not write to another branch, and do not merge the pull request.`,
     '- Follow the OpenSpec workflow and validate the change before declaring it ready.',
   ];
   if (context.pendingBaseIntegration === true) {
@@ -43,7 +44,7 @@ export function buildSkillPrompt(context: TurnContext): string {
     'Constraints:',
     ...constraints,
     '',
-    'Report a short summary, any questions for the human, the commit SHAs produced, and whether you need input.',
+    'Report a short summary, any questions for the human, the commit SHAs produced, and whether you need input. Do not comment on whether the branch has been pushed; the orchestrator publishes it.',
   ].join('\n');
 }
 
