@@ -55,6 +55,18 @@ function describeError(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
+/**
+ * A propose turn without a review trigger finished without committing anything,
+ * so it did no work. It is a failed turn rather than an idle one: leaving the
+ * change in `proposing` waits for a review that nothing prompts for.
+ */
+export class NoProgressError extends Error {
+  constructor() {
+    super('the propose turn produced no change: nothing was committed to the workflow branch');
+    this.name = 'NoProgressError';
+  }
+}
+
 function buildTranscript(
   reviews: ProviderReview[],
   comments: ProviderComment[],
@@ -289,6 +301,12 @@ export class WorkflowEngine {
     );
     const handle = await this.sandbox.create({ branch: pullRequest.branch });
     try {
+      // A propose turn with no review trigger is expected to produce the change.
+      // The branch tip is read around the turn so a turn that commits nothing is
+      // detected from repository state, not from the runtime's self-report (the
+      // embedded adapter always reports an empty commit list). The base merge,
+      // if any, is committed while provisioning, before this first read.
+      const beforeTip = skill === 'propose' ? await handle.head() : undefined;
       const pendingBaseIntegration = !(await handle.baseIntegrated());
       const context = this.buildContext(
         skill,
@@ -301,6 +319,15 @@ export class WorkflowEngine {
       const result = await this.withRetry(turn, () =>
         this.runtime.run({ context, workspace: handle.workspace, limits: this.limits }),
       );
+      if (
+        skill === 'propose' &&
+        trigger === null &&
+        beforeTip !== undefined &&
+        (await handle.head()) === beforeTip
+      ) {
+        this.logger(`${turn}: the workflow branch tip is unchanged; treating the turn as failed`);
+        throw new NoProgressError();
+      }
       // A turn's commits live only in the throwaway worktree, so publish the
       // workflow branch before anything else observes the turn. Least-privilege
       // is enforced here: the orchestrator only ever pushes its own branch.

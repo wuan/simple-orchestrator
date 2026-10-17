@@ -10,12 +10,20 @@ export class FakeSandbox implements Sandbox {
    * workspace with an unresolved base merge.
    */
   baseIntegrationResults: boolean[] = [];
+  /**
+   * Branch tips returned by each handle's `head()`, consumed in order. When
+   * exhausted, each call returns a fresh value so a turn appears to have
+   * committed. Script two equal values to model a turn that committed nothing.
+   */
+  headResults: string[] = [];
+  private headCalls = 0;
 
   async create(input: { branch: string }): Promise<SandboxHandle> {
     const workspace = `/tmp/fake-workspace-${this.created.length}-${input.branch.replace(/\W/g, '-')}`;
     this.created.push(workspace);
     return {
       workspace,
+      head: async () => this.headResults.shift() ?? `fake-head-${++this.headCalls}`,
       baseIntegrated: async () => this.baseIntegrationResults.shift() ?? true,
       dispose: async () => {
         this.disposed.push(workspace);

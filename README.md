@@ -34,6 +34,10 @@ drives the OpenSpec lifecycle from the issue's problem description.
 - The agent runs **bounded turns**: a propose turn drafts/revises the change,
   reading the whole review transcript each time; a submitted review triggers a
   revise turn; an approval is the gate; plain comments do nothing.
+- A propose turn that runs without a reviewer trigger is expected to produce the
+  change. One that commits nothing did no work, so it fails the workflow
+  (recoverable once per process) rather than leaving the pull request parked in
+  `openspec:proposing`, where no review would ever drive it again.
 - **READY** is computed objectively from `openspec status --json` and
   `openspec validate --strict`, never from agent prose.
 - On approval the orchestrator claims the approval (label `openspec:implementing`)
@@ -221,8 +225,9 @@ provider's API-key environment variable (for example `GREENPT_API_KEY`); set
 `agent.database` (or `OPENCODE_DB`) only to reuse the `opencode` CLI's stored
 auth, and never point it at a database a running OpenCode service is using.
 After a turn succeeds the orchestrator pushes the workflow branch itself, so the
-turn's commits appear on the pull request; a turn that errors, or a push that
-fails, marks the workflow failed instead of advancing it.
+turn's commits appear on the pull request; a turn that errors, a propose turn
+that commits nothing, or a push that fails, marks the workflow failed instead of
+advancing it.
 
 When building the service yourself, supply a runtime when calling `createService`
 in `src/service.ts`; the `OpenCodeRuntime` in `src/runtime/opencode/` is the
