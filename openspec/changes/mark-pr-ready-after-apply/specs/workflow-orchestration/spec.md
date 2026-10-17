@@ -3,13 +3,15 @@
 ## ADDED Requirements
 
 ### Requirement: Ready-for-review after implementation
-After the apply turn finishes successfully and its commits are published, the
-orchestrator SHALL mark the workflow's pull request ready for review so a human
-can review and merge the implementation, and SHALL fail the workflow when the
-pull request cannot be released from draft.
+After the apply turn finishes successfully - having implemented the change's
+tasks and archived the change - and its commits are published, the orchestrator
+SHALL mark the workflow's pull request ready for review so a human can review
+and merge the implementation, and SHALL fail the workflow when the pull request
+cannot be released from draft.
 
 #### Scenario: Implementation is applied
-- **WHEN** an apply turn finishes successfully and its commits are published
+- **WHEN** an apply turn finishes successfully, having implemented and archived
+  the change, and its commits are published
 - **THEN** the orchestrator marks the pull request ready for review
 
 #### Scenario: Pull request is already ready

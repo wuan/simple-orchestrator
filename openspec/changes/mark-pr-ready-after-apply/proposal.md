@@ -11,9 +11,9 @@ being requested automatically.
 ## What Changes
 
 - **Release the pull request after apply.** After an apply turn finishes
-  successfully and its commits are published, the orchestrator marks the
-  workflow's pull request ready for review, so a human can review the
-  implementation and merge.
+  successfully - implementing the change's tasks and archiving the change - and
+  its commits are published, the orchestrator marks the workflow's pull request
+  ready for review, so a human can review the implementation and merge.
 - **A provider operation for the transition.** `RepoProvider` gains a
   `markPullRequestReady` operation; the fake and the GitHub provider implement
   it, and the provider contract covers it.
@@ -32,7 +32,8 @@ None.
 - `repo-provider`: the provider interface gains an operation that marks a pull
   request ready for review, implemented for GitHub over GraphQL.
 - `workflow-orchestration`: the pull request is released from draft after a
-  successful apply turn, and the workflow fails if it cannot be released.
+  successful apply turn (which applies and archives the change), and the
+  workflow fails if it cannot be released.
 
 ## Impact
 

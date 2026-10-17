@@ -26,9 +26,9 @@
 ## 3. Release after a successful apply
 
 - [ ] 3.1 Mark the pull request ready in `WorkflowEngine.runTurn` after a
-      successful apply turn (after the publish), and verify an engine test
-      asserts the draft pull request becomes ready and the phase becomes
-      `implementing`
+      successful apply turn (the change implemented and archived, and the
+      commits published), and verify an engine test asserts the draft pull
+      request becomes ready and the phase becomes `implementing`
 - [ ] 3.2 Verify a failed release marks the workflow failed and posts the error,
       and verify an engine test covers it
 

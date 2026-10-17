@@ -29,7 +29,8 @@ Two host facts shape the approach:
 **Non-Goals:**
 
 - Releasing the pull request during propose, or as soon as the change is READY;
-  the issue scopes the transition to a successful apply.
+  the issue scopes the transition to a successful apply, once the change is
+  applied and archived.
 - Converting a pull request back to draft.
 - Changing how apply or archive is recorded, or how merge is detected.
 - Releasing a pull request whose apply turn was interrupted between publishing
@@ -46,6 +47,12 @@ reviews. Releasing at READY would flip the pull request before any code exists
 and would let a human merge a proposal whose tasks are untouched; keeping the
 draft through propose and implementing also suppresses automatic CODEOWNERS
 review requests until implementation is done.
+
+The maintainer confirmed this timing on the pull request: the release happens
+only once the change has been applied **and archived**, and draft-through-propose
+is intentional. Because the apply turn folds `openspec archive` into its final
+commit, "applied and archived" is the state the apply success path already
+reaches; the release call sits on that path, after the publish.
 
 This assumes GitHub still accepts reviews (including approvals) on a draft pull
 request - only merging and automatic review requests are blocked - so the
@@ -109,9 +116,6 @@ next build and restart. Rollback is a revert.
 
 ## Open Questions
 
-- Whether operators also want the propose-phase pull request released early for
-  visibility. Deferred; the issue scopes the transition to apply and the release
-  call site can move without changing the provider work.
 - Whether the poller should idempotently release an `implementing` pull request
   that is still draft, covering an apply turn interrupted between publishing its
   commits and the release (the phase is already `implementing`, so `recover` does
