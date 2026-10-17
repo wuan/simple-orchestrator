@@ -183,6 +183,11 @@ export class FakeProvider implements RepoProvider {
     return this.pulls.get(pullRequest.number) ?? null;
   }
 
+  async markPullRequestReady(pullRequest: PullRequestRef): Promise<void> {
+    const stored = this.pulls.get(pullRequest.number);
+    if (stored !== undefined) stored.draft = false;
+  }
+
   async listPullRequestsForIssue(issue: IssueRef): Promise<ProviderPullRequest[]> {
     return [...this.pulls.values()].filter((pr) => pr.linkedIssue?.number === issue.number);
   }

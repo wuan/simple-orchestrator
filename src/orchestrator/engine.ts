@@ -328,6 +328,11 @@ export class WorkflowEngine {
           );
         }
       } else {
+        // The apply turn implements and archives the change; release the draft
+        // pull request now so a human can review and merge it. A failure here
+        // falls through to the catch and marks the workflow failed rather than
+        // leaving a task-complete pull request stuck in draft.
+        await this.provider.markPullRequestReady(pullRequest.ref);
         await this.setPhase(pullRequest, 'implementing');
       }
     } catch (error) {

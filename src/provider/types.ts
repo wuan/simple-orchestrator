@@ -22,6 +22,8 @@ export interface ProviderPullRequest {
   draft: boolean;
   labels: string[];
   linkedIssue?: IssueRef;
+  /** Opaque host identifier used by a provider to address its own APIs. */
+  nodeId?: string;
 }
 
 export interface ProviderReview {
@@ -89,6 +91,11 @@ export interface RepoProvider {
   listTriggerIssues(triggerLabel: string): Promise<ProviderIssue[]>;
 
   createDraftPullRequest(input: CreatePullRequestInput): Promise<ProviderPullRequest>;
+  /**
+   * Release a draft pull request (or merge request) for review. Idempotent: a
+   * pull request that is already ready for review is left unchanged.
+   */
+  markPullRequestReady(pullRequest: PullRequestRef): Promise<void>;
   getPullRequest(pullRequest: PullRequestRef): Promise<ProviderPullRequest | null>;
   listPullRequestsForIssue(issue: IssueRef): Promise<ProviderPullRequest[]>;
   /** All pull requests carrying a label, in any state (used to resume work). */

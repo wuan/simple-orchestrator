@@ -30,6 +30,8 @@ export interface GithubPullPayload {
   state: string;
   draft?: boolean;
   merged_at?: string | null;
+  /** GraphQL global node id, used to address pull request mutations. */
+  node_id?: string;
   head: { ref: string };
   base: { ref: string };
   labels?: GithubLabel[];
@@ -80,7 +82,7 @@ export function mapIssue(repo: RepoRef, payload: GithubIssuePayload): ProviderIs
 
 export function mapPullRequest(repo: RepoRef, payload: GithubPullPayload): ProviderPullRequest {
   const state = payload.merged_at ? 'merged' : payload.state === 'closed' ? 'closed' : 'open';
-  return {
+  const pullRequest: ProviderPullRequest = {
     ref: { repo, number: payload.number },
     title: payload.title,
     body: payload.body ?? '',
@@ -90,6 +92,8 @@ export function mapPullRequest(repo: RepoRef, payload: GithubPullPayload): Provi
     draft: payload.draft ?? false,
     labels: labelNames(payload.labels),
   };
+  if (payload.node_id !== undefined) pullRequest.nodeId = payload.node_id;
+  return pullRequest;
 }
 
 /** Returns null for review states the orchestrator ignores (e.g. `dismissed`). */

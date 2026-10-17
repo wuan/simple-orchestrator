@@ -186,10 +186,16 @@ export class InMemoryGitHub implements HttpClient {
       state: record.state,
       draft: record.draft,
       merged_at: record.merged ? this.tick() : null,
+      node_id: this.nodeId(record.number),
       head: { ref: record.head },
       base: { ref: record.base },
       labels: record.labels.map((name) => ({ name })),
     };
+  }
+
+  /** The GraphQL global node id the emulator assigns to a pull request. */
+  private nodeId(number: number): string {
+    return `PR_node_${number}`;
   }
 
   async request(input: HttpRequest): Promise<HttpResponse> {
@@ -203,6 +209,35 @@ export class InMemoryGitHub implements HttpClient {
     // /user
     if (input.method === 'GET' && path === '/user') {
       return json(200, { login: this.botLogin, type: 'Bot' });
+    }
+
+    // /graphql
+    if (input.method === 'POST' && path === '/graphql') {
+      const query = String(body?.['query'] ?? '');
+      const variables = (body?.['variables'] as Record<string, unknown> | undefined) ?? {};
+      if (!query.includes('markPullRequestReadyForReview')) {
+        return json(200, { errors: [{ message: 'unsupported GraphQL operation' }] });
+      }
+      const pullRequestId = String(variables['pullRequestId'] ?? '');
+      const record = [...this.pulls.values()].find(
+        (pull) => this.nodeId(pull.number) === pullRequestId,
+      );
+      if (record === undefined) {
+        return json(200, {
+          errors: [
+            { message: `Could not resolve to a node with the global id of '${pullRequestId}'` },
+          ],
+        });
+      }
+      // The mutation is idempotent: an already-ready pull request is unchanged.
+      record.draft = false;
+      return json(200, {
+        data: {
+          markPullRequestReadyForReview: {
+            pullRequest: { id: pullRequestId, isDraft: false },
+          },
+        },
+      });
     }
 
     const repoLabelsMatch = /^\/repos\/[^/]+\/[^/]+\/labels$/.exec(path);

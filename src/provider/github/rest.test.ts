@@ -87,6 +87,35 @@ describe('GitHubRest.json', () => {
   });
 });
 
+describe('GitHubRest.graphql', () => {
+  it('POSTs the query and variables to /graphql and unwraps data', async () => {
+    const http = new ScriptedHttp(() => ({
+      status: 200,
+      headers: {},
+      text: JSON.stringify({ data: { ok: true } }),
+    }));
+    const data = await makeRest(http).graphql<{ ok: boolean }>('mutation { x }', { id: 1 });
+
+    expect(data).toEqual({ ok: true });
+    expect(http.calls[0]?.method).toBe('POST');
+    expect(http.calls[0]?.url).toBe('https://api.github.com/graphql');
+    expect(http.calls[0]?.headers['authorization']).toBe('Bearer tkn');
+    expect(JSON.parse(http.calls[0]?.body ?? '{}')).toEqual({
+      query: 'mutation { x }',
+      variables: { id: 1 },
+    });
+  });
+
+  it('throws a typed error when the response carries GraphQL errors', async () => {
+    const http = new ScriptedHttp(() => ({
+      status: 200,
+      headers: {},
+      text: JSON.stringify({ errors: [{ message: 'Not Found' }] }),
+    }));
+    await expect(makeRest(http).graphql('mutation { x }')).rejects.toBeInstanceOf(GitHubApiError);
+  });
+});
+
 describe('GitHubRest.paginate', () => {
   it('follows Link rel=next across pages', async () => {
     const http = new ScriptedHttp((request): HttpResponse => {

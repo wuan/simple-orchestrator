@@ -68,6 +68,18 @@ describe('FakeProvider', () => {
     expect(provider.fetches).toEqual([{ destination: '/tmp/x' }]);
   });
 
+  it('marks a draft pull request ready for review', async () => {
+    const provider = new FakeProvider();
+    const pr = provider.seedPullRequest({ number: 10, draft: true });
+
+    await provider.markPullRequestReady(pr.ref);
+    expect((await provider.getPullRequest(pr.ref))?.draft).toBe(false);
+
+    // Marking an already-ready pull request is a no-op.
+    await expect(provider.markPullRequestReady(pr.ref)).resolves.toBeUndefined();
+    expect((await provider.getPullRequest(pr.ref))?.draft).toBe(false);
+  });
+
   it('reports the bot identity', async () => {
     const provider = new FakeProvider();
     expect((await provider.botIdentity()).isBot).toBe(true);

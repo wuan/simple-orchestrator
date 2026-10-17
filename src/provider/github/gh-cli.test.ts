@@ -71,6 +71,35 @@ describe('GhCliTransport.json', () => {
   });
 });
 
+describe('GhCliTransport.graphql', () => {
+  it('runs `gh api graphql` over stdin and keeps the token out of argv', async () => {
+    const commands = new RecordingCommands(ok(JSON.stringify({ data: { ok: true } })));
+    const transport = new GhCliTransport({ commands, token: 'secret-token' });
+
+    const data = await transport.graphql<{ ok: boolean }>('mutation { x }', { id: 1 });
+
+    expect(data).toEqual({ ok: true });
+    expect(commands.runs[0]?.command).toBe('gh');
+    expect(commands.runs[0]?.args).toEqual(['api', 'graphql', '--input', '-']);
+    expect(commands.runs[0]?.stdin).toBe(
+      JSON.stringify({ query: 'mutation { x }', variables: { id: 1 } }),
+    );
+    expect(commands.runs[0]?.args.join(' ')).not.toContain('secret-token');
+    expect(commands.runs[0]?.env?.['GH_TOKEN']).toBe('secret-token');
+  });
+
+  it('maps a GraphQL error to a typed error', async () => {
+    const commands = new RecordingCommands(
+      ok(JSON.stringify({ errors: [{ message: 'Could not resolve to a node' }] })),
+    );
+    const transport = new GhCliTransport({ commands });
+
+    await expect(transport.graphql('mutation { x }')).rejects.toMatchObject({
+      name: 'GitHubApiError',
+    });
+  });
+});
+
 describe('GhCliTransport.paginate', () => {
   it('requests every page and flattens the slurped response', async () => {
     const commands = new RecordingCommands(ok(JSON.stringify([[1, 2], [3]])));

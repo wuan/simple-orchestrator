@@ -475,6 +475,56 @@ describe('WorkflowEngine turn publishing', () => {
   });
 });
 
+describe('WorkflowEngine release after apply', () => {
+  async function startedReady(): Promise<{ h: Harness; number: number }> {
+    const h = harness({ ready: true });
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    const started = await h.engine.start(issue);
+    return { h, number: started.pullRequest?.ref.number ?? -1 };
+  }
+
+  it('marks the draft pull request ready after a successful apply', async () => {
+    const { h, number } = await startedReady();
+    expect((await h.provider.getPullRequest({ repo: h.provider.repo, number }))?.draft).toBe(true);
+
+    h.provider.seedReview(number, { state: 'approved', body: 'lgtm' });
+    h.runtime.enqueue(applyResult());
+
+    const action = await h.engine.drive(
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number }))!,
+    );
+
+    expect(action.kind).toBe('apply');
+    expect((await h.provider.getPullRequest({ repo: h.provider.repo, number }))?.draft).toBe(false);
+    expect(await labelsOf(h.provider, number)).toContain(DEFAULT_LABELS.implementing);
+    expect(await labelsOf(h.provider, number)).not.toContain(DEFAULT_LABELS.failed);
+  });
+
+  it('fails the workflow when the pull request cannot be released from draft', async () => {
+    class MarkReadyFailingProvider extends FakeProvider {
+      override async markPullRequestReady(): Promise<void> {
+        throw new Error('insufficient permissions');
+      }
+    }
+    const h = harness({ ready: true, provider: new MarkReadyFailingProvider() });
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    const started = await h.engine.start(issue);
+    const number = started.pullRequest?.ref.number ?? -1;
+
+    h.provider.seedReview(number, { state: 'approved', body: 'lgtm' });
+    h.runtime.enqueue(applyResult());
+
+    await h.engine.drive((await h.provider.getPullRequest({ repo: h.provider.repo, number }))!);
+
+    expect(await labelsOf(h.provider, number)).toContain(DEFAULT_LABELS.failed);
+    expect(h.provider.commentLog.some((c) => c.body.includes('insufficient permissions'))).toBe(
+      true,
+    );
+  });
+});
+
 describe('WorkflowEngine base integration', () => {
   it('flags a pending base integration on the turn context', async () => {
     const h = harness();
