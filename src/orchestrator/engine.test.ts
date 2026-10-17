@@ -90,8 +90,9 @@ async function seedIssue(
   provider: FakeProvider,
   number = 1,
   labels: string[] = ['openspec'],
+  title?: string,
 ): Promise<ProviderIssue> {
-  provider.seedIssue({ number, labels });
+  provider.seedIssue({ number, labels, title });
   const issue = await provider.getIssue({ repo: provider.repo, number });
   if (issue === null) throw new Error('issue not seeded');
   return issue;
@@ -118,17 +119,18 @@ describe('WorkflowEngine.start', () => {
     expect(provider.commentLog.some((c) => c.body.includes('OpenSpec propose turn'))).toBe(true);
   });
 
-  it('includes a closing reference to the issue in the created pull request', async () => {
+  it('titles the created pull request with the change summary from the issue', async () => {
     const { provider, runtime, engine } = harness();
-    const issue = await seedIssue(provider, 7);
+    const issue = await seedIssue(provider, 7, ['openspec'], 'Improve PR generation');
     runtime.enqueue(proposeResult());
 
     const result = await engine.start(issue);
 
-    expect(result.pullRequest?.body).toContain('Closes #7');
+    expect(result.pullRequest?.title).toBe('Improve PR generation');
+    expect(result.pullRequest?.title).not.toContain('OpenSpec change for issue #7');
   });
 
-  it('references only the started issue, once', async () => {
+  it('references only the started issue, once, in the created pull request body', async () => {
     const { provider, runtime, engine } = harness();
     const issue = await seedIssue(provider, 7);
     runtime.enqueue(proposeResult());
@@ -136,8 +138,9 @@ describe('WorkflowEngine.start', () => {
     const result = await engine.start(issue);
     const body = result.pullRequest?.body ?? '';
 
-    expect(body).toContain('Workflow for issue #7.');
+    expect(body).toBe('Closes #7');
     expect(body.match(/Closes #\d+/g)).toEqual(['Closes #7']);
+    expect(body).not.toContain('Workflow for issue #7.');
   });
 
   it('does not create a second pull request for the same issue', async () => {
