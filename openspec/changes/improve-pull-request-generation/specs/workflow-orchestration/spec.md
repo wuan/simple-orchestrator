@@ -5,15 +5,22 @@
 ### Requirement: Workflow pull request references its issue
 
 When the orchestrator creates the draft pull request for a workflow, its body
-SHALL include a host-recognized closing reference to the workflow's issue (for
-example `Closes #<n>`), so the host links the pull request to the issue and
-closes the issue when the pull request is merged.
+SHALL carry the host-recognized closing reference to the workflow's issue (for
+example `Closes #<n>`), and SHALL NOT repeat the issue as a
+`Workflow for issue #<n>.` description, so the host links the pull request to
+the issue and closes the issue when the pull request is merged.
 
 #### Scenario: Created pull request references its issue
 
 - **WHEN** the orchestrator starts a workflow for a labeled issue
 - **THEN** the body of the created draft pull request contains a closing
   reference to that issue
+
+#### Scenario: Created pull request drops the description line
+
+- **WHEN** the orchestrator starts a workflow for a labeled issue
+- **THEN** the body of the created draft pull request does not repeat a
+  `Workflow for issue #<n>.` description
 
 #### Scenario: Merging the pull request closes the issue
 
