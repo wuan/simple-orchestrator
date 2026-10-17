@@ -392,6 +392,70 @@ describe('WorkflowEngine failure handling', () => {
   });
 });
 
+describe('WorkflowEngine stalled propose turns', () => {
+  it('fails a propose turn that commits nothing', async () => {
+    const h = harness();
+    h.sandbox.headResults = ['same', 'same'];
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+
+    await h.engine.start(issue);
+
+    expect(await labelsOf(h.provider, 100)).toContain(DEFAULT_LABELS.failed);
+    expect(h.provider.pushes).toHaveLength(0);
+    expect(h.provider.commentLog.some((c) => c.body.includes('produced no change'))).toBe(true);
+    expect(h.messages.join('\n')).toContain(
+      'the workflow branch tip is unchanged; treating the turn as failed',
+    );
+  });
+
+  it('advances when the turn commits to the branch', async () => {
+    const h = harness();
+    h.sandbox.headResults = ['before', 'after'];
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+
+    await h.engine.start(issue);
+
+    expect(await labelsOf(h.provider, 100)).toContain(DEFAULT_LABELS.proposing);
+    expect(await labelsOf(h.provider, 100)).not.toContain(DEFAULT_LABELS.failed);
+  });
+
+  it('does not count the base-integration merge as the turn making progress', async () => {
+    const h = harness();
+    // The base merge is committed while provisioning, so the tip is unchanged
+    // across the turn window when the turn itself commits nothing.
+    h.sandbox.baseIntegrationResults = [false, true];
+    h.sandbox.headResults = ['same', 'same'];
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+
+    await h.engine.start(issue);
+
+    expect(await labelsOf(h.provider, 100)).toContain(DEFAULT_LABELS.failed);
+  });
+
+  it('does not fail a review-driven revise turn that commits nothing', async () => {
+    const h = harness();
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    const started = await h.engine.start(issue);
+    const number = started.pullRequest?.ref.number ?? -1;
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'nothing to change' });
+    h.sandbox.headResults = ['same', 'same'];
+    h.runtime.enqueue(proposeResult({ summary: 'no change needed' }));
+
+    const action = await h.engine.drive(
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number }))!,
+    );
+
+    expect(action.kind).toBe('revise');
+    expect(await labelsOf(h.provider, number)).not.toContain(DEFAULT_LABELS.failed);
+    expect(await labelsOf(h.provider, number)).toContain(DEFAULT_LABELS.proposing);
+  });
+});
+
 describe('WorkflowEngine.recover', () => {
   async function failedPullRequest(h: Harness): Promise<ProviderPullRequest> {
     await seedIssue(h.provider, 1);

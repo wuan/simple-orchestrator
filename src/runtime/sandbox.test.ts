@@ -108,6 +108,29 @@ describe('WorktreeSandbox', () => {
     expect(existsSync(f.store.pathFor(f.source.repo))).toBe(true);
   });
 
+  it('reports the branch tip and changes it when the workspace commits', async () => {
+    const f = await fixture();
+    const handle = await sandboxFor(f).create({ branch: 'openspec/issue-1' });
+    const before = await handle.head();
+
+    await writeFile(join(handle.workspace, 'more.md'), 'more\n');
+    await git(['-C', handle.workspace, 'add', '.']);
+    await git([
+      '-C',
+      handle.workspace,
+      '-c',
+      'user.email=test@example.com',
+      '-c',
+      'user.name=Test',
+      'commit',
+      '-m',
+      'more',
+    ]);
+
+    expect(await handle.head()).not.toBe(before);
+    await handle.dispose();
+  });
+
   it('discards the worktree but keeps the store when the turn ends', async () => {
     const f = await fixture();
     const sandbox = sandboxFor(f);

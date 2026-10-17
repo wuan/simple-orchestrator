@@ -151,6 +151,48 @@ describe('Poller.pollOnce', () => {
     expect(runtime.requests).toHaveLength(0);
   });
 
+  it('fails a stalled propose turn and recovers it on the next poll', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    const sandbox = new FakeSandbox();
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    runtime.enqueue(proposeResult());
+    runtime.enqueue(proposeResult());
+
+    const poller = new Poller({
+      provider,
+      runtime,
+      sandbox,
+      openspec,
+      labels: DEFAULT_LABELS,
+      baseBranch: 'main',
+    });
+
+    // The first turn commits nothing, so the workflow is failed rather than
+    // parked in `proposing` where no review would drive it again.
+    sandbox.headResults = ['same', 'same'];
+    const first = await poller.pollOnce();
+    expect(first.started).toEqual([1]);
+    expect((await provider.getPullRequest({ repo: provider.repo, number: 100 }))?.labels).toContain(
+      DEFAULT_LABELS.failed,
+    );
+
+    // The next poll recovers the failed workflow and the retry commits a change.
+    sandbox.headResults = ['before', 'after'];
+    const second = await poller.pollOnce();
+    expect(second.recovered).toEqual([1]);
+    expect((await provider.getPullRequest({ repo: provider.repo, number: 100 }))?.labels).toContain(
+      DEFAULT_LABELS.proposing,
+    );
+
+    // Recovery stays bounded: the process does not retry forever.
+    const third = await poller.pollOnce();
+    expect(third.recovered).toEqual([]);
+    expect(runtime.requests).toHaveLength(2);
+  });
+
   it('attempts recovery for a pull request at most once per process', async () => {
     const provider = new FakeProvider();
     // A permanent failure, so the turn is not retried and each attempt is one request.
