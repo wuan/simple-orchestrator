@@ -58,7 +58,18 @@ describe('buildSkillPrompt', () => {
     const prompt = buildSkillPrompt(context('propose'));
     expect(prompt).toContain('add-x');
     expect(prompt).toContain('openspec/issue-1');
-    expect(prompt).toContain('never merge');
+    expect(prompt).toContain('do not merge');
+  });
+
+  it('states the orchestrator publishes the branch and tells the turn not to push', () => {
+    const prompt = buildSkillPrompt(context('apply'));
+    expect(prompt).toContain('orchestrator publishes that branch after the turn');
+    expect(prompt).toContain('do not push');
+  });
+
+  it('tells the turn not to report push status', () => {
+    const prompt = buildSkillPrompt(context('apply'));
+    expect(prompt).toContain('Do not comment on whether the branch has been pushed');
   });
 
   it('instructs the apply skill to archive', () => {
