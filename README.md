@@ -164,7 +164,7 @@ first turn, which is what the fake-provider smoke test below relies on.
 ### Entry points
 
 The package ships two entry points over the same CLI (`--config`, `--once`,
-`--help`):
+`--verbose`, `--help`):
 
 - **`dist/run.js`** — the deployable entry point. It supplies the embedded
   OpenCode runtime, so turns actually run. The `orchestrator` bin points here.
