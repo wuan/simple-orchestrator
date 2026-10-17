@@ -1,43 +1,42 @@
 # Spec Delta
 
-## REMOVED Requirements
+## MODIFIED Requirements
 
 ### Requirement: Workflow pull request references its issue
 
-**Reason**: The pull request already identifies its issue: the issue number in
-its title and body is a host reference that cross-references the pull request
-and issue, so the dedicated `Closes #<n>` line is redundant. The behavior is
-replaced by a requirement that makes the title summarize the change and the body
-carry only the short description, without a host closing keyword.
+When the orchestrator creates the draft pull request for a workflow, its body
+SHALL include a host-recognized closing reference to the workflow's issue (for
+example `Closes #<n>`), so the host links the pull request to the issue and
+closes the issue when the pull request is merged.
 
-**Migration**: None for pull requests the orchestrator creates from now on; they
-omit the closing keyword and stay cross-referenced by the issue number. A pull
-request created before this change keeps its body and can have the line removed
-by hand.
+#### Scenario: Created pull request references its issue
+
+- **WHEN** the orchestrator starts a workflow for a labeled issue
+- **THEN** the body of the created draft pull request contains a closing
+  reference to that issue
+
+#### Scenario: Merging the pull request closes the issue
+
+- **WHEN** a workflow pull request whose body carries the closing reference is
+  merged into the host's default branch
+- **THEN** the host closes the referenced issue
 
 ## ADDED Requirements
 
 ### Requirement: Workflow pull request title summarizes its change
 
 When the orchestrator creates the draft pull request for a workflow, its title
-SHALL name the workflow's issue and include a short summary of the change drawn
-from the issue, and its body SHALL carry the pull request's short description
-and no host closing keyword such as `Closes #<n>`.
+SHALL be a short summary of the change drawn from the workflow's issue title,
+and SHALL NOT be a generated marker that repeats the issue number.
 
-#### Scenario: Created pull request summarizes its change
-
-- **WHEN** the orchestrator starts a workflow for a labeled issue
-- **THEN** the title of the created draft pull request names the issue and
-  includes a short summary of the change
-
-#### Scenario: Created pull request omits a closing keyword
+#### Scenario: Created pull request title summarizes its change
 
 - **WHEN** the orchestrator starts a workflow for a labeled issue
-- **THEN** the body of the created draft pull request carries the short
-  description and no closing keyword
+- **THEN** the title of the created draft pull request is a short summary of
+  the change drawn from the issue's title
 
-#### Scenario: Created pull request identifies its issue
+#### Scenario: Title does not repeat the issue number
 
 - **WHEN** the orchestrator starts a workflow for a labeled issue
-- **THEN** the issue number appears in the created draft pull request's title
-  and body, so the host cross-references the pull request to the issue
+- **THEN** the created draft pull request's title carries the change summary
+  and no generated `OpenSpec change for issue #<n>` marker

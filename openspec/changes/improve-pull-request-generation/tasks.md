@@ -1,31 +1,32 @@
 # Tasks
 
-## 1. Summarize the change in the pull request title
+## 1. Make the pull request title the change summary
 
-- [ ] 1.1 In `WorkflowEngine.start` (`src/orchestrator/engine.ts`), render the
-      draft pull request title as ``OpenSpec change for issue #<n>: <issue
-      title>`` (for example a `pullRequestTitle(issue)` helper beside
-      `pullRequestBody`); verify with a new `src/orchestrator/engine.test.ts`
-      case asserting the created pull request's title includes the issue's title
-      and still names the started issue number
+- [ ] 1.1 In `WorkflowEngine.start` (`src/orchestrator/engine.ts`), set the
+      draft pull request title from the issue's title (for example a
+      `pullRequestTitle(issue)` helper beside `pullRequestBody`), dropping the
+      `OpenSpec change for issue #<n>` marker; verify with a new
+      `src/orchestrator/engine.test.ts` case asserting the created pull
+      request's title is the issue's title and does not contain the generated
+      marker
 
-## 2. Drop the closing line from the pull request body
+## 2. Reduce the pull request body to the closing reference
 
-- [ ] 2.1 In `WorkflowEngine.start`, reduce `pullRequestBody` to the short
-      description ``Workflow for issue #<n>.``; verify with an engine test
-      asserting the created pull request's body contains the description and no
-      `Closes #<n>`
-- [ ] 2.2 Replace the engine tests that assert the closing reference
-      (`includes a closing reference to the issue in the created pull request`,
-      `references only the started issue, once`) with assertions for the new
-      title and body; verify `npm test` passes
+- [ ] 2.1 In `WorkflowEngine.start`, reduce `pullRequestBody` to ``Closes
+      #<n>``, dropping the `Workflow for issue #<n>.` line; verify with an
+      engine test asserting the created pull request's body is the closing
+      reference to the issue and contains no `Workflow for issue #<n>.`
+- [ ] 2.2 Replace the engine tests that assert the old body (`includes a
+      closing reference to the issue in the created pull request`, `references
+      only the started issue, once`) with assertions for the new title and body;
+      verify `npm test` passes
 
 ## 3. Documentation
 
 - [ ] 3.1 Update `README.md` (the "How it works" bullet about merging the pull
-      request) to describe the summarizing title and the body without a closing
-      keyword, and to stop claiming that merging closes the issue; verify the
-      documented behavior matches the engine tests
+      request) to describe the summarizing title and the body that carries only
+      the closing reference; verify the documented behavior matches the engine
+      tests
 
 ## 4. Integration check
 

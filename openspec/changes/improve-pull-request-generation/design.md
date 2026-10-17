@@ -15,11 +15,9 @@ See `proposal.md` - Why. The current state this builds on:
   human-written summary of the requested change before the propose turn runs.
 - The pull request is associated with its issue internally (branch
   `openspec/issue-<n>`, `linkedIssue`, `issueNumberFromBranch`). Independently,
-  the `#<n>` in the title and body is a host reference: the host cross-references
-  the pull request and issue and shows both in each other's timeline. GitHub
-  closes an issue automatically only for a merge whose pull request description
-  or a commit message carries a closing keyword; a plain reference does not
-  close it.
+  a host-recognized closing keyword in the body (for example `Closes #<n>`)
+  links the pull request to its issue and closes the issue on merge; a plain
+  reference without the keyword links them but does not close the issue.
 
 ## Goals / Non-Goals
 
@@ -27,7 +25,9 @@ See `proposal.md` - Why. The current state this builds on:
 
 - A reviewer can tell what a workflow pull request is about from its title,
   without opening the issue.
-- The created pull request body no longer carries the redundant closing line.
+- The created pull request body no longer repeats the `Workflow for issue #<n>.`
+  description.
+- Keep the host closing reference, so merging still closes the issue.
 - Keep the change small, localized, and free of new provider operations.
 
 **Non-Goals:**
@@ -36,8 +36,8 @@ See `proposal.md` - Why. The current state this builds on:
   after the propose turn. That needs a provider operation to update the title
   and would rewrite the title on later turns.
 - Updating or backfilling pull requests created before this change.
-- Replacing the lost host auto-close with an orchestrator "close issue"
-  operation.
+- Adding an orchestrator "close issue" operation; the host closing reference
+  already closes the issue on merge.
 - Configuring or capping the summary length.
 
 ## Decisions
@@ -50,20 +50,19 @@ propose turn (rejected: requires a provider update operation, and the title
 would change after the first turn); parse the proposal's prose (rejected: agent
 text, which the readiness predicate deliberately avoids).
 
-**2. The title keeps the issue reference and appends the summary.**
-The title becomes ``OpenSpec change for issue #<n>: <issue title>``, for example
-`OpenSpec change for issue #26: Improve PR generation`. This keeps the existing
-generated marker, names the issue (so the host cross-references the pull request
-to it), and adds the human summary the issue asked for. Alternative: replace the
-title with the issue title alone (rejected: drops the marker and leaves the issue
-reference only in the body).
+**2. The title is just the summary.**
+The title becomes the issue's title, for example `Improve PR generation`. It no
+longer carries the `OpenSpec change for issue #<n>` marker. Reviewers asked for
+the title to be the summary alone; the issue is identified by the closing
+reference in the body, so the title does not need to repeat the number.
+Alternative: keep the marker and append the summary (rejected: the reviewer
+asked for the summary alone).
 
-**3. The body keeps the short description and drops the closing keyword.**
-`pullRequestBody` returns just ``Workflow for issue #<n>.``. The `Closes #<n>`
-line duplicated the reference already present in the title and body. The
-consequence is deliberate: the host no longer auto-closes the issue on merge,
-the issue stays cross-referenced, and closing it is part of the normal merge
-workflow.
+**3. The body is only the closing reference.**
+`pullRequestBody` returns just ``Closes #<n>``. The `Workflow for issue #<n>.`
+line repeated what the title now summarizes, so it is dropped, while the closing
+keyword is kept so a merge still closes the issue and the host cross-references
+it.
 
 **4. Compose both in the engine, not the provider.**
 As with the existing body helper, the orchestrator owns the pull request
@@ -72,14 +71,12 @@ unchanged.
 
 ## Risks / Trade-offs
 
-- **Merging no longer closes the issue automatically.** Someone must close it
-  after merge. → Documented in the proposal and README; the issue remains
-  cross-linked from the title and body references, and the workflow still marks
-  the pull request done. If automatic closure is wanted later, add an
-  orchestrator close on the done transition rather than restoring the keyword.
-- **Issue titles can be long**, so the appended summary can make a long pull
-  request title. → Accepted for now; capping or deriving a shorter summary from
-  the change would be a later change.
-- **Pull requests created before this change keep the old title and closing
-  line.** → Accepted: the provider has no update operation, and backfilling is
-  one-time work.
+- **Issue titles can be long**, so the pull request title can be long. →
+  Accepted for now; capping or deriving a shorter summary from the change would
+  be a later change.
+- **The title no longer names the issue number.** → The body's `Closes #<n>`
+  links the pull request to the issue and closes it on merge; the branch also
+  carries the association.
+- **Pull requests created before this change keep the old title and body.** →
+  Accepted: the provider has no update operation, and backfilling is one-time
+  work.
