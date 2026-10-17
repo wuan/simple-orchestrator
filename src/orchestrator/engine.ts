@@ -100,12 +100,23 @@ function buildTranscript(
 }
 
 /**
- * The body of a workflow's draft pull request: the short description plus a
- * host-recognized closing reference to the issue, so merging the pull request
- * into the host's default branch links it to the issue and closes it.
+ * The title of a workflow's draft pull request: a short summary of the change,
+ * drawn from the issue's title (a human-written summary that exists before the
+ * change does), so a reviewer can tell pull requests apart without opening the
+ * issue. It carries no generated `OpenSpec change for issue #<n>` marker.
+ */
+function pullRequestTitle(issue: ProviderIssue): string {
+  return issue.title;
+}
+
+/**
+ * The body of a workflow's draft pull request: a host-recognized closing
+ * reference to the issue, so merging the pull request into the host's default
+ * branch links it to the issue and closes it. It does not repeat the issue as a
+ * `Workflow for issue #<n>.` description.
  */
 function pullRequestBody(issue: ProviderIssue): string {
-  return `Workflow for issue #${issue.ref.number}.\n\nCloses #${issue.ref.number}`;
+  return `Closes #${issue.ref.number}`;
 }
 
 /** Attach the orchestrator-measured elapsed time and attempt count to usage. */
@@ -186,7 +197,7 @@ export class WorkflowEngine {
     const pullRequest = await this.provider.createDraftPullRequest({
       issue: issue.ref,
       baseBranch: this.baseBranch,
-      title: `OpenSpec change for issue #${issue.ref.number}`,
+      title: pullRequestTitle(issue),
       body: pullRequestBody(issue),
       draft: true,
     });

@@ -52,10 +52,11 @@ drives the OpenSpec lifecycle from the issue's problem description.
   mutation, because no REST endpoint exposes the transition. A release that fails
   marks the workflow failed rather than leaving a task-complete pull request
   stuck in draft.
-- Merging the PR completes the workflow. The draft pull request body carries a
-  `Closes #<issue>` reference alongside its short description, so merging it into
-  the host's default branch closes the issue automatically (the host only closes
-  issues for merges into its default branch).
+- Merging the PR completes the workflow. The draft pull request title is a short
+  summary of the change drawn from the issue's title, and its body carries only
+  the `Closes #<issue>` reference, so merging it into the host's default branch
+  closes the issue automatically (the host only closes issues for merges into its
+  default branch).
 
 There is no database: phase lives in host labels, and the watermark is the
 timestamp of the last human review versus the orchestrator's last turn comment.
