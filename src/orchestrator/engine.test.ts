@@ -117,6 +117,28 @@ describe('WorkflowEngine.start', () => {
     expect(provider.commentLog.some((c) => c.body.includes('OpenSpec propose turn'))).toBe(true);
   });
 
+  it('includes a closing reference to the issue in the created pull request', async () => {
+    const { provider, runtime, engine } = harness();
+    const issue = await seedIssue(provider, 7);
+    runtime.enqueue(proposeResult());
+
+    const result = await engine.start(issue);
+
+    expect(result.pullRequest?.body).toContain('Closes #7');
+  });
+
+  it('references only the started issue, once', async () => {
+    const { provider, runtime, engine } = harness();
+    const issue = await seedIssue(provider, 7);
+    runtime.enqueue(proposeResult());
+
+    const result = await engine.start(issue);
+    const body = result.pullRequest?.body ?? '';
+
+    expect(body).toContain('Workflow for issue #7.');
+    expect(body.match(/Closes #\d+/g)).toEqual(['Closes #7']);
+  });
+
   it('does not create a second pull request for the same issue', async () => {
     const { provider, runtime, engine } = harness();
     const issue = await seedIssue(provider);

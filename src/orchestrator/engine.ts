@@ -91,6 +91,15 @@ function buildTranscript(
   return entries.sort((a, b) => Date.parse(a.at) - Date.parse(b.at));
 }
 
+/**
+ * The body of a workflow's draft pull request: the short description plus a
+ * host-recognized closing reference to the issue, so merging the pull request
+ * into the host's default branch links it to the issue and closes it.
+ */
+function pullRequestBody(issue: ProviderIssue): string {
+  return `Workflow for issue #${issue.ref.number}.\n\nCloses #${issue.ref.number}`;
+}
+
 function lastBotCommentAt(comments: ProviderComment[]): string | null {
   const botComments = comments.filter((comment) => comment.author.isBot);
   if (botComments.length === 0) return null;
@@ -165,7 +174,7 @@ export class WorkflowEngine {
       issue: issue.ref,
       baseBranch: this.baseBranch,
       title: `OpenSpec change for issue #${issue.ref.number}`,
-      body: `Workflow for issue #${issue.ref.number}.`,
+      body: pullRequestBody(issue),
       draft: true,
     });
     await this.runTurn('propose', pullRequest, [], [], null);
