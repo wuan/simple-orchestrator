@@ -151,6 +151,107 @@ describe('Poller.pollOnce', () => {
     expect(runtime.requests).toHaveLength(0);
   });
 
+  it('recovers a proposing workflow whose branch has no proposal', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    const sandbox = new FakeSandbox();
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      linkedIssue: 1,
+      labels: [DEFAULT_LABELS.proposing],
+    });
+    runtime.enqueue(proposeResult());
+
+    const poller = new Poller({
+      provider,
+      runtime,
+      sandbox,
+      openspec,
+      labels: DEFAULT_LABELS,
+      baseBranch: 'main',
+    });
+
+    sandbox.hasChangesResults = [false];
+    const first = await poller.pollOnce();
+    expect(first.recovered).toEqual([1]);
+    expect(runtime.requests).toHaveLength(1);
+    expect(runtime.requests[0]?.context.skill).toBe('propose');
+
+    // Recovery stays bounded: the process does not retry forever.
+    const second = await poller.pollOnce();
+    expect(second.recovered).toEqual([]);
+    expect(runtime.requests).toHaveLength(1);
+  });
+
+  it('fails and reports a proposing workflow whose recovery commits nothing', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    const sandbox = new FakeSandbox();
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      linkedIssue: 1,
+      labels: [DEFAULT_LABELS.proposing],
+    });
+    runtime.enqueue(proposeResult());
+
+    const poller = new Poller({
+      provider,
+      runtime,
+      sandbox,
+      openspec,
+      labels: DEFAULT_LABELS,
+      baseBranch: 'main',
+    });
+
+    sandbox.hasChangesResults = [false];
+    sandbox.headResults = ['same', 'same'];
+    const report = await poller.pollOnce();
+
+    expect(report.recovered).toEqual([1]);
+    const pullRequest = await provider.getPullRequest({ repo: provider.repo, number: 100 });
+    expect(pullRequest?.labels).toContain(DEFAULT_LABELS.failed);
+    expect(provider.commentLog.some((c) => c.body.includes('produced no change'))).toBe(true);
+  });
+
+  it('leaves a proposing workflow whose branch carries a proposal to review', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    const sandbox = new FakeSandbox();
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      linkedIssue: 1,
+      labels: [DEFAULT_LABELS.proposing],
+    });
+
+    const poller = new Poller({
+      provider,
+      runtime,
+      sandbox,
+      openspec,
+      labels: DEFAULT_LABELS,
+      baseBranch: 'main',
+    });
+
+    sandbox.hasChangesResults = [true];
+    const report = await poller.pollOnce();
+
+    expect(report.recovered).toEqual([]);
+    expect(report.actions).toContainEqual({ pullRequest: 100, kind: 'idle' });
+    expect(runtime.requests).toHaveLength(0);
+  });
+
   it('fails a stalled propose turn and recovers it on the next poll', async () => {
     const provider = new FakeProvider();
     const runtime = new FakeRuntime();

@@ -508,6 +508,84 @@ describe('WorkflowEngine.recover', () => {
   });
 });
 
+describe('WorkflowEngine.recoverStalled', () => {
+  async function proposingPullRequest(h: Harness): Promise<ProviderPullRequest> {
+    await seedIssue(h.provider, 1);
+    h.provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      labels: [DEFAULT_LABELS.proposing],
+      linkedIssue: 1,
+    });
+    const pullRequest = await h.provider.getPullRequest({ repo: h.provider.repo, number: 100 });
+    if (pullRequest === null) throw new Error('pull request not seeded');
+    return pullRequest;
+  }
+
+  it('re-runs the propose turn when a proposing branch carries no proposal', async () => {
+    const h = harness();
+    const pullRequest = await proposingPullRequest(h);
+    h.sandbox.hasChangesResults = [false];
+    h.runtime.enqueue(proposeResult());
+
+    const recovered = await h.engine.recoverStalled(pullRequest);
+
+    expect(recovered).toBe(true);
+    expect(h.runtime.requests).toHaveLength(1);
+    expect(h.runtime.requests[0]?.context.skill).toBe('propose');
+  });
+
+  it('fails the workflow and reports when the recovery turn still commits nothing', async () => {
+    const h = harness();
+    const pullRequest = await proposingPullRequest(h);
+    h.sandbox.hasChangesResults = [false];
+    h.sandbox.headResults = ['same', 'same'];
+    h.runtime.enqueue(proposeResult());
+
+    const recovered = await h.engine.recoverStalled(pullRequest);
+
+    expect(recovered).toBe(true);
+    expect(await labelsOf(h.provider, 100)).toContain(DEFAULT_LABELS.failed);
+    expect(h.provider.commentLog.some((c) => c.body.includes('produced no change'))).toBe(true);
+  });
+
+  it('leaves a proposing branch that already carries a proposal to review', async () => {
+    const h = harness();
+    const pullRequest = await proposingPullRequest(h);
+    h.sandbox.hasChangesResults = [true];
+
+    const recovered = await h.engine.recoverStalled(pullRequest);
+
+    expect(recovered).toBe(false);
+    expect(h.runtime.requests).toHaveLength(0);
+    expect(h.messages.join('\n')).toContain('branch carries a proposal');
+  });
+
+  it('treats an unresolved base merge as stalled', async () => {
+    const h = harness();
+    const pullRequest = await proposingPullRequest(h);
+    h.sandbox.baseIntegrationResults = [false];
+    h.sandbox.hasChangesResults = [true];
+    h.runtime.enqueue(proposeResult());
+
+    const recovered = await h.engine.recoverStalled(pullRequest);
+
+    expect(recovered).toBe(true);
+    expect(h.runtime.requests).toHaveLength(1);
+  });
+
+  it('attempts stalled recovery at most once per process', async () => {
+    const h = harness();
+    const pullRequest = await proposingPullRequest(h);
+    h.sandbox.hasChangesResults = [false];
+    h.runtime.enqueue(proposeResult());
+
+    expect(await h.engine.recoverStalled(pullRequest)).toBe(true);
+    expect(await h.engine.recoverStalled(pullRequest)).toBe(false);
+    expect(h.runtime.requests).toHaveLength(1);
+  });
+});
+
 describe('WorkflowEngine turn publishing', () => {
   class PushFailingProvider extends FakeProvider {
     override async push(): Promise<void> {

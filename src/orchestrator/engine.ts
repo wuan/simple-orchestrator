@@ -19,7 +19,7 @@ import type {
 } from '../provider/types.js';
 import { LimitExceededError } from '../runtime/limits.js';
 import { assertPushAllowed, PermissionError } from '../runtime/policy.js';
-import { BaseIntegrationError, type Sandbox } from '../runtime/sandbox.js';
+import { BaseIntegrationError, type Sandbox, type SandboxHandle } from '../runtime/sandbox.js';
 import type { AgentRuntime } from '../runtime/types.js';
 import { decide, type WorkflowAction } from './decision.js';
 import { allPhaseLabels, issueNumberFromBranch, labelForPhase, phaseFromLabels } from './labels.js';
@@ -192,6 +192,42 @@ export class WorkflowEngine {
     return true;
   }
 
+  /**
+   * Recover a `proposing` workflow that never produced a proposal: its branch
+   * carries no change relative to the base, so there is nothing for a human to
+   * review and the review-driven decision can never drive it again. A branch
+   * that does carry a change is a normal in-flight proposal and is left alone.
+   * Like `recover`, attempted at most once per pull request per process.
+   */
+  async recoverStalled(pullRequest: ProviderPullRequest): Promise<boolean> {
+    if (this.recovered.has(pullRequest.ref.number)) return false;
+    this.recovered.add(pullRequest.ref.number);
+
+    const handle = await this.sandbox.create({ branch: pullRequest.branch });
+    let stalled: boolean;
+    try {
+      // An unresolved base merge also needs a turn, so treat it as stalled.
+      stalled = !(await handle.baseIntegrated()) || !(await handle.hasChanges());
+    } catch (error) {
+      await handle.dispose();
+      throw error;
+    }
+
+    if (!stalled) {
+      await handle.dispose();
+      this.logger(`PR #${pullRequest.ref.number}: branch carries a proposal; leaving it to review`);
+      return false;
+    }
+
+    const reviews = await this.provider.listReviews(pullRequest.ref);
+    const comments = await this.provider.listComments(this.target(pullRequest));
+    this.logger(
+      `PR #${pullRequest.ref.number}: recovering a proposing workflow whose branch has no proposal`,
+    );
+    await this.runTurn('propose', pullRequest, reviews, comments, null, handle);
+    return true;
+  }
+
   /** Evaluate and perform the next action for an in-flight workflow. */
   async drive(pullRequest: ProviderPullRequest): Promise<WorkflowAction> {
     const botLogin = await this.getBotLogin();
@@ -294,12 +330,15 @@ export class WorkflowEngine {
     reviews: ProviderReview[],
     comments: ProviderComment[],
     trigger: NormalizedEvent | null,
+    existingHandle?: SandboxHandle,
   ): Promise<void> {
     const turn = `PR #${pullRequest.ref.number} ${skill} turn`;
     this.logger(
       `PR #${pullRequest.ref.number}: starting ${skill} turn (branch ${pullRequest.branch})`,
     );
-    const handle = await this.sandbox.create({ branch: pullRequest.branch });
+    // A caller that already provisioned a workspace for its own check hands it
+    // in so the turn does not provision a second one; the turn owns disposal.
+    const handle = existingHandle ?? (await this.sandbox.create({ branch: pullRequest.branch }));
     try {
       // A propose turn with no review trigger is expected to produce the change.
       // The branch tip is read around the turn so a turn that commits nothing is

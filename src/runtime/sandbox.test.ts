@@ -131,6 +131,24 @@ describe('WorktreeSandbox', () => {
     await handle.dispose();
   });
 
+  it('reports whether the branch carries a change relative to the base', async () => {
+    const f = await fixture();
+    const sandbox = sandboxFor(f);
+
+    // `openspec/issue-1` adds change.md, so it differs from main.
+    const changed = await sandbox.create({ branch: 'openspec/issue-1' });
+    expect(await changed.hasChanges()).toBe(true);
+    await changed.dispose();
+
+    // A branch that is only the base has nothing for a human to review.
+    await git(['-C', f.seed, 'checkout', 'main']);
+    await git(['-C', f.seed, 'branch', 'openspec/issue-2', 'main']);
+    await git(['-C', f.seed, 'push', 'origin', 'openspec/issue-2']);
+    const empty = await sandbox.create({ branch: 'openspec/issue-2' });
+    expect(await empty.hasChanges()).toBe(false);
+    await empty.dispose();
+  });
+
   it('discards the worktree but keeps the store when the turn ends', async () => {
     const f = await fixture();
     const sandbox = sandboxFor(f);
