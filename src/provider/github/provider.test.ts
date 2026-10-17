@@ -119,6 +119,20 @@ describe('GitHubProvider', () => {
     expect(github.branchSha('openspec/issue-11')).not.toBe('base-sha');
   });
 
+  it('marks a draft pull request ready for review through the GraphQL mutation', async () => {
+    const { provider, github } = setup();
+    github.seedPull({ number: 10, head: 'openspec/issue-1', draft: true });
+
+    await provider.markPullRequestReady({ repo: provider.repo, number: 10 });
+
+    const pr = await provider.getPullRequest({ repo: provider.repo, number: 10 });
+    expect(pr?.draft).toBe(false);
+    expect(pr?.nodeId).toBe('PR_node_10');
+    expect(github.calls.some((call) => call.method === 'POST' && call.path === '/graphql')).toBe(
+      true,
+    );
+  });
+
   it('manages lifecycle labels on a pull request', async () => {
     const { provider, github } = setup();
     github.seedPull({ number: 10, head: 'openspec/issue-1' });

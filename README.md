@@ -39,7 +39,13 @@ drives the OpenSpec lifecycle from the issue's problem description.
 - On approval the orchestrator claims the approval (label `openspec:implementing`)
   _before_ running the apply turn, so a later push cannot re-trigger apply.
 - The apply turn implements the tasks and folds `openspec archive` into its
-  final commit; merging the PR completes the workflow.
+  final commit. Once its commits are published, the orchestrator marks the pull
+  request **ready for review**, releasing it from draft so a human can review and
+  merge it; on GitHub this uses the `markPullRequestReadyForReview` GraphQL
+  mutation, because no REST endpoint exposes the transition. A release that fails
+  marks the workflow failed rather than leaving a task-complete pull request
+  stuck in draft.
+- Merging the PR completes the workflow.
 
 There is no database: phase lives in host labels, and the watermark is the
 timestamp of the last human review versus the orchestrator's last turn comment.
@@ -66,7 +72,8 @@ duplicating work.
 Two seams isolate everything external:
 
 - **`RepoProvider`** — issues, comments, labels, pull requests, review state,
-  clone and fetch. A GitHub adapter ships first; GitLab is an extension point.
+  clone, fetch, push, and releasing a pull request from draft. A GitHub adapter
+  ships first; GitLab is an extension point.
 - **`AgentRuntime`** — runs exactly one OpenSpec skill (`propose` or `apply`) per
   turn in a sandbox and returns a structured result.
 

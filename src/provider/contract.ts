@@ -56,6 +56,22 @@ export function runProviderContractTests(name: string, makeFixture: () => Provid
       expect(found.map((pr) => pr.ref.number)).toContain(created.ref.number);
     });
 
+    it('marks a draft pull request ready for review idempotently', async () => {
+      const fixture = makeFixture();
+      const { provider } = fixture;
+      const pr = await startWorkflow(fixture);
+      expect(pr.draft).toBe(true);
+
+      await provider.markPullRequestReady(pr.ref);
+      let stored = await provider.getPullRequest(pr.ref);
+      expect(stored?.draft).toBe(false);
+
+      // Marking an already-ready pull request is a no-op.
+      await expect(provider.markPullRequestReady(pr.ref)).resolves.toBeUndefined();
+      stored = await provider.getPullRequest(pr.ref);
+      expect(stored?.draft).toBe(false);
+    });
+
     it('round-trips labels on a pull request', async () => {
       const fixture = makeFixture();
       const { provider } = fixture;

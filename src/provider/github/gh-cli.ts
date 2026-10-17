@@ -1,6 +1,7 @@
 import type { CommandRunner } from '../../system/commands.js';
 import {
   GitHubApiError,
+  unwrapGraphql,
   type GitHubTransport,
   type JsonOptions,
   type JsonResult,
@@ -77,6 +78,17 @@ export class GhCliTransport implements GitHubTransport {
     const text = result.stdout.trim();
     const data = text === '' ? null : (JSON.parse(text) as T);
     return { status: 200, data, notModified: false };
+  }
+
+  /** Run a GraphQL query or mutation through `gh api graphql`. */
+  async graphql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+    const args = [...this.baseArgs(), 'graphql', '--input', '-'];
+    const result = await this.commands.run('gh', args, {
+      env: this.childEnv(),
+      stdin: JSON.stringify({ query, variables }),
+    });
+    if (result.code !== 0) throw this.describe('POST', '/graphql', result.stderr, result.code);
+    return unwrapGraphql<T>(result.stdout, 200);
   }
 
   async paginate<T>(path: string, query?: Record<string, QueryValue>): Promise<T[]> {

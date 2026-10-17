@@ -172,6 +172,33 @@ export class GitHubProvider implements RepoProvider {
     return mapPullRequest(this.repo, data);
   }
 
+  /**
+   * GitHub exposes no REST endpoint for releasing a draft, so the transition
+   * goes through the `markPullRequestReadyForReview` GraphQL mutation. The
+   * REST pull payload carries the GraphQL node id the mutation needs.
+   */
+  async markPullRequestReady(pullRequest: PullRequestRef): Promise<void> {
+    const { data, status } = await this.transport.json<GithubPullPayload>(
+      'GET',
+      `${this.repoPath()}/pulls/${pullRequest.number}`,
+    );
+    const nodeId = data?.node_id;
+    if (nodeId === undefined) {
+      throw new GitHubApiError(
+        `could not resolve node id for pull request #${pullRequest.number}`,
+        status,
+      );
+    }
+    await this.transport.graphql(
+      `mutation MarkPullRequestReady($pullRequestId: ID!) {
+        markPullRequestReadyForReview(input: { pullRequestId: $pullRequestId }) {
+          pullRequest { id isDraft }
+        }
+      }`,
+      { pullRequestId: nodeId },
+    );
+  }
+
   async listPullRequestsForIssue(issue: IssueRef): Promise<ProviderPullRequest[]> {
     const branch = defaultIssueBranch(issue);
     const payloads = await this.transport.paginate<GithubPullPayload>(`${this.repoPath()}/pulls`, {

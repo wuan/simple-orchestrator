@@ -2,6 +2,7 @@ import type { HttpClient } from '../../http/client.js';
 import { RateLimitError, RateLimitTracker, resetTimeFromHeaders } from '../../http/ratelimit.js';
 import {
   GitHubApiError,
+  unwrapGraphql,
   type GitHubTransport,
   type JsonOptions,
   type JsonResult,
@@ -119,6 +120,27 @@ export class GitHubRest implements GitHubTransport {
     }
     const data = response.text === '' ? null : (JSON.parse(response.text) as T);
     return { status: response.status, data, notModified: false };
+  }
+
+  /** Run a GraphQL query or mutation against `POST /graphql`. */
+  async graphql<T>(query: string, variables: Record<string, unknown> = {}): Promise<T> {
+    this.limiter.assertAllowed();
+    const response = await this.http.request({
+      method: 'POST',
+      url: this.buildUrl('/graphql'),
+      headers: this.headers({ 'content-type': 'application/json' }),
+      body: JSON.stringify({ query, variables }),
+    });
+
+    this.limiter.observe(response.headers);
+    this.checkRateLimitResponse(response.status, response.headers);
+    if (response.status >= 400) {
+      throw new GitHubApiError(
+        `GitHub POST /graphql failed with ${response.status}: ${response.text}`,
+        response.status,
+      );
+    }
+    return unwrapGraphql<T>(response.text, response.status);
   }
 
   /** GET every page of a paginated endpoint, following `Link` rel="next". */
