@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
+import type { TurnUsage } from '../../domain/types.js';
 import type { OpenCodeSkillRequest } from './client.js';
-import { EmbeddedOpenCodeClient, type OpenCodeHost, type SessionModel } from './sdk-client.js';
+import {
+  EmbeddedOpenCodeClient,
+  type OpenCodeHost,
+  type OpenCodePromptResult,
+  type SessionModel,
+} from './sdk-client.js';
 
 class FakeHost implements OpenCodeHost {
   readonly sessions: {
@@ -14,7 +20,7 @@ class FakeHost implements OpenCodeHost {
   closed = 0;
 
   constructor(
-    private readonly replies: string[] = ['done'],
+    private readonly replies: Array<string | OpenCodePromptResult> = ['done'],
     private readonly onRun?: (prompt: { sessionID: string; text: string }) => void,
   ) {}
 
@@ -32,11 +38,16 @@ class FakeHost implements OpenCodeHost {
     sessionID: string;
     text: string;
     signal?: AbortSignal;
-  }): Promise<string> {
+    onUsage?: (usage: Partial<TurnUsage>) => void;
+  }): Promise<OpenCodePromptResult> {
     this.prompts.push(input);
     input.signal?.throwIfAborted();
     this.onRun?.(input);
-    return this.replies.shift() ?? '';
+    const reply = this.replies.shift();
+    const result: OpenCodePromptResult =
+      typeof reply === 'string' || reply === undefined ? { text: reply ?? '' } : reply;
+    if (result.usage !== undefined) input.onUsage?.(result.usage);
+    return result;
   }
 
   async close(): Promise<void> {
@@ -92,6 +103,29 @@ describe('EmbeddedOpenCodeClient', () => {
       needsInput: false,
       agentClaimsReady: false,
     });
+  });
+
+  it('reports the turn usage on the result and through onUsage', async () => {
+    const usage: TurnUsage = {
+      model: 'greenpt/deepseek-v4.1-flash',
+      input: 10,
+      output: 5,
+      reasoning: 2,
+      cacheRead: 2,
+      cacheWrite: 1,
+      tokens: 20,
+    };
+    const host = new FakeHost([{ text: 'done', usage }]);
+    const client = new EmbeddedOpenCodeClient(async () => host);
+    const streamed: Partial<TurnUsage>[] = [];
+
+    const result = await client.runSkill({
+      ...request('propose'),
+      onUsage: (reported) => streamed.push(reported),
+    });
+
+    expect(result.usage).toEqual(usage);
+    expect(streamed).toEqual([usage]);
   });
 
   it('passes the abort signal through to the host', async () => {

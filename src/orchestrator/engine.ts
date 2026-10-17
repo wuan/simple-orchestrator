@@ -5,6 +5,7 @@ import type {
   TurnContext,
   TurnResult,
   TurnSkill,
+  TurnUsage,
   WorkflowPhase,
 } from '../domain/types.js';
 import { reviewEvent } from '../provider/normalize.js';
@@ -24,6 +25,13 @@ import type { AgentRuntime } from '../runtime/types.js';
 import { decide, type WorkflowAction } from './decision.js';
 import { allPhaseLabels, issueNumberFromBranch, labelForPhase, phaseFromLabels } from './labels.js';
 import { evaluateReadiness, type OpenspecCli } from './readiness.js';
+import {
+  accumulateUsage,
+  latestUsage,
+  mergeUsage,
+  withLastTurnMetrics,
+  withTurnMetrics,
+} from './usage.js';
 
 export interface WorkflowEngineOptions {
   provider: RepoProvider;
@@ -98,6 +106,11 @@ function buildTranscript(
  */
 function pullRequestBody(issue: ProviderIssue): string {
   return `Workflow for issue #${issue.ref.number}.\n\nCloses #${issue.ref.number}`;
+}
+
+/** Attach the orchestrator-measured elapsed time and attempt count to usage. */
+function withMeasuredUsage(reported: TurnUsage, startedAt: number, attempts: number): TurnUsage {
+  return { ...reported, durationMs: Date.now() - startedAt, attempts };
 }
 
 function lastBotCommentAt(comments: ProviderComment[]): string | null {
@@ -295,16 +308,19 @@ export class WorkflowEngine {
         return;
       case 'finish':
         await this.setPhase(pullRequest, 'done');
-        await this.provider.comment(this.target(pullRequest), 'Merged. Workflow complete.');
+        await this.provider.comment(
+          this.target(pullRequest),
+          withLastTurnMetrics('Merged. Workflow complete.', latestUsage(comments)),
+        );
         return;
       case 'fail':
-        await this.signalFailure(pullRequest, new Error(action.reason));
+        await this.signalFailure(pullRequest, new Error(action.reason), { comments });
         return;
       case 'cancel':
         await this.clearPhase(pullRequest);
         await this.provider.comment(
           this.target(pullRequest),
-          `Workflow cancelled: ${action.reason}.`,
+          withLastTurnMetrics(`Workflow cancelled: ${action.reason}.`, latestUsage(comments)),
         );
         return;
     }
@@ -348,6 +364,11 @@ export class WorkflowEngine {
     // A caller that already provisioned a workspace for its own check hands it
     // in so the turn does not provision a second one; the turn owns disposal.
     const handle = existingHandle ?? (await this.sandbox.create({ branch: pullRequest.branch }));
+    // Usage the runtime streams and the wall clock the orchestrator measures are
+    // collected outside the try so the failure path can report both.
+    const reported: TurnUsage = {};
+    let attempts = 0;
+    const startedAt = Date.now();
     try {
       // A propose turn with no review trigger is expected to produce the change.
       // The branch tip is read around the turn so a turn that commits nothing is
@@ -364,9 +385,18 @@ export class WorkflowEngine {
         trigger,
         pendingBaseIntegration,
       );
-      const result = await this.withRetry(turn, () =>
-        this.runtime.run({ context, workspace: handle.workspace, limits: this.limits }),
-      );
+      const result = await this.withRetry(turn, () => {
+        attempts += 1;
+        return this.runtime.run({
+          context,
+          workspace: handle.workspace,
+          limits: this.limits,
+          onUsage: (usage) => accumulateUsage(reported, usage),
+        });
+      });
+      // Combine what the runtime reported with the time and attempts the
+      // orchestrator measured, so the comment is complete for every runtime.
+      const usage = withMeasuredUsage(mergeUsage(reported, result.usage), startedAt, attempts);
       if (
         skill === 'propose' &&
         trigger === null &&
@@ -385,7 +415,7 @@ export class WorkflowEngine {
       // branch (and leaving an unmergeable pull request).
       if (!(await handle.baseIntegrated())) throw new BaseIntegrationError(this.baseBranch);
       await this.provider.push({ branch: pullRequest.branch, destination: handle.workspace });
-      await this.postTurn(pullRequest, result);
+      await this.postTurn(pullRequest, result, usage);
       const commits =
         result.commits.length === 0 ? 'no commits' : `commits ${result.commits.join(', ')}`;
       this.logger(`${turn} succeeded with ${commits}`);
@@ -399,7 +429,7 @@ export class WorkflowEngine {
         if (readiness.ready) {
           await this.provider.comment(
             this.target(pullRequest),
-            'The change is ready for development. Approve to implement.',
+            withTurnMetrics('The change is ready for development. Approve to implement.', usage),
           );
         }
       } else {
@@ -412,7 +442,11 @@ export class WorkflowEngine {
       }
     } catch (error) {
       this.logger(`${turn} failed: ${describeError(error)}`);
-      await this.signalFailure(pullRequest, error);
+      // The failure comment reports the partial usage, elapsed time, and
+      // attempts of the turn that just failed.
+      await this.signalFailure(pullRequest, error, {
+        usage: withMeasuredUsage(reported, startedAt, attempts),
+      });
     } finally {
       await handle.dispose();
     }
@@ -428,7 +462,11 @@ export class WorkflowEngine {
     }
   }
 
-  private async postTurn(pullRequest: ProviderPullRequest, result: TurnResult): Promise<void> {
+  private async postTurn(
+    pullRequest: ProviderPullRequest,
+    result: TurnResult,
+    usage: TurnUsage,
+  ): Promise<void> {
     const lines = [
       `**OpenSpec ${result.skill} turn**`,
       '',
@@ -438,7 +476,7 @@ export class WorkflowEngine {
     if (result.questions.length > 0) {
       lines.push('', '**Questions for the reviewer:**', ...result.questions.map((q) => `- ${q}`));
     }
-    await this.provider.comment(this.target(pullRequest), lines.join('\n'));
+    await this.provider.comment(this.target(pullRequest), withTurnMetrics(lines.join('\n'), usage));
   }
 
   private async setPhase(pullRequest: ProviderPullRequest, phase: WorkflowPhase): Promise<void> {
@@ -455,12 +493,23 @@ export class WorkflowEngine {
     for (const label of allPhaseLabels(this.labels)) await this.provider.removeLabel(target, label);
   }
 
-  private async signalFailure(pullRequest: ProviderPullRequest, error: unknown): Promise<void> {
+  /**
+   * Fail the workflow and post the failure on the pull request. A failure with
+   * a turn behind it reports that turn's metrics; a transition failure such as
+   * the revise limit repeats the last turn's metrics instead.
+   */
+  private async signalFailure(
+    pullRequest: ProviderPullRequest,
+    error: unknown,
+    context: { usage?: TurnUsage; comments?: ProviderComment[] },
+  ): Promise<void> {
     await this.setPhase(pullRequest, 'failed');
-    await this.provider.comment(
-      this.target(pullRequest),
-      `Workflow failed: ${describeError(error)}`,
-    );
+    const body = `Workflow failed: ${describeError(error)}`;
+    const comment =
+      context.usage === undefined
+        ? withLastTurnMetrics(body, latestUsage(context.comments ?? []))
+        : withTurnMetrics(body, context.usage);
+    await this.provider.comment(this.target(pullRequest), comment);
     this.logger(`PR #${pullRequest.ref.number} failed: ${describeError(error)}`);
   }
 }

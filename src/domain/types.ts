@@ -185,10 +185,36 @@ export interface TurnContext {
   pendingBaseIntegration?: boolean;
 }
 
+/**
+ * What a turn cost, as far as it is known.
+ *
+ * A runtime reports the model it ran and the tokens it consumed broken down by
+ * kind; the orchestrator adds the wall-clock time it measured and the number of
+ * attempts it made. Every field is optional because a runtime may report only
+ * some of them (or none), and a comment must degrade to "unknown" rather than
+ * fabricate a value.
+ */
 export interface TurnUsage {
-  steps: number;
-  tokens: number;
-  durationMs: number;
+  /** The model that ran the turn, as `provider/id` (plus `#variant` when set). */
+  model?: string;
+  /** Input tokens the turn consumed. */
+  input?: number;
+  /** Output tokens the turn produced. */
+  output?: number;
+  /** Reasoning tokens the turn produced. */
+  reasoning?: number;
+  /** Tokens read from the provider's prompt cache. */
+  cacheRead?: number;
+  /** Tokens written to the provider's prompt cache. */
+  cacheWrite?: number;
+  /** Total tokens consumed: the buckets summed (the limiter sums this total). */
+  tokens?: number;
+  /** Agent steps the turn took, when the runtime reports them. */
+  steps?: number;
+  /** Wall-clock duration the orchestrator measured for the turn. */
+  durationMs?: number;
+  /** Attempts the orchestrator made for the turn, including any retry. */
+  attempts?: number;
 }
 
 export interface TurnResult {

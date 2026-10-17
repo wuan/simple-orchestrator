@@ -235,6 +235,19 @@ turn's commits appear on the pull request; a turn that errors, a propose turn
 that commits nothing, or a push that fails, marks the workflow failed instead of
 advancing it.
 
+Every comment the orchestrator posts carries a compact metrics line for the turn
+behind it: the model that ran the turn and the tokens it consumed broken down by
+kind (input, output, reasoning, and cache read and write) with their total, the
+wall-clock time the orchestrator measured, and the number of attempts the turn
+took (a retried turn reports more than one). The adapter reads the model and
+token counts from the turn's own session messages; the orchestrator measures the
+elapsed time and attempts itself, so even a runtime that reports no duration is
+covered. Values the runtime does not report are stated as `unknown` rather than
+omitted. A comment for a transition with no turn behind it (workflow completion,
+cancellation, or the revise limit) repeats the last turn's metrics, labelled as
+the last turn's, recovered from a machine-readable marker on the earlier comment
+so a restart still reports them.
+
 When building the service yourself, supply a runtime when calling `createService`
 in `src/service.ts`; the `OpenCodeRuntime` in `src/runtime/opencode/` is the
 adapter, and `createEmbeddedHostFactory` in `src/runtime/opencode/sdk-host.ts`

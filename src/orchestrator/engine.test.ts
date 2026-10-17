@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { DEFAULT_LABELS } from '../config/types.js';
-import type { TurnResult } from '../domain/types.js';
+import type { TurnResult, TurnUsage } from '../domain/types.js';
 import { FakeProvider } from '../provider/fake/fake-provider.js';
 import type { ProviderIssue, ProviderPullRequest } from '../provider/types.js';
 import { FakeRuntime } from '../runtime/fake/fake-runtime.js';
@@ -10,6 +10,7 @@ import type { AgentRuntime, TurnRequest } from '../runtime/types.js';
 import { WorkflowEngine } from './engine.js';
 import { FakeOpenspecCli } from './testing/fake-openspec.js';
 import { FakeSandbox } from './testing/fake-sandbox.js';
+import { parseUsageMarker } from './usage.js';
 
 function proposeResult(overrides: Partial<TurnResult> = {}): TurnResult {
   return {
@@ -727,5 +728,212 @@ describe('WorkflowEngine base integration', () => {
     expect(
       h.provider.commentLog.some((c) => c.body.includes("base branch 'main' was not integrated")),
     ).toBe(true);
+  });
+});
+
+function commentContaining(provider: FakeProvider, needle: string): string {
+  const body = provider.commentLog.map((entry) => entry.body).find((text) => text.includes(needle));
+  if (body === undefined) throw new Error(`no comment contains ${needle}`);
+  return body;
+}
+
+/** A runtime that streams usage and then throws (or fails transiently first). */
+class UsageRuntime implements AgentRuntime {
+  readonly id = 'usage';
+  calls = 0;
+
+  constructor(
+    private readonly usage: Partial<TurnUsage>,
+    private readonly behavior: (call: number) => void = () => {},
+  ) {}
+
+  async run(request: TurnRequest): Promise<TurnResult> {
+    this.calls += 1;
+    request.onUsage?.(this.usage);
+    this.behavior(this.calls);
+    return proposeResult({ usage: { ...this.usage } });
+  }
+}
+
+describe('WorkflowEngine turn metrics', () => {
+  it('reports the model, tokens, elapsed time, and attempts on a propose turn', async () => {
+    const h = harness();
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+
+    await h.engine.start(issue);
+
+    const comment = commentContaining(h.provider, 'OpenSpec propose turn');
+    expect(comment).toContain('**Usage:** model `fake/model`');
+    expect(comment).toContain(
+      'tokens 20 (input 10 · output 5 · reasoning 2 · cache read 2 · cache write 1)',
+    );
+    expect(comment).toMatch(/elapsed \d+(ms|s)/);
+    expect(comment).toContain('attempts 1');
+    expect(parseUsageMarker(comment)).toMatchObject({ model: 'fake/model', tokens: 20 });
+  });
+
+  it('reports metrics on an apply turn', async () => {
+    const h = harness({ ready: true });
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    const started = await h.engine.start(issue);
+    const number = started.pullRequest?.ref.number ?? -1;
+    h.provider.seedReview(number, { state: 'approved', body: 'lgtm' });
+    h.runtime.enqueue(applyResult());
+
+    await h.engine.drive((await h.provider.getPullRequest({ repo: h.provider.repo, number }))!);
+
+    const comment = commentContaining(h.provider, 'OpenSpec apply turn');
+    expect(comment).toContain('**Usage:** model `fake/model`');
+    expect(comment).toContain('attempts 1');
+  });
+
+  it('carries the same metrics on the readiness prompt as on the turn comment', async () => {
+    const h = harness({ ready: true });
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+
+    await h.engine.start(issue);
+
+    const turn = commentContaining(h.provider, 'OpenSpec propose turn');
+    const readiness = commentContaining(h.provider, 'The change is ready for development');
+    const line = turn.split('\n').find((text) => text.startsWith('**Usage:**'));
+    expect(line).toBeDefined();
+    expect(readiness).toContain(line ?? '');
+    expect(parseUsageMarker(readiness)).toMatchObject({ model: 'fake/model', tokens: 20 });
+  });
+
+  it('reports elapsed time and attempts for a runtime that reports no duration', async () => {
+    // The fake's default usage carries no duration; the engine must measure it.
+    const h = harness();
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+
+    await h.engine.start(issue);
+
+    const comment = commentContaining(h.provider, 'OpenSpec propose turn');
+    expect(comment).toMatch(/elapsed \d+(ms|s)/);
+    expect(comment).toContain('attempts 1');
+  });
+
+  it('reports attempts and usage spanning a transient retry', async () => {
+    const runtime = new UsageRuntime({ model: 'retry/model', input: 3, tokens: 3 }, (call) => {
+      if (call === 1) throw new Error('transient');
+    });
+    const h = harness({ runtime });
+    const issue = await seedIssue(h.provider);
+
+    await h.engine.start(issue);
+
+    const comment = commentContaining(h.provider, 'OpenSpec propose turn');
+    expect(comment).toContain('model `retry/model`');
+    expect(comment).toContain('tokens 6 (input 6');
+    expect(comment).toContain('attempts 2');
+  });
+
+  it('reports partial usage, elapsed time, and attempts for a failed turn', async () => {
+    const runtime = new UsageRuntime({ model: 'fail/model', input: 7, tokens: 7 }, () => {
+      throw new Error('boom');
+    });
+    const h = harness({ runtime });
+    const issue = await seedIssue(h.provider);
+
+    await h.engine.start(issue);
+
+    const comment = commentContaining(h.provider, 'Workflow failed: boom');
+    expect(comment).toContain('model `fail/model`');
+    expect(comment).toContain('tokens 14');
+    expect(comment).toContain('attempts 2');
+    expect(comment).toMatch(/elapsed \d+(ms|s)/);
+    expect(await labelsOf(h.provider, 100)).toContain(DEFAULT_LABELS.failed);
+  });
+});
+
+describe('WorkflowEngine lifecycle metrics', () => {
+  it("repeats the last turn's metrics on a merged completion", async () => {
+    const h = harness();
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    await h.engine.start(issue);
+    const number = 100;
+    h.provider.setPullRequestState(number, 'merged');
+
+    await h.engine.drive((await h.provider.getPullRequest({ repo: h.provider.repo, number }))!);
+
+    const comment = commentContaining(h.provider, 'Merged. Workflow complete.');
+    expect(comment).toContain('**Usage (last turn):** model `fake/model`');
+    expect(comment).toContain('tokens 20');
+    expect(comment).not.toContain('model unknown');
+  });
+
+  it("recovers the last turn's metrics without process state after a restart", async () => {
+    const h = harness();
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    await h.engine.start(issue);
+    h.provider.setPullRequestState(100, 'merged');
+
+    // A fresh engine process holds no memory; the marker in the comments is
+    // the only source of the previous turn's metrics.
+    const restarted = harness({ provider: h.provider });
+    await restarted.engine.drive(
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number: 100 }))!,
+    );
+
+    const comment = commentContaining(h.provider, 'Merged. Workflow complete.');
+    expect(comment).toContain('**Usage (last turn):** model `fake/model`');
+    expect(comment).toContain('tokens 20');
+  });
+
+  it("repeats the last turn's metrics on cancellation", async () => {
+    const h = harness();
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    await h.engine.start(issue);
+    await h.provider.removeLabel({ kind: 'issue', ref: issue.ref }, 'openspec');
+
+    await h.engine.drive(
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number: 100 }))!,
+    );
+
+    const comment = commentContaining(h.provider, 'Workflow cancelled');
+    expect(comment).toContain('**Usage (last turn):** model `fake/model`');
+  });
+
+  it("repeats the last turn's metrics on a revise-limit failure", async () => {
+    const h = harness({ maxReviseRounds: 0 });
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    await h.engine.start(issue);
+    h.provider.seedReview(100, { state: 'changes_requested' });
+
+    await h.engine.drive(
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number: 100 }))!,
+    );
+
+    const comment = commentContaining(h.provider, 'Workflow failed: revise limit');
+    expect(comment).toContain('**Usage (last turn):** model `fake/model`');
+  });
+
+  it('states the metrics as unknown when no turn has run', async () => {
+    const h = harness();
+    await seedIssue(h.provider, 1);
+    h.provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      state: 'merged',
+      labels: [DEFAULT_LABELS.implementing],
+      linkedIssue: 1,
+    });
+
+    await h.engine.drive(
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number: 100 }))!,
+    );
+
+    const comment = commentContaining(h.provider, 'Merged. Workflow complete.');
+    expect(comment).toContain('**Usage (last turn):**');
+    expect(comment).toContain('model unknown');
+    expect(comment).toContain('tokens unknown');
   });
 });

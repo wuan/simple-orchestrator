@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
+import type { TurnUsage } from '../../domain/types.js';
 import type { SessionModel } from './sdk-client.js';
 import {
   assertTurnSucceeded,
   createEmbeddedHostFactory,
+  extractUsage,
   finalAssistantText,
   parseModelRef,
   type SdkLoader,
@@ -21,6 +23,13 @@ interface FakePart {
 interface FakeMessage {
   type?: string;
   content?: ReadonlyArray<FakePart>;
+  model?: { providerID?: string; id?: string; variant?: string };
+  tokens?: {
+    input?: number;
+    output?: number;
+    reasoning?: number;
+    cache?: { read?: number; write?: number };
+  };
   finish?: string;
   outcome?: string;
   error?: { message?: string };
@@ -166,6 +175,56 @@ describe('finalAssistantText', () => {
   });
 });
 
+describe('extractUsage', () => {
+  it('takes the model from the last assistant message', () => {
+    const usage = extractUsage([
+      { type: 'user', content: [{ type: 'text', text: 'prompt' }] },
+      { type: 'assistant', model: { providerID: 'greenpt', id: 'older' } },
+      {
+        type: 'assistant',
+        model: { providerID: 'greenpt', id: 'deepseek-v4.1-flash', variant: 'fast' },
+      },
+    ]);
+    expect(usage?.model).toBe('greenpt/deepseek-v4.1-flash#fast');
+  });
+
+  it('sums every token bucket across the assistant messages and keeps the total', () => {
+    const usage = extractUsage([
+      {
+        type: 'assistant',
+        model: { providerID: 'greenpt', id: 'model' },
+        tokens: { input: 10, output: 5, reasoning: 2, cache: { read: 3, write: 1 } },
+      },
+      {
+        type: 'assistant',
+        tokens: { input: 1, output: 2, reasoning: 3, cache: { read: 4, write: 5 } },
+      },
+    ]);
+    expect(usage).toEqual({
+      model: 'greenpt/model',
+      input: 11,
+      output: 7,
+      reasoning: 5,
+      cacheRead: 7,
+      cacheWrite: 6,
+      tokens: 36,
+    });
+  });
+
+  it('returns undefined for a session with no assistant messages', () => {
+    expect(extractUsage([])).toBeUndefined();
+    expect(
+      extractUsage([{ type: 'user', content: [{ type: 'text', text: 'prompt' }] }]),
+    ).toBeUndefined();
+  });
+
+  it('reports the model without token counts when the messages carry none', () => {
+    expect(
+      extractUsage([{ type: 'assistant', model: { providerID: 'greenpt', id: 'model' } }]),
+    ).toEqual({ model: 'greenpt/model' });
+  });
+});
+
 describe('createEmbeddedHostFactory', () => {
   it('points the host at the configured OpenCode database', async () => {
     const { loader, calls } = fakeSdk([[]]);
@@ -189,7 +248,7 @@ describe('createEmbeddedHostFactory', () => {
       model: { providerID: 'greenpt', id: 'deepseek-v4.1-flash' },
       agent: 'build',
     });
-    const text = await host.runPrompt({ sessionID: session.id, text: 'do the thing' });
+    const result = await host.runPrompt({ sessionID: session.id, text: 'do the thing' });
 
     expect(calls.sessions).toEqual([
       {
@@ -202,7 +261,7 @@ describe('createEmbeddedHostFactory', () => {
     expect(calls.prompts).toMatchObject([{ sessionID: 'session-1', text: 'do the thing' }]);
     expect(calls.waits).toMatchObject([{ sessionID: 'session-1' }]);
     expect(calls.contexts).toMatchObject([{ sessionID: 'session-1' }]);
-    expect(text).toBe('turn two');
+    expect(result.text).toBe('turn two');
   });
 
   it('fails the turn when the agent errored', async () => {
@@ -211,6 +270,69 @@ describe('createEmbeddedHostFactory', () => {
     ]);
     const host = await createEmbeddedHostFactory({}, loader)();
     await expect(host.runPrompt({ sessionID: 's', text: 'x' })).rejects.toThrowError(/boom/);
+  });
+
+  it('reports usage before failing a turn that then errors', async () => {
+    const { loader } = fakeSdk([
+      [
+        {
+          type: 'assistant',
+          finish: 'error',
+          model: { providerID: 'greenpt', id: 'model' },
+          tokens: { input: 1, output: 2, reasoning: 0, cache: { read: 0, write: 0 } },
+          error: { message: 'boom' },
+        },
+      ],
+    ]);
+    const host = await createEmbeddedHostFactory({}, loader)();
+    const reported: TurnUsage[] = [];
+
+    await expect(
+      host.runPrompt({
+        sessionID: 's',
+        text: 'x',
+        onUsage: (usage) => reported.push(usage as TurnUsage),
+      }),
+    ).rejects.toThrowError(/boom/);
+    expect(reported).toEqual([
+      {
+        model: 'greenpt/model',
+        input: 1,
+        output: 2,
+        reasoning: 0,
+        cacheRead: 0,
+        cacheWrite: 0,
+        tokens: 3,
+      },
+    ]);
+  });
+
+  it('returns the usage alongside the final text', async () => {
+    const { loader } = fakeSdk([
+      [
+        {
+          type: 'assistant',
+          finish: 'stop',
+          model: { providerID: 'greenpt', id: 'model' },
+          tokens: { input: 4, output: 6, reasoning: 0, cache: { read: 0, write: 0 } },
+          content: [{ type: 'text', text: 'done' }],
+        },
+      ],
+    ]);
+    const host = await createEmbeddedHostFactory({}, loader)();
+
+    const result = await host.runPrompt({ sessionID: 's', text: 'x' });
+
+    expect(result.text).toBe('done');
+    expect(result.usage).toEqual({
+      model: 'greenpt/model',
+      input: 4,
+      output: 6,
+      reasoning: 0,
+      cacheRead: 0,
+      cacheWrite: 0,
+      tokens: 10,
+    });
   });
 
   it('forwards the abort signal to prompt, wait, and context', async () => {

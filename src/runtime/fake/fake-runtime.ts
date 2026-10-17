@@ -24,7 +24,18 @@ export class FakeRuntime implements AgentRuntime {
     if (result === undefined) {
       throw new Error('FakeRuntime: no result queued and no factory configured');
     }
-    request.onUsage?.(result.usage ?? { steps: 1, tokens: 0, durationMs: 0 });
+    request.onUsage?.(
+      result.usage ?? {
+        model: 'fake/model',
+        input: 10,
+        output: 5,
+        reasoning: 2,
+        cacheRead: 2,
+        cacheWrite: 1,
+        tokens: 20,
+        steps: 1,
+      },
+    );
     return result;
   }
 }

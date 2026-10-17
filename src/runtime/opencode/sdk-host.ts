@@ -1,3 +1,4 @@
+import type { TurnUsage } from '../../domain/types.js';
 import type { OpenCodeHost, OpenCodeHostFactory, SessionModel } from './sdk-client.js';
 
 /**
@@ -11,9 +12,24 @@ interface SdkContentPart {
   type?: string;
   text?: string;
 }
+/** The model reference an assistant message carries. */
+interface SdkModelRef {
+  providerID?: string;
+  id?: string;
+  variant?: string;
+}
+/** The per-kind token counts an assistant message carries, when the provider reports them. */
+interface SdkTokens {
+  input?: number;
+  output?: number;
+  reasoning?: number;
+  cache?: { read?: number; write?: number };
+}
 interface SdkMessage {
   type?: string;
   content?: ReadonlyArray<SdkContentPart>;
+  model?: SdkModelRef;
+  tokens?: SdkTokens;
   finish?: string;
   outcome?: string;
   error?: { message?: string };
@@ -110,13 +126,70 @@ export function finalAssistantText(messages: ReadonlyArray<SdkMessage>): string 
   return '';
 }
 
+/** Format a session model as the operator-facing `provider/id#variant` reference. */
+export function formatModelRef(model: SessionModel): string {
+  const base = `${model.providerID}/${model.id}`;
+  return model.variant === undefined || model.variant === '' ? base : `${base}#${model.variant}`;
+}
+
+/**
+ * Derive a turn's usage from the assistant messages it produced: the model is
+ * the last assistant message's, and each token bucket is summed across the
+ * turn's assistant messages with their total following the platform's
+ * `TokenUsage.total` convention. Returns `undefined` when the turn produced no
+ * assistant message (nothing could be read).
+ */
+export function extractUsage(messages: ReadonlyArray<SdkMessage>): TurnUsage | undefined {
+  let model: string | undefined;
+  let input = 0;
+  let output = 0;
+  let reasoning = 0;
+  let cacheRead = 0;
+  let cacheWrite = 0;
+  let sawAssistant = false;
+  let sawTokens = false;
+  for (const message of messages) {
+    if (message.type !== 'assistant') continue;
+    sawAssistant = true;
+    const ref = message.model;
+    if (ref?.providerID !== undefined && ref.id !== undefined) {
+      model =
+        ref.variant === undefined || ref.variant === ''
+          ? `${ref.providerID}/${ref.id}`
+          : `${ref.providerID}/${ref.id}#${ref.variant}`;
+    }
+    const tokens = message.tokens;
+    if (tokens !== undefined) {
+      sawTokens = true;
+      input += tokens.input ?? 0;
+      output += tokens.output ?? 0;
+      reasoning += tokens.reasoning ?? 0;
+      cacheRead += tokens.cache?.read ?? 0;
+      cacheWrite += tokens.cache?.write ?? 0;
+    }
+  }
+  if (!sawAssistant) return undefined;
+  const usage: TurnUsage = {};
+  if (model !== undefined) usage.model = model;
+  if (sawTokens) {
+    usage.input = input;
+    usage.output = output;
+    usage.reasoning = reasoning;
+    usage.cacheRead = cacheRead;
+    usage.cacheWrite = cacheWrite;
+    usage.tokens = input + output + reasoning + cacheRead + cacheWrite;
+  }
+  return usage;
+}
+
 /**
  * Build a host factory backed by the embedded `@opencode/sdk`.
  *
  * The SDK is imported lazily, on the first turn, so the orchestrator's other
  * commands never pay to load it, and the returned host is created once and
  * reused. `runPrompt` sends the prompt, waits for the session to become idle,
- * fails the turn when the agent errored, then reads back the final text.
+ * reads back the final text and the usage, reports the usage, then fails the
+ * turn when the agent errored.
  */
 export function createEmbeddedHostFactory(
   options: EmbedOpenCodeOptions = {},
@@ -135,13 +208,17 @@ export function createEmbeddedHostFactory(
           ...(model === undefined ? {} : { model }),
           ...(agent === undefined ? {} : { agent }),
         }),
-      async runPrompt({ sessionID, text, signal }) {
+      async runPrompt({ sessionID, text, signal, onUsage }) {
         const request = signal === undefined ? undefined : { signal };
         await host.sessions.prompt({ sessionID, text }, request);
         await host.sessions.wait({ sessionID }, request);
         const messages = await host.sessions.context({ sessionID }, request);
+        const usage = extractUsage(messages);
+        // Report what the turn consumed before asserting success, so a turn
+        // that then fails still contributes its model and tokens.
+        if (usage !== undefined) onUsage?.(usage);
         assertTurnSucceeded(messages);
-        return finalAssistantText(messages);
+        return { text: finalAssistantText(messages), ...(usage === undefined ? {} : { usage }) };
       },
       close: () => host.close(),
     };
