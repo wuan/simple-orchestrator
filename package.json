@@ -23,8 +23,8 @@
     "prepare": "git rev-parse --git-dir >/dev/null 2>&1 && git config core.hooksPath .githooks || true"
   },
   "devDependencies": {
-    "@eslint/js": "^9.13.0",
-    "@types/node": "^24.19.2",
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^26.6.5",
     "eslint": "^10.12.0",
     "eslint-config-prettier": "^10.1.8",
     "prettier": "^3.9.10",
