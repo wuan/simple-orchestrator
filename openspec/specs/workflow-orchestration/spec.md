@@ -208,7 +208,11 @@ After a turn runs successfully, the orchestrator SHALL publish the workflow bran
 - **THEN** the orchestrator marks the workflow failed and reports the error on the pull request
 
 ### Requirement: Recover interrupted workflows
-When an issue carries the trigger label and already has an open pull request that is not in an in-flight phase, the orchestrator SHALL re-run the propose turn for that pull request rather than treating the issue as permanently blocked, and SHALL attempt recovery at most once per pull request per process.
+When an issue carries the trigger label and already has an open pull request that
+is not in an in-flight phase, or is in the PROPOSING phase but its workflow
+branch carries no change relative to the base, the orchestrator SHALL re-run the
+propose turn for that pull request rather than treating the issue as permanently
+blocked, and SHALL attempt recovery at most once per pull request per process.
 
 #### Scenario: Failed workflow is recovered
 - **WHEN** a trigger-labeled issue has an open pull request in the FAILED phase
@@ -218,12 +222,19 @@ When an issue carries the trigger label and already has an open pull request tha
 - **WHEN** a trigger-labeled issue has an open pull request with no lifecycle phase
 - **THEN** the orchestrator runs the propose turn for that pull request once
 
+#### Scenario: Stalled proposing workflow is recovered
+- **WHEN** a trigger-labeled issue has an open pull request in the PROPOSING
+  phase whose workflow branch carries no change relative to the base
+- **THEN** the orchestrator runs the propose turn for that pull request once, so
+  it either produces the change or is marked failed and reported
+
 #### Scenario: Recovery is bounded per process
 - **WHEN** the orchestrator has already attempted recovery for a pull request in the current process
 - **THEN** it takes no further action for that pull request
 
 #### Scenario: In-flight workflows are left alone
-- **WHEN** the open pull request already carries an in-flight phase
+- **WHEN** the open pull request already carries an in-flight phase other than a
+  PROPOSING phase with no change relative to the base
 - **THEN** the orchestrator leaves it to the normal review-driven discovery and does not recover it
 
 ### Requirement: Ready-for-review after implementation
@@ -294,3 +305,14 @@ request is merged.
 - **WHEN** a workflow pull request whose body carries the closing reference is
   merged into the host's default branch
 - **THEN** the host closes the referenced issue
+
+### Requirement: A proposing workflow with a proposal is left to review
+An open pull request in the PROPOSING phase whose workflow branch already carries
+a change relative to the base SHALL be left to the normal review-driven
+discovery, and the orchestrator SHALL NOT recover it.
+
+#### Scenario: Proposing workflow with a proposal is left alone
+- **WHEN** an open pull request in the PROPOSING phase carries a change relative
+  to the base
+- **THEN** the orchestrator leaves it to the normal review-driven discovery and
+  does not recover it
