@@ -9,6 +9,12 @@ import type { RepositorySource, RepositoryStore } from './repository-store.js';
 export interface SandboxHandle {
   readonly workspace: string;
   /**
+   * The commit the workspace's branch currently points at. Read before and
+   * after a turn so the orchestrator can tell whether the turn committed
+   * anything, independent of any runtime self-report.
+   */
+  head(): Promise<string>;
+  /**
    * Whether the current base branch is integrated into the workspace's branch,
    * i.e. the base tip is an ancestor of `HEAD`. A false value also means the
    * workspace holds an unresolved base merge the turn must resolve.
@@ -125,6 +131,15 @@ export class WorktreeSandbox implements Sandbox {
     return result.code === 0;
   }
 
+  /** The commit the workspace's branch currently points at. */
+  private async headSha(workspace: string): Promise<string> {
+    const result = await this.git(['-C', workspace, 'rev-parse', 'HEAD']);
+    if (result.code !== 0) {
+      throw new Error(`git rev-parse HEAD failed (${result.code}): ${result.stderr.trim()}`);
+    }
+    return result.stdout.trim();
+  }
+
   /** Unmerged paths left behind by a conflicted merge (`git status --porcelain`). */
   private async hasUnmergedPaths(workspace: string): Promise<boolean> {
     const status = await this.git(['-C', workspace, 'status', '--porcelain']);
@@ -188,6 +203,7 @@ export class WorktreeSandbox implements Sandbox {
     let disposed = false;
     return {
       workspace,
+      head: () => this.headSha(workspace),
       baseIntegrated: () => this.isBaseIntegrated(workspace),
       dispose: async () => {
         if (disposed) return;

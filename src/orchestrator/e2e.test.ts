@@ -180,6 +180,18 @@ describe('end-to-end base integration', () => {
     readonly basePresent: boolean[] = [];
     async run(request: TurnRequest): Promise<TurnResult> {
       this.basePresent.push(existsSync(join(request.workspace, 'base-marker.md')));
+      // Model a real turn: commit something so the workflow branch advances.
+      writeFileSync(join(request.workspace, `turn-${this.basePresent.length}.md`), 'turn\n');
+      git(request.workspace, ['add', '.']);
+      git(request.workspace, [
+        '-c',
+        'user.email=test@example.com',
+        '-c',
+        'user.name=Test',
+        'commit',
+        '-m',
+        'turn work',
+      ]);
       return proposeResult('recorded a turn');
     }
   }
