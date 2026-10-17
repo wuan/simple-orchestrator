@@ -8,8 +8,40 @@ import type { RepositorySource, RepositoryStore } from './repository-store.js';
 
 export interface SandboxHandle {
   readonly workspace: string;
+  /**
+   * Whether the current base branch is integrated into the workspace's branch,
+   * i.e. the base tip is an ancestor of `HEAD`. A false value also means the
+   * workspace holds an unresolved base merge the turn must resolve.
+   */
+  baseIntegrated(): Promise<boolean>;
   dispose(): Promise<void>;
 }
+
+/**
+ * A turn finished without the current base branch integrated into the workflow
+ * branch. Permanent: retrying the same turn cannot resolve the base, so the
+ * workflow is failed and the operator is told which base is missing.
+ */
+export class BaseIntegrationError extends Error {
+  constructor(baseBranch: string) {
+    super(
+      `the base branch '${baseBranch}' was not integrated into the workflow branch; resolve the base merge and commit it before the turn finishes`,
+    );
+    this.name = 'BaseIntegrationError';
+  }
+}
+
+/**
+ * The identity the orchestrator authors a clean base-integration merge commit
+ * with, so the merge does not depend on a user identity being configured in the
+ * repository clone.
+ */
+const INTEGRATION_IDENTITY = [
+  '-c',
+  'user.name=openspec-workflow-orchestrator',
+  '-c',
+  'user.email=orchestrator@localhost',
+] as const;
 
 export interface Sandbox {
   create(input: { branch: string }): Promise<SandboxHandle>;
@@ -80,6 +112,48 @@ export class WorktreeSandbox implements Sandbox {
     }
   }
 
+  /** Whether `origin/<baseBranch>` is an ancestor of the workspace's `HEAD`. */
+  private async isBaseIntegrated(workspace: string): Promise<boolean> {
+    const result = await this.git([
+      '-C',
+      workspace,
+      'merge-base',
+      '--is-ancestor',
+      `origin/${this.baseBranch}`,
+      'HEAD',
+    ]);
+    return result.code === 0;
+  }
+
+  /** Unmerged paths left behind by a conflicted merge (`git status --porcelain`). */
+  private async hasUnmergedPaths(workspace: string): Promise<boolean> {
+    const status = await this.git(['-C', workspace, 'status', '--porcelain']);
+    return status.stdout.split('\n').some((line) => /^(DD|AU|UD|UA|DU|AA|UU) /.test(line));
+  }
+
+  /**
+   * Merge the current base branch into the workflow branch before the turn. A
+   * clean merge is committed (or fast-forwards); a conflicted merge is left
+   * unresolved in the workspace for the turn to resolve, rather than failing
+   * provisioning. Does nothing when the base is already integrated.
+   */
+  private async integrateBase(workspace: string): Promise<void> {
+    const base = `origin/${this.baseBranch}`;
+    if (await this.isBaseIntegrated(workspace)) return;
+    const merge = await this.git([
+      '-C',
+      workspace,
+      ...INTEGRATION_IDENTITY,
+      'merge',
+      '--no-edit',
+      base,
+    ]);
+    if (merge.code === 0 || (await this.hasUnmergedPaths(workspace))) return;
+    throw new Error(
+      `integrating the base branch '${this.baseBranch}' failed (${merge.code}): ${merge.stderr.trim()}`,
+    );
+  }
+
   async create(input: { branch: string }): Promise<SandboxHandle> {
     const store = await this.store.ensure({ baseBranch: this.baseBranch, source: this.source });
     const base = await mkdtemp(join(this.root, this.prefix));
@@ -103,6 +177,9 @@ export class WorktreeSandbox implements Sandbox {
       if (added.code !== 0) {
         throw new Error(`git worktree add failed (${added.code}): ${added.stderr.trim()}`);
       }
+      // Bring the workspace onto the current base before the turn runs. A
+      // conflict is deliberately left in place for the turn to resolve.
+      await this.integrateBase(workspace);
     } catch (error) {
       await rm(base, { recursive: true, force: true });
       throw error;
@@ -111,6 +188,7 @@ export class WorktreeSandbox implements Sandbox {
     let disposed = false;
     return {
       workspace,
+      baseIntegrated: () => this.isBaseIntegrated(workspace),
       dispose: async () => {
         if (disposed) return;
         disposed = true;

@@ -178,6 +178,11 @@ export interface TurnContext {
   transcript: TranscriptEntry[];
   /** Triggering events the turn should address. */
   pendingFeedback: NormalizedEvent[];
+  /**
+   * True when the workspace carries an unresolved integration of the base
+   * branch that the turn must resolve and commit before it finishes.
+   */
+  pendingBaseIntegration?: boolean;
 }
 
 export interface TurnUsage {

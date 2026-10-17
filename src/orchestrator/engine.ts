@@ -19,7 +19,7 @@ import type {
 } from '../provider/types.js';
 import { LimitExceededError } from '../runtime/limits.js';
 import { assertPushAllowed, PermissionError } from '../runtime/policy.js';
-import type { Sandbox } from '../runtime/sandbox.js';
+import { BaseIntegrationError, type Sandbox } from '../runtime/sandbox.js';
 import type { AgentRuntime } from '../runtime/types.js';
 import { decide, type WorkflowAction } from './decision.js';
 import { allPhaseLabels, issueNumberFromBranch, labelForPhase, phaseFromLabels } from './labels.js';
@@ -44,7 +44,11 @@ export interface StartResult {
 
 /** A limit or permission failure is permanent; anything else is retried once. */
 function isRetryable(error: unknown): boolean {
-  return !(error instanceof LimitExceededError) && !(error instanceof PermissionError);
+  return (
+    !(error instanceof LimitExceededError) &&
+    !(error instanceof PermissionError) &&
+    !(error instanceof BaseIntegrationError)
+  );
 }
 
 function describeError(error: unknown): string {
@@ -255,6 +259,7 @@ export class WorkflowEngine {
     reviews: ProviderReview[],
     comments: ProviderComment[],
     trigger: NormalizedEvent | null,
+    pendingBaseIntegration: boolean,
   ): TurnContext {
     const number =
       pullRequest.linkedIssue?.number ?? issueNumberFromBranch(pullRequest.branch) ?? 0;
@@ -267,6 +272,7 @@ export class WorkflowEngine {
       baseBranch: pullRequest.baseBranch === '' ? this.baseBranch : pullRequest.baseBranch,
       transcript: buildTranscript(reviews, comments),
       pendingFeedback: trigger === null ? [] : [trigger],
+      pendingBaseIntegration,
     };
   }
 
@@ -283,7 +289,15 @@ export class WorkflowEngine {
     );
     const handle = await this.sandbox.create({ branch: pullRequest.branch });
     try {
-      const context = this.buildContext(skill, pullRequest, reviews, comments, trigger);
+      const pendingBaseIntegration = !(await handle.baseIntegrated());
+      const context = this.buildContext(
+        skill,
+        pullRequest,
+        reviews,
+        comments,
+        trigger,
+        pendingBaseIntegration,
+      );
       const result = await this.withRetry(turn, () =>
         this.runtime.run({ context, workspace: handle.workspace, limits: this.limits }),
       );
@@ -291,6 +305,10 @@ export class WorkflowEngine {
       // workflow branch before anything else observes the turn. Least-privilege
       // is enforced here: the orchestrator only ever pushes its own branch.
       assertPushAllowed({ branch: pullRequest.branch, protectedBranches: [this.baseBranch] });
+      // The branch must be on the current base before it is published: a turn
+      // that left the base merge unresolved fails instead of pushing a stale
+      // branch (and leaving an unmergeable pull request).
+      if (!(await handle.baseIntegrated())) throw new BaseIntegrationError(this.baseBranch);
       await this.provider.push({ branch: pullRequest.branch, destination: handle.workspace });
       await this.postTurn(pullRequest, result);
       const commits =

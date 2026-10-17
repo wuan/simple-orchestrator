@@ -101,7 +101,7 @@ describe('GitHubProvider', () => {
     expect(github.branchSha('openspec/issue-9')).not.toBe('base-sha');
   });
 
-  it('leaves a workflow branch that already carries commits untouched', async () => {
+  it('resets a stale workflow branch to the current base', async () => {
     const { provider, github } = setup();
     github.seedIssue({ number: 11, labels: ['openspec'] });
     github.seedRef('openspec/issue-11', 'existing-commit');
@@ -114,7 +114,9 @@ describe('GitHubProvider', () => {
       draft: true,
     });
 
-    expect(github.branchSha('openspec/issue-11')).toBe('existing-commit');
+    // The branch is reset onto a fresh seed from the current base, not reused.
+    expect(github.branchSha('openspec/issue-11')).not.toBe('existing-commit');
+    expect(github.branchSha('openspec/issue-11')).not.toBe('base-sha');
   });
 
   it('manages lifecycle labels on a pull request', async () => {

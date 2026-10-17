@@ -1,18 +1,37 @@
 import { execFileSync } from 'node:child_process';
-import { cpSync, existsSync, mkdtempSync, readFileSync, readdirSync, rmSync } from 'node:fs';
+import {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  rmSync,
+  writeFileSync,
+} from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it } from 'vitest';
 
 import { DEFAULT_LABELS } from '../config/types.js';
 import type { TurnResult } from '../domain/types.js';
 import { FakeProvider } from '../provider/fake/fake-provider.js';
 import { FakeRuntime } from '../runtime/fake/fake-runtime.js';
+import { RepositoryStore, type RepositorySource } from '../runtime/repository-store.js';
+import { WorktreeSandbox } from '../runtime/sandbox.js';
+import type { AgentRuntime, TurnRequest } from '../runtime/types.js';
+import { NodeCommandRunner } from '../system/commands.js';
 import { Poller } from './poller.js';
 import { FakeOpenspecCli } from './testing/fake-openspec.js';
 import { FakeSandbox } from './testing/fake-sandbox.js';
+
+const tempDirs: string[] = [];
+
+afterEach(() => {
+  for (const dir of tempDirs.splice(0)) rmSync(dir, { recursive: true, force: true });
+});
 
 function proposeResult(summary: string): TurnResult {
   return {
@@ -147,6 +166,106 @@ describe('end-to-end workflow', () => {
 
     expect(report.started).toEqual([1]);
     expect(runtime.requests).toHaveLength(1);
+  });
+});
+
+describe('end-to-end base integration', () => {
+  function git(cwd: string | null, args: string[]): void {
+    execFileSync('git', args, { ...(cwd === null ? {} : { cwd }), stdio: 'ignore' });
+  }
+
+  /** Records whether each turn's workspace already contains the base marker file. */
+  class BaseRecordingRuntime implements AgentRuntime {
+    readonly id = 'base-recording';
+    readonly basePresent: boolean[] = [];
+    async run(request: TurnRequest): Promise<TurnResult> {
+      this.basePresent.push(existsSync(join(request.workspace, 'base-marker.md')));
+      return proposeResult('recorded a turn');
+    }
+  }
+
+  it('merges the base into a later turn before it runs, and the workflow advances', async () => {
+    const base = mkdtempSync(join(tmpdir(), 'orchestrator-e2e-git-'));
+    tempDirs.push(base);
+    const remote = join(base, 'origin.git');
+    const seed = join(base, 'seed');
+    const worktrees = join(base, 'worktrees');
+
+    git(null, ['init', '--bare', remote]);
+    git(null, ['init', seed]);
+    git(seed, ['config', 'user.email', 'test@example.com']);
+    git(seed, ['config', 'user.name', 'Test']);
+    writeFileSync(join(seed, 'README.md'), 'hi\n');
+    git(seed, ['add', '.']);
+    git(seed, ['commit', '-m', 'init']);
+    git(seed, ['branch', '-M', 'main']);
+    git(seed, ['remote', 'add', 'origin', remote]);
+    git(seed, ['push', 'origin', 'main']);
+    git(seed, ['checkout', '-b', 'openspec/issue-1']);
+    writeFileSync(join(seed, 'change.md'), 'change\n');
+    git(seed, ['add', '.']);
+    git(seed, ['commit', '-m', 'change']);
+    git(seed, ['push', 'origin', 'openspec/issue-1']);
+    mkdirSync(worktrees, { recursive: true });
+
+    const commands = new NodeCommandRunner();
+    const source: RepositorySource = {
+      repo: { owner: 'acme', name: 'widget' },
+      async clone({ branch, destination }) {
+        const result = await commands.run('git', [
+          'clone',
+          '--branch',
+          branch,
+          remote,
+          destination,
+        ]);
+        if (result.code !== 0) throw new Error(result.stderr);
+      },
+      async fetch({ destination }) {
+        await commands.run('git', ['-C', destination, 'fetch', '--prune', 'origin']);
+      },
+    };
+
+    const provider = new FakeProvider();
+    const runtime = new BaseRecordingRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+
+    const sandbox = new WorktreeSandbox({
+      store: new RepositoryStore({ root: join(base, 'clones') }),
+      source,
+      baseBranch: 'main',
+      root: worktrees,
+      commands,
+    });
+    const poller = new Poller({
+      provider,
+      runtime,
+      sandbox,
+      openspec,
+      labels: DEFAULT_LABELS,
+      baseBranch: 'main',
+    });
+
+    // First turn: the base has no marker yet.
+    await poller.pollOnce();
+    expect(runtime.basePresent).toEqual([false]);
+
+    // The base advances while the change is in flight.
+    git(seed, ['checkout', 'main']);
+    writeFileSync(join(seed, 'base-marker.md'), 'base\n');
+    git(seed, ['add', '.']);
+    git(seed, ['commit', '-m', 'advance base']);
+    git(seed, ['push', 'origin', 'main']);
+
+    // A new review drives a second turn, which must see the advanced base.
+    provider.seedReview(100, { state: 'changes_requested', body: 'keep going' });
+    openspec.markReady('add-x');
+    await poller.pollOnce();
+
+    expect(runtime.basePresent).toEqual([false, true]);
+    expect(await labelsOf(provider, 100)).toContain(DEFAULT_LABELS.ready);
   });
 });
 

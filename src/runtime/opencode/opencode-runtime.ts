@@ -23,6 +23,16 @@ export function buildSkillPrompt(context: TurnContext): string {
           .map((event) => `- ${event.kind} by ${event.actor.login}`)
           .join('\n');
 
+  const constraints = [
+    '- Commit all work to the current branch only. Never push to another branch and never merge the pull request.',
+    '- Follow the OpenSpec workflow and validate the change before declaring it ready.',
+  ];
+  if (context.pendingBaseIntegration === true) {
+    constraints.unshift(
+      `- The workspace carries an unresolved merge of the base branch \`${context.baseBranch}\`. Resolve every conflict, complete the merge, and commit it before you finish; a turn that leaves the base unintegrated fails.`,
+    );
+  }
+
   return [
     `You are running the OpenSpec \`${context.skill}\` workflow${changeLine} on branch \`${context.branch}\`.`,
     SKILL_INSTRUCTIONS[context.skill],
@@ -31,8 +41,7 @@ export function buildSkillPrompt(context: TurnContext): string {
     feedback,
     '',
     'Constraints:',
-    '- Commit all work to the current branch only. Never push to another branch and never merge.',
-    '- Follow the OpenSpec workflow and validate the change before declaring it ready.',
+    ...constraints,
     '',
     'Report a short summary, any questions for the human, the commit SHAs produced, and whether you need input.',
   ].join('\n');
