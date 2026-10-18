@@ -156,6 +156,113 @@ agent:
     expect(() => parseConfig(bad)).toThrowError(/model/);
   });
 
+  describe('turn environments', () => {
+    it('leaves the environment unset when not configured', () => {
+      expect(parseConfig(MINIMAL).repositories[0]?.environment).toBeUndefined();
+    });
+
+    it('parses a complete environment block', () => {
+      const config = parseConfig(`
+repositories:
+  - provider: github
+    owner: acme
+    name: android-app
+    credential: env:GITHUB_TOKEN
+    environment:
+      image: ghcr.io/acme/agent-android:latest
+      network: bridge
+      env:
+        - GREENPT_API_KEY
+      gitIdentity:
+        name: Orchestrator Agent
+        email: agent@example.com
+      caches:
+        - name: gradle
+          path: /home/agent/.gradle
+`);
+      expect(config.repositories[0]?.environment).toEqual({
+        image: 'ghcr.io/acme/agent-android:latest',
+        network: 'bridge',
+        env: ['GREENPT_API_KEY'],
+        gitIdentity: { name: 'Orchestrator Agent', email: 'agent@example.com' },
+        caches: [{ name: 'gradle', path: '/home/agent/.gradle' }],
+      });
+    });
+
+    it('fails fast, naming the repository, when the image is missing', () => {
+      const bad = `
+repositories:
+  - provider: github
+    owner: acme
+    name: widget
+    credential: env:GITHUB_TOKEN
+    environment:
+      network: bridge
+`;
+      expect(() => parseConfig(bad)).toThrowError(ConfigError);
+      try {
+        parseConfig(bad);
+      } catch (error) {
+        expect((error as ConfigError).repo).toBe('acme/widget');
+        expect((error as Error).message).toContain('environment.image');
+      }
+    });
+
+    it('rejects an empty image value', () => {
+      const bad = `
+${MINIMAL}    environment:
+      image: ''
+`;
+      expect(() => parseConfig(bad)).toThrowError(/image/);
+    });
+
+    it('rejects an env entry that is not a list', () => {
+      const bad = `
+${MINIMAL}    environment:
+      image: node:24
+      env: GREENPT_API_KEY
+`;
+      expect(() => parseConfig(bad)).toThrowError(/env.*list/);
+    });
+
+    it('rejects an empty environment variable name', () => {
+      const bad = `
+${MINIMAL}    environment:
+      image: node:24
+      env:
+        - ''
+`;
+      expect(() => parseConfig(bad)).toThrowError(/env\[0\]/);
+    });
+
+    it('rejects an incomplete git identity', () => {
+      const bad = `
+${MINIMAL}    environment:
+      image: node:24
+      gitIdentity:
+        name: Agent
+`;
+      expect(() => parseConfig(bad)).toThrowError(/gitIdentity.*email/);
+    });
+
+    it('rejects a cache without a mount path', () => {
+      const bad = `
+${MINIMAL}    environment:
+      image: node:24
+      caches:
+        - name: gradle
+`;
+      expect(() => parseConfig(bad)).toThrowError(/caches\[0\].*path/);
+    });
+
+    it('rejects a non-mapping environment block', () => {
+      const bad = `
+${MINIMAL}    environment: node:24
+`;
+      expect(() => parseConfig(bad)).toThrowError(/environment must be a mapping/);
+    });
+  });
+
   describe('shared defaults', () => {
     const SHARED = `
 defaults:
@@ -224,6 +331,45 @@ repositories:
       expect(repo?.pollIntervalSeconds).toBe(DEFAULT_POLL_INTERVAL_SECONDS);
       expect(repo?.maxReviseRounds).toBe(DEFAULT_MAX_REVISE_ROUNDS);
       expect(repo?.labels).toEqual(DEFAULT_LABELS);
+    });
+
+    it('inherits a shared environment and lets an entry override its image', () => {
+      const config = parseConfig(`
+defaults:
+  provider: github
+  owner: acme
+  credential: env:GITHUB_TOKEN
+  environment:
+    image: ghcr.io/acme/base:latest
+    gitIdentity:
+      name: Agent
+      email: agent@example.com
+repositories:
+  - name: android-app
+    environment:
+      image: ghcr.io/acme/android:latest
+  - name: gadget
+`);
+      const [android, gadget] = config.repositories;
+      expect(android?.environment?.image).toBe('ghcr.io/acme/android:latest');
+      expect(android?.environment?.gitIdentity).toEqual({
+        name: 'Agent',
+        email: 'agent@example.com',
+      });
+      expect(gadget?.environment?.image).toBe('ghcr.io/acme/base:latest');
+    });
+
+    it('reports an invalid default environment at the defaults context', () => {
+      const bad = `
+defaults:
+  provider: github
+  owner: acme
+  credential: env:GITHUB_TOKEN
+  environment:
+    image: node:24
+    env: 'not-a-list'
+${MINIMAL}`;
+      expect(() => parseConfig(bad)).toThrowError(/defaults\.environment: 'env' must be a list/);
     });
 
     it('resolves a reduced entry exactly like the fully-specified form', () => {

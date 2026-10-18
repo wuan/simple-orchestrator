@@ -1,4 +1,9 @@
-import { DEFAULT_LIMITS, type LabelConfig, type Limits } from '../config/types.js';
+import {
+  DEFAULT_LIMITS,
+  type EnvironmentSpec,
+  type LabelConfig,
+  type Limits,
+} from '../config/types.js';
 import type {
   NormalizedEvent,
   TranscriptEntry,
@@ -40,6 +45,8 @@ export interface WorkflowEngineOptions {
   openspec: OpenspecCli;
   labels: LabelConfig;
   baseBranch: string;
+  /** Container environment the repository's turns run in; in-process when omitted. */
+  environment?: EnvironmentSpec;
   limits?: Limits;
   maxReviseRounds?: number;
   logger?: (message: string) => void;
@@ -144,6 +151,7 @@ export class WorkflowEngine {
   private readonly openspec: OpenspecCli;
   private readonly labels: LabelConfig;
   private readonly baseBranch: string;
+  private readonly environment: EnvironmentSpec | undefined;
   private readonly limits: Limits;
   private readonly maxReviseRounds: number;
   private readonly logger: (message: string) => void;
@@ -161,6 +169,7 @@ export class WorkflowEngine {
     this.openspec = options.openspec;
     this.labels = options.labels;
     this.baseBranch = options.baseBranch;
+    this.environment = options.environment;
     this.limits = options.limits ?? DEFAULT_LIMITS;
     this.maxReviseRounds = options.maxReviseRounds ?? 3;
     this.logger = options.logger ?? (() => {});
@@ -401,6 +410,8 @@ export class WorkflowEngine {
         return this.runtime.run({
           context,
           workspace: handle.workspace,
+          store: handle.store,
+          environment: this.environment,
           limits: this.limits,
           onUsage: (usage) => accumulateUsage(reported, usage),
         });

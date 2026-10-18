@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_LABELS } from '../config/types.js';
+import { DEFAULT_LABELS, type EnvironmentSpec } from '../config/types.js';
 import type { TurnResult, TurnUsage } from '../domain/types.js';
 import { FakeProvider } from '../provider/fake/fake-provider.js';
 import type { ProviderIssue, ProviderPullRequest } from '../provider/types.js';
@@ -62,6 +62,7 @@ function harness(
     runtime?: AgentRuntime;
     logger?: (message: string) => void;
     provider?: FakeProvider;
+    environment?: EnvironmentSpec;
   } = {},
 ): Harness {
   const provider = options.provider ?? new FakeProvider();
@@ -80,6 +81,7 @@ function harness(
     openspec,
     labels: DEFAULT_LABELS,
     baseBranch: 'main',
+    ...(options.environment === undefined ? {} : { environment: options.environment }),
     maxReviseRounds: options.maxReviseRounds ?? 3,
     logger,
   });
@@ -731,6 +733,30 @@ describe('WorkflowEngine base integration', () => {
     expect(
       h.provider.commentLog.some((c) => c.body.includes("base branch 'main' was not integrated")),
     ).toBe(true);
+  });
+});
+
+describe('WorkflowEngine container environment', () => {
+  it("carries the repository's environment and store on the turn request", async () => {
+    const environment: EnvironmentSpec = { image: 'ghcr.io/acme/agent-java:latest' };
+    const h = harness({ environment });
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+
+    await h.engine.start(issue);
+
+    expect(h.runtime.requests[0]?.environment).toEqual(environment);
+    expect(h.runtime.requests[0]?.store).toBe('/tmp/fake-store');
+  });
+
+  it('leaves the environment undefined when the repository configures none', async () => {
+    const h = harness();
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+
+    await h.engine.start(issue);
+
+    expect(h.runtime.requests[0]?.environment).toBeUndefined();
   });
 });
 

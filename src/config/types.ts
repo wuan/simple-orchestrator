@@ -21,6 +21,38 @@ export interface Limits {
   maxDurationMs: number;
 }
 
+/** A named cache volume mounted into a repository's turn container. */
+export interface EnvironmentCache {
+  /** Volume name; the orchestrator scopes it per repository at run time. */
+  name: string;
+  /** Absolute path inside the container the volume is mounted at. */
+  path: string;
+}
+
+/** The git author and committer identity a containerized turn commits with. */
+export interface EnvironmentGitIdentity {
+  name: string;
+  email: string;
+}
+
+/**
+ * A per-repository execution environment: a container image the turn runs in,
+ * so an agent can use a toolchain (Android, JDK, Rust, ...) the host does not
+ * carry. Only `image` is required; the rest default to a documented policy.
+ */
+export interface EnvironmentSpec {
+  /** Container image providing the turn's toolchain. */
+  image: string;
+  /** Container network mode; defaults to {@link DEFAULT_ENVIRONMENT_NETWORK}. */
+  network?: string;
+  /** Names of the orchestrator's environment variables passed into the container. */
+  env?: string[];
+  /** Git identity the container's commits use; required for a commit to succeed. */
+  gitIdentity?: EnvironmentGitIdentity;
+  /** Named cache volumes reused across the repository's turns. */
+  caches?: EnvironmentCache[];
+}
+
 export interface RepositoryConfig {
   provider: string;
   owner: string;
@@ -31,6 +63,8 @@ export interface RepositoryConfig {
   pollIntervalSeconds: number;
   maxReviseRounds: number;
   labels: LabelConfig;
+  /** Runs the repository's turns in a container when set; in-process when omitted. */
+  environment?: EnvironmentSpec;
 }
 
 /**
@@ -39,9 +73,13 @@ export interface RepositoryConfig {
  * `name` is the repository's identity, so it is never defaulted. Deriving the
  * shape from `RepositoryConfig` keeps the two in step as fields are added.
  */
-export type RepositoryDefaults = Partial<Omit<RepositoryConfig, 'name' | 'labels'>> & {
+export type RepositoryDefaults = Partial<
+  Omit<RepositoryConfig, 'name' | 'labels' | 'environment'>
+> & {
   /** Label name overrides, merged key by key beneath each entry. */
   labels?: Partial<LabelConfig>;
+  /** A partial environment merged field by field beneath each entry's own. */
+  environment?: Partial<EnvironmentSpec>;
 };
 
 export interface WorkspaceConfig {
@@ -83,6 +121,13 @@ export const DEFAULT_LABELS: LabelConfig = {
 };
 
 export const DEFAULT_BASE_BRANCH = 'main';
+
+/**
+ * Default container network mode: the model loop runs inside the container, so
+ * the default must allow the provider's API to be reached. `none` would make a
+ * turn unable to call the model.
+ */
+export const DEFAULT_ENVIRONMENT_NETWORK = 'bridge';
 export const DEFAULT_POLL_INTERVAL_SECONDS = 30;
 export const DEFAULT_MAX_REVISE_ROUNDS = 3;
 

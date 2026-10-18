@@ -2,9 +2,11 @@ import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, readdir, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import process from 'node:process';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
+import { DEFAULT_ENVIRONMENT_NETWORK } from '../config/types.js';
 import { NodeCommandRunner, type CommandRunner } from '../system/commands.js';
 import { RepositoryStore, type RepositorySource } from './repository-store.js';
 import { buildDockerRunArgs, WorktreeSandbox } from './sandbox.js';
@@ -96,6 +98,9 @@ describe('WorktreeSandbox', () => {
     const handle = await sandbox.create({ branch: 'openspec/issue-1' });
 
     expect(existsSync(join(handle.workspace, 'change.md'))).toBe(true);
+    // The store path is exposed so a container runtime can mount it at the same
+    // absolute path as the worktree.
+    expect(handle.store).toBe(f.store.pathFor(f.source.repo));
     const head = await commands.run('git', [
       '-C',
       handle.workspace,
@@ -279,14 +284,98 @@ describe('WorktreeSandbox', () => {
 });
 
 describe('buildDockerRunArgs', () => {
-  it('isolates the container and mounts the workspace', () => {
+  const base: Parameters<typeof buildDockerRunArgs>[0] = {
+    image: 'opencode:latest',
+    workspace: '/tmp/turn/worktree',
+    store: '/home/agent/workspace/acme/widget',
+    runner: '/app/dist',
+    runnerMount: '/opt/runner/dist',
+    command: ['node', '/opt/runner/dist/runner.js'],
+  };
+
+  it('runs an interactive, removable container with an explicit network and user', () => {
+    const args = buildDockerRunArgs({ ...base, network: 'host', user: '1000:1000' });
+    expect(args.slice(0, 3)).toEqual(['run', '--rm', '-i']);
+    expect(valueAfter(args, '--network')).toBe('host');
+    expect(valueAfter(args, '--user')).toBe('1000:1000');
+  });
+
+  it('defaults the network to provider egress and the user to the orchestrator process', () => {
+    const args = buildDockerRunArgs(base);
+    expect(valueAfter(args, '--network')).toBe(DEFAULT_ENVIRONMENT_NETWORK);
+    expect(valueAfter(args, '--user')).toBe(
+      `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`,
+    );
+  });
+
+  it('mounts the store and the workspace at their identical absolute paths', () => {
+    const args = buildDockerRunArgs(base);
+    expect(allVolumeTargets(args)).toEqual(
+      expect.arrayContaining([
+        '/tmp/turn/worktree:/tmp/turn/worktree',
+        '/home/agent/workspace/acme/widget:/home/agent/workspace/acme/widget',
+      ]),
+    );
+    expect(valueAfter(args, '--workdir')).toBe('/tmp/turn/worktree');
+  });
+
+  it('mounts the runner read-only', () => {
+    const args = buildDockerRunArgs(base);
+    expect(allVolumeTargets(args)).toContain('/app/dist:/opt/runner/dist:ro');
+  });
+
+  it('gives the container a writable home and forwards named variables', () => {
+    const args = buildDockerRunArgs({ ...base, env: ['GREENPT_API_KEY'] });
+    expect(args).toContain('HOME=/tmp');
+    expect(valueAfter(args, '--env')).toBe('HOME=/tmp');
+    expect(args.filter((arg) => arg === '--env').length).toBeGreaterThanOrEqual(2);
+    expect(args).toContain('GREENPT_API_KEY');
+    // The variable is referenced by name, never by value.
+    expect(args).not.toContain('GREENPT_API_KEY=');
+  });
+
+  it('honours an alternate home directory', () => {
+    const args = buildDockerRunArgs({ ...base, home: '/home/agent' });
+    expect(args).toContain('HOME=/home/agent');
+  });
+
+  it('passes the git author and committer identity as environment', () => {
     const args = buildDockerRunArgs({
-      image: 'opencode:latest',
-      workspace: '/tmp/work',
-      command: ['propose'],
+      ...base,
+      gitIdentity: { name: 'OpenSpec Agent', email: 'agent@example.com' },
     });
-    expect(args.slice(0, 5)).toEqual(['run', '--rm', '--network', 'none', '--workdir']);
-    expect(args).toContain('/tmp/work:/workspace');
-    expect(args.slice(-2)).toEqual(['opencode:latest', 'propose']);
+    expect(args).toContain('GIT_AUTHOR_NAME=OpenSpec Agent');
+    expect(args).toContain('GIT_AUTHOR_EMAIL=agent@example.com');
+    expect(args).toContain('GIT_COMMITTER_NAME=OpenSpec Agent');
+    expect(args).toContain('GIT_COMMITTER_EMAIL=agent@example.com');
+  });
+
+  it('attaches named cache volumes at their configured container paths', () => {
+    const args = buildDockerRunArgs({
+      ...base,
+      caches: [{ volume: 'orchestrator-acme-widget-gradle', path: '/home/agent/.gradle' }],
+    });
+    expect(allVolumeTargets(args)).toContain('orchestrator-acme-widget-gradle:/home/agent/.gradle');
+  });
+
+  it('ends with the image and the turn command', () => {
+    const args = buildDockerRunArgs(base);
+    expect(args.slice(-3)).toEqual(['opencode:latest', 'node', '/opt/runner/dist/runner.js']);
   });
 });
+
+/** The value following the first occurrence of `flag`. */
+function valueAfter(args: string[], flag: string): string | undefined {
+  const index = args.indexOf(flag);
+  return index < 0 ? undefined : args[index + 1];
+}
+
+/** Every `--volume` argument, in order. */
+function allVolumeTargets(args: string[]): string[] {
+  const volumes: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const target = args[index + 1];
+    if (args[index] === '--volume' && target !== undefined) volumes.push(target);
+  }
+  return volumes;
+}

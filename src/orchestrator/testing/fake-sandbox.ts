@@ -29,6 +29,7 @@ export class FakeSandbox implements Sandbox {
     this.created.push(workspace);
     return {
       workspace,
+      store: '/tmp/fake-store',
       head: async () => this.headResults.shift() ?? `fake-head-${++this.headCalls}`,
       baseIntegrated: async () => this.baseIntegrationResults.shift() ?? true,
       hasChanges: async () => this.hasChangesResults.shift() ?? true,
