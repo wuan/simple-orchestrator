@@ -7,26 +7,19 @@ drives the OpenSpec lifecycle from the issue's problem description.
 
 ## How it works
 
-```
-  issue + label "openspec"
-        |  orchestrator: create branch + draft PR, run PROPOSE turn
-        v
-   +-------------+     objective predicate     +----------+
-   | PROPOSING   | ------------------------->  |  READY   |
-   | (label)     |  <---------------------     | (label)  |
-   +-------------+   review: changes requested +----------+
-        ^                                          |
-        |                                          | review: approved
-        |                                          v
-        |                                   +----------------+
-        +-------- (new feedback) ---------- | IMPLEMENTING   |
-                                            | (label: claim) |
-                                            +----------------+
-                                                   | merged
-                                                   v
-                                              +----------+
-                                              |   DONE   |  (change archived in the PR)
-                                              +----------+
+```mermaid
+stateDiagram-v2
+    state "PROPOSING (label)" as PROPOSING
+    state "READY (label)" as READY
+    state "IMPLEMENTING (label: claim)" as IMPLEMENTING
+    state "DONE (change archived in the PR)" as DONE
+    [*] --> PROPOSING: issue + label "openspec"
+    PROPOSING --> READY: objective predicate
+    READY --> PROPOSING: review: changes requested
+    READY --> IMPLEMENTING: review: approved
+    IMPLEMENTING --> PROPOSING: new feedback
+    IMPLEMENTING --> DONE: merged
+    DONE --> [*]
 ```
 
 - An issue carrying the trigger label starts a workflow: one branch and one
@@ -65,19 +58,13 @@ duplicating work.
 
 ## Architecture
 
-```
- +---------------------------------------------------------------+
- | Poller  ->  WorkflowEngine  ->  decision (labels + timestamps) |
- |                    |                                           |
- |                    v                                           |
- |             Sandbox (store clone + ephemeral worktree)                      |
- |                    |                                           |
- |                    v                                           |
- |             AgentRuntime  (plugin)  -- OpenCode adapter        |
- |                    |                                           |
- |                    v                                           |
- |             RepoProvider  (plugin)  -- GitHub adapter          |
- +---------------------------------------------------------------+
+```mermaid
+flowchart TD
+    Poller --> WorkflowEngine
+    WorkflowEngine --> Decision["decision (labels + timestamps)"]
+    WorkflowEngine --> Sandbox["Sandbox (store clone + ephemeral worktree)"]
+    Sandbox --> AgentRuntime["AgentRuntime (plugin) — OpenCode adapter"]
+    AgentRuntime --> RepoProvider["RepoProvider (plugin) — GitHub adapter"]
 ```
 
 Two seams isolate everything external:
