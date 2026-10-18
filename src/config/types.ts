@@ -33,6 +33,17 @@ export interface RepositoryConfig {
   labels: LabelConfig;
 }
 
+/**
+ * The fields a top-level `defaults` block may supply for repository entries that
+ * omit them: every {@link RepositoryConfig} field except `name`, all optional.
+ * `name` is the repository's identity, so it is never defaulted. Deriving the
+ * shape from `RepositoryConfig` keeps the two in step as fields are added.
+ */
+export type RepositoryDefaults = Partial<Omit<RepositoryConfig, 'name' | 'labels'>> & {
+  /** Label name overrides, merged key by key beneath each entry. */
+  labels?: Partial<LabelConfig>;
+};
+
 export interface WorkspaceConfig {
   /** Root for persistent per-repository clones, at `<root>/<owner>/<name>`. */
   root: string;

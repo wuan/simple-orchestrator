@@ -11,13 +11,14 @@ the `gh` CLI.
 
 ### Top level
 
-| Field          | Required | Default   | Description                                          |
-| -------------- | -------- | --------- | ---------------------------------------------------- |
-| `repositories` | yes      | —         | Non-empty list of repositories to serve.             |
-| `limits`       | no       | see below | Per-turn cost caps.                                  |
-| `workspace`    | no       | see below | Where repository clones and per-turn worktrees live. |
-| `logging`      | no       | see below | Diagnostic verbosity.                                |
-| `agent`        | no       | see below | Embedded OpenCode host model and database.           |
+| Field          | Required | Default   | Description                                               |
+| -------------- | -------- | --------- | --------------------------------------------------------- |
+| `repositories` | yes      | —         | Non-empty list of repositories to serve.                  |
+| `defaults`     | no       | —         | Shared repository-entry values merged beneath each entry. |
+| `limits`       | no       | see below | Per-turn cost caps.                                       |
+| `workspace`    | no       | see below | Where repository clones and per-turn worktrees live.      |
+| `logging`      | no       | see below | Diagnostic verbosity.                                     |
+| `agent`        | no       | see below | Embedded OpenCode host model and database.                |
 
 ### `repositories[]`
 
@@ -31,6 +32,40 @@ the `gh` CLI.
 | `pollIntervalSeconds` | no       | `30`      | How often the repository is polled.                                        |
 | `maxReviseRounds`     | no       | `3`       | Maximum propose/review/revise rounds before the workflow is marked failed. |
 | `labels`              | no       | see below | Label name overrides.                                                      |
+
+### `defaults`
+
+An optional block whose fields supply values for every repository entry that
+omits them. It accepts the same fields as a repository entry except `name`:
+
+| Field                 | Built-in default |
+| --------------------- | ---------------- |
+| `provider`            | —                |
+| `owner`               | —                |
+| `credential`          | —                |
+| `baseBranch`          | `main`           |
+| `pollIntervalSeconds` | `30`             |
+| `maxReviseRounds`     | `3`              |
+| `labels`              | see below        |
+
+Each field resolves as the entry's value, else the `defaults` value, else the
+built-in default above. Label names merge key by key, so an entry can override
+one label and still inherit the rest from `defaults` and the built-ins. `name`
+is never defaulted: it identifies the repository, so every entry must set it.
+`provider`, `owner`, and `credential` remain required overall; supplying them
+from `defaults` satisfies the requirement for every entry that omits them, and
+an entry that still lacks one fails startup naming the repository.
+
+```yaml
+defaults:
+  provider: github
+  owner: acme
+  credential: env:GITHUB_TOKEN
+repositories:
+  - name: widget
+  - name: gadget
+    baseBranch: develop
+```
 
 ### `labels`
 
@@ -114,16 +149,20 @@ environment or an authenticated `gh` (run `gh auth login`).
 ## Example
 
 ```yaml
+# Values shared by every repository; each entry states only what differs.
+defaults:
+  provider: github
+  owner: acme
+  credential: env:GITHUB_TOKEN
+  baseBranch: main
+  pollIntervalSeconds: 60
+  maxReviseRounds: 3
+  labels:
+    trigger: openspec
 repositories:
-  - provider: github
-    owner: acme
-    name: widget
-    credential: env:GITHUB_TOKEN
-    baseBranch: main
-    pollIntervalSeconds: 60
-    maxReviseRounds: 3
-    labels:
-      trigger: openspec
+  - name: widget
+  - name: gadget
+    baseBranch: develop
 limits:
   maxSteps: 200
   maxTokens: 200000
@@ -138,6 +177,7 @@ agent:
   database: ~/.local/share/opencode/opencode.db
 ```
 
-A copy of this example lives at `examples/config.yaml`. With `GITHUB_TOKEN` set
-in the environment — or, without it, an authenticated `gh` (`gh auth login`) —
-the service starts and begins polling `acme/widget`.
+The same example, with `agent.database` left to the SDK default, lives at
+[`examples/config.yaml`](../examples/config.yaml). With `GITHUB_TOKEN` set in the
+environment — or, without it, an authenticated `gh` (`gh auth login`) — the
+service starts and begins polling both repositories.
