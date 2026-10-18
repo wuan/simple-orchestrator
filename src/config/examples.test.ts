@@ -12,12 +12,15 @@ const EXAMPLE = fileURLToPath(new URL('../../examples/config.yaml', import.meta.
 describe('documented example config', () => {
   it('parses and resolves credentials', async () => {
     const config = loadConfigFile(EXAMPLE);
-    expect(config.repositories).toHaveLength(1);
+    expect(config.repositories).toHaveLength(2);
 
-    const [repo] = config.repositories;
+    const [repo, override] = config.repositories;
     expect(repo?.provider).toBe('github');
     expect(repo?.pollIntervalSeconds).toBe(60);
     expect(repo?.labels.trigger).toBe(DEFAULT_LABELS.trigger);
+    // The shared defaults supply the second entry; only `baseBranch` differs.
+    expect(override?.baseBranch).toBe('develop');
+    expect(override?.pollIntervalSeconds).toBe(60);
 
     expect(config.workspace.root).toBe('~/workspace');
     expect(config.workspace.worktrees).toBe('/tmp');
@@ -28,5 +31,6 @@ describe('documented example config', () => {
       new EnvCredentialResolver({ GITHUB_TOKEN: 'example-token' }),
     );
     expect(resolved.get('github:acme/widget')).toBe('example-token');
+    expect(resolved.get('github:acme/gadget')).toBe('example-token');
   });
 });

@@ -127,12 +127,20 @@ The service is single-tenant and config-driven. See
 [docs/configuration.md](docs/configuration.md) for every field and default.
 
 ```yaml
+# Values shared by every repository; each entry states only what differs.
+defaults:
+  provider: github
+  owner: acme
+  credential: env:GITHUB_TOKEN
+  baseBranch: main
+  pollIntervalSeconds: 60
+  maxReviseRounds: 3
+  labels:
+    trigger: openspec
 repositories:
-  - provider: github
-    owner: acme
-    name: widget
-    credential: env:GITHUB_TOKEN
-    baseBranch: main
+  - name: widget
+  - name: gadget
+    baseBranch: develop
 limits:
   maxSteps: 200
   maxTokens: 200000
@@ -143,6 +151,12 @@ workspace:
 logging:
   verbose: false
 ```
+
+A copy of this example lives at [`examples/config.yaml`](examples/config.yaml).
+The optional `defaults` block supplies values for entries that omit them; each
+entry wins over `defaults`, which wins over the documented built-in default, and
+`labels` merge key by key. `name` is never defaulted because it identifies the
+repository. See [docs/configuration.md](docs/configuration.md#defaults).
 
 Credentials are references (`env:NAME` or `gh:token`); secrets are never stored
 in the config. The GitHub provider calls the API and clones through the `gh`

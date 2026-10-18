@@ -1,13 +1,17 @@
+# Values shared by every repository; each entry states only what differs.
+defaults:
+  provider: github
+  owner: acme
+  credential: env:GITHUB_TOKEN
+  baseBranch: main
+  pollIntervalSeconds: 60
+  maxReviseRounds: 3
+  labels:
+    trigger: openspec
 repositories:
-  - provider: github
-    owner: acme
-    name: widget
-    credential: env:GITHUB_TOKEN
-    baseBranch: main
-    pollIntervalSeconds: 60
-    maxReviseRounds: 3
-    labels:
-      trigger: openspec
+  - name: widget
+  - name: gadget
+    baseBranch: develop
 limits:
   maxSteps: 200
   maxTokens: 200000

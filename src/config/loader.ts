@@ -17,6 +17,7 @@ import {
   type LoggingConfig,
   type OrchestratorConfig,
   type RepositoryConfig,
+  type RepositoryDefaults,
   type WorkspaceConfig,
 } from './types.js';
 
@@ -51,6 +52,20 @@ function requireNonEmptyString(
   return value;
 }
 
+function optionalNonEmptyStringValue(
+  record: Record<string, unknown>,
+  key: string,
+  context: string,
+  repo?: string,
+): string | undefined {
+  const value = record[key];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || value.trim() === '') {
+    throw new ConfigError(`${context}: '${key}' must be a non-empty string when provided`, repo);
+  }
+  return value;
+}
+
 function optionalNonEmptyString(
   record: Record<string, unknown>,
   key: string,
@@ -58,10 +73,19 @@ function optionalNonEmptyString(
   fallback: string,
   repo?: string,
 ): string {
+  return optionalNonEmptyStringValue(record, key, context, repo) ?? fallback;
+}
+
+function optionalPositiveIntValue(
+  record: Record<string, unknown>,
+  key: string,
+  context: string,
+  repo?: string,
+): number | undefined {
   const value = record[key];
-  if (value === undefined) return fallback;
-  if (typeof value !== 'string' || value.trim() === '') {
-    throw new ConfigError(`${context}: '${key}' must be a non-empty string when provided`, repo);
+  if (value === undefined) return undefined;
+  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
+    throw new ConfigError(`${context}: '${key}' must be a positive integer when provided`, repo);
   }
   return value;
 }
@@ -73,58 +97,104 @@ function optionalPositiveInt(
   fallback: number,
   repo?: string,
 ): number {
-  const value = record[key];
-  if (value === undefined) return fallback;
-  if (typeof value !== 'number' || !Number.isInteger(value) || value <= 0) {
-    throw new ConfigError(`${context}: '${key}' must be a positive integer when provided`, repo);
-  }
-  return value;
+  return optionalPositiveIntValue(record, key, context, repo) ?? fallback;
 }
 
-function parseLabels(entry: Record<string, unknown>, context: string, repo: string): LabelConfig {
-  const raw = entry['labels'];
-  if (raw === undefined) return { ...DEFAULT_LABELS };
-  const record = asRecord(raw, `${context}.labels`);
-  const merged: LabelConfig = { ...DEFAULT_LABELS };
+/** Read the label fields present in a `labels` mapping, leaving the rest unset. */
+function parseLabelValues(
+  raw: unknown,
+  context: string,
+  repo?: string,
+): Partial<LabelConfig> | undefined {
+  if (raw === undefined) return undefined;
+  const record = asRecord(raw, context);
+  const labels: Partial<LabelConfig> = {};
   for (const key of Object.keys(DEFAULT_LABELS) as (keyof LabelConfig)[]) {
     const value = record[key];
     if (value === undefined) continue;
     if (typeof value !== 'string' || value.trim() === '') {
-      throw new ConfigError(`${context}.labels: '${key}' must be a non-empty string`, repo);
+      throw new ConfigError(`${context}: '${key}' must be a non-empty string`, repo);
     }
-    merged[key] = value;
+    labels[key] = value;
   }
-  return merged;
+  return labels;
 }
 
-function parseRepository(entry: unknown, index: number): RepositoryConfig {
+function parseLabels(
+  entry: Record<string, unknown>,
+  context: string,
+  repo: string,
+  defaults?: Partial<LabelConfig>,
+): LabelConfig {
+  const overrides = parseLabelValues(entry['labels'], `${context}.labels`, repo);
+  return { ...DEFAULT_LABELS, ...defaults, ...overrides };
+}
+
+/**
+ * Validate the optional top-level `defaults` block. Only the fields actually
+ * present are set, so a plain entry-over-`defaults` merge preserves the
+ * `defaults`-over-built-in order. Required fields are checked after the merge.
+ */
+function parseDefaults(raw: unknown): RepositoryDefaults {
+  if (raw === undefined) return {};
+  const context = 'defaults';
+  const record = asRecord(raw, context);
+  if (record['name'] !== undefined) {
+    throw new ConfigError(
+      `${context}: 'name' must not be set here; every repository entry must name itself`,
+    );
+  }
+
+  const defaults: RepositoryDefaults = {};
+  for (const key of ['provider', 'owner', 'credential', 'baseBranch'] as const) {
+    const value = optionalNonEmptyStringValue(record, key, context);
+    if (value !== undefined) defaults[key] = value;
+  }
+  for (const key of ['pollIntervalSeconds', 'maxReviseRounds'] as const) {
+    const value = optionalPositiveIntValue(record, key, context);
+    if (value !== undefined) defaults[key] = value;
+  }
+  const labels = parseLabelValues(record['labels'], `${context}.labels`);
+  if (labels !== undefined) defaults.labels = labels;
+  return defaults;
+}
+
+function parseRepository(
+  entry: unknown,
+  index: number,
+  defaults: RepositoryDefaults,
+): RepositoryConfig {
   const context = `repositories[${index}]`;
   const record = asRecord(entry, context);
 
-  const provider = requireNonEmptyString(record, 'provider', context);
-  const owner = requireNonEmptyString(record, 'owner', context);
-  const name = requireNonEmptyString(record, 'name', context);
+  const { labels: defaultLabels, ...scalarDefaults } = defaults;
+  // The entry wins over the shared defaults; both are validated before merging.
+  const resolved: Record<string, unknown> = { ...scalarDefaults, ...record };
+
+  const provider = requireNonEmptyString(resolved, 'provider', context);
+  const owner = requireNonEmptyString(resolved, 'owner', context);
+  const name = requireNonEmptyString(resolved, 'name', context);
   const repo = `${owner}/${name}`;
 
   // Required, and its absence fails fast naming the offending repository.
-  const credential = requireNonEmptyString(record, 'credential', context, repo);
+  const credential = requireNonEmptyString(resolved, 'credential', context, repo);
 
   const baseBranch = optionalNonEmptyString(
-    record,
+    resolved,
     'baseBranch',
     context,
     DEFAULT_BASE_BRANCH,
     repo,
   );
   const pollIntervalSeconds = optionalPositiveInt(
-    record,
+    resolved,
     'pollIntervalSeconds',
     context,
     DEFAULT_POLL_INTERVAL_SECONDS,
     repo,
   );
   const maxReviseRounds = optionalPositiveInt(
-    record,
+    resolved,
     'maxReviseRounds',
     context,
     DEFAULT_MAX_REVISE_ROUNDS,
@@ -139,7 +209,7 @@ function parseRepository(entry: unknown, index: number): RepositoryConfig {
     baseBranch,
     pollIntervalSeconds,
     maxReviseRounds,
-    labels: parseLabels(record, context, repo),
+    labels: parseLabels(record, context, repo, defaultLabels),
   };
 }
 
@@ -214,7 +284,10 @@ export function parseConfig(raw: unknown): OrchestratorConfig {
     throw new ConfigError("config: 'repositories' is required and must be a non-empty list");
   }
 
-  const repositories = repositoriesRaw.map((entry, index) => parseRepository(entry, index));
+  const defaults = parseDefaults(record['defaults']);
+  const repositories = repositoriesRaw.map((entry, index) =>
+    parseRepository(entry, index, defaults),
+  );
   return {
     repositories,
     limits: parseLimits(record['limits']),
