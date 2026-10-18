@@ -26,21 +26,25 @@ character-based diagram use GitHub's Mermaid support instead.
 - Leave the "Project layout" block as a fenced text listing. It is a directory
   tree, not a graph of relationships, and Mermaid has no faithful representation
   for it; this is the only character block left in the README afterwards.
+- Record the diagram contract as a new `project-documentation` capability, so
+  the requirement that the overview diagrams render as Mermaid is specified
+  rather than left implicit.
 
 ## Capabilities
 
 ### New Capabilities
 
-None. This change only re-renders existing documentation; it does not alter what
-the system must do.
+- `project-documentation`: the README presents its graph-like overview diagrams
+  (the workflow lifecycle and the system architecture) as Mermaid, keeps the
+  project-layout listing as text, and keeps the prose readable on its own.
 
 ### Modified Capabilities
 
-None. No capability's requirements change, so the change carries no spec deltas
-and sets `skip_specs: true` in `.openspec.yaml`.
+None. The change specifies a documentation concern as a new capability rather
+than changing the behavior of an existing one, so no existing spec changes.
 
 ## Impact
 
-- **Documentation**: `README.md` (the two diagrams). No other file changes.
+- **Documentation**: `README.md` (the two diagrams).
 - **Code**: none.
 - **Dependencies / configuration / behavior**: none.

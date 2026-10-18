@@ -16,7 +16,12 @@
 - [ ] 3.2 Read both Mermaid blocks against the surrounding prose and confirm they name the same phases, components, edges, and adapter plugins as the diagrams they replaced; verify no node or edge from the original diagrams was dropped
 - [ ] 3.3 Verify the README carries exactly two `mermaid` fenced blocks, e.g. `grep -c '^```mermaid$' README.md` prints `2`
 
+## 4. Capability and readiness
+
+- [ ] 4.1 Verify `openspec validate --strict render-diagrams-with-mermaid` passes and `openspec status --change render-diagrams-with-mermaid` reports every artifact `done` (including `specs`), so the objective readiness predicate marks the change READY
+- [ ] 4.2 Verify each `project-documentation` scenario against the finished `README.md`: the lifecycle renders as a state diagram, the architecture as a flowchart, the source stays legible as text, and the project layout stays a text listing
+
 ## Workflow follow-up
 
 - Archive the change after the project's review requirements are satisfied.
-- Verify the archived result: `README.md` has two `mermaid` blocks and no character-based diagram other than the "Project layout" listing.
+- Verify the archived result: `README.md` has two `mermaid` blocks and no character-based diagram other than the "Project layout" listing, and archiving folds the `project-documentation` requirements into `openspec/specs/project-documentation/spec.md`.

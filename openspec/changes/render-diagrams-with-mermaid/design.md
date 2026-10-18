@@ -33,7 +33,10 @@ should stay legible as text.
 - Rewriting the README's prose, structure, or terminology.
 - Introducing Mermaid where there is no graph: the "Project layout" block is a
   directory tree and stays a text listing.
-- Changing `docs/configuration.md`, the OpenSpec specs, or any archived change.
+- Changing `docs/configuration.md`, the behavior of any existing capability, or
+  any archived change. The change does add one new documentation capability spec
+  (see below), because the readiness predicate requires a completed specs
+  artifact.
 - Adding a Mermaid build step, runtime dependency, or CI rendering check.
 
 ## Decisions
@@ -88,6 +91,19 @@ no faithful tree/`ls` representation, and forcing it into nodes and edges would
 be harder to read than the tree, so it stays a fenced text block. It is the only
 character block left in the README after this change.
 
+### Decision: record the contract as a new `project-documentation` capability
+
+The objective readiness predicate marks a change READY only when every artifact
+is `done`. A change that sets `skip_specs: true` reports its specs artifact as
+`skipped`, not `done`, so the predicate never passes and the workflow stays in
+PROPOSING even after a reviewer approves it. This change therefore states the
+documentation concern as a real capability, `project-documentation`, so the
+specs artifact is `done` and the change can reach READY. Alternatives: keep
+`skip_specs` (rejected: the approval gate can never open for this change); make
+the readiness predicate treat `skipped` as satisfied (rejected here: that is
+orchestrator behavior outside this documentation change, and worth its own
+change because `skip_specs` is otherwise a legitimate OpenSpec marker).
+
 ### Decision: no automated render check
 
 There is no Mermaid renderer in the toolchain and no network in CI, so the change
@@ -107,6 +123,10 @@ without a syntax error, and `npm run verify` still passes.
   keeping it current is a single local edit.
 - [A reviewer expected the "Project layout" tree to convert too] -> it is called
   out as a Non-Goal with the reason; convert it only if review asks.
+- [A documentation change with no real behavior change carries a capability spec
+  it might not otherwise have] -> the capability covers only observable README
+  requirements, and the alternative (`skip_specs`) cannot satisfy the readiness
+  predicate; a follow-up change can teach the predicate to accept `skipped`.
 
 ## Migration Plan
 
