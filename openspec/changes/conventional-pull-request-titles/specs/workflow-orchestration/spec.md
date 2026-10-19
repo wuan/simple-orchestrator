@@ -62,6 +62,8 @@ After an apply turn finishes and its commits are published, the orchestrator
 SHALL derive the applied type and optional scope from the turn's Conventional
 Commit subjects and update the pull request title when the reconciled title
 differs, so the subject the host derives on merge reflects what was implemented.
+A scope SHALL be added only when the issue context or the applied commits make
+one clear, so the title never carries an invented scope.
 
 #### Scenario: Applied outcome changes the type
 
@@ -75,6 +77,11 @@ differs, so the subject the host derives on merge reflects what was implemented.
 - **WHEN** the apply turn's commits carry a single Conventional Commit scope and
   the current title has none
 - **THEN** the orchestrator updates the pull request title to include that scope
+
+#### Scenario: No scope is invented
+
+- **WHEN** neither the issue title nor the applied commits make a scope clear
+- **THEN** the pull request title carries no scope
 
 #### Scenario: Ambiguous outcome keeps the deduced title
 

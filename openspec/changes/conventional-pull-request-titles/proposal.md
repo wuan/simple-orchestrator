@@ -16,7 +16,9 @@ turns' own commits do. (Reported as issue #35.)
   `<type>(<scope>): <summary>` by deducing the parts from the issue context: the
   `type` from an already-conventional issue title, else from the issue's labels,
   else `feat`; a `scope` from an already-conventional issue title; and the
-  `summary` from the issue title.
+  `summary` from the issue title. A scope is added only when the issue context
+  or the applied outcome makes one clear; the title never carries an invented
+  scope.
 - **The summary is compacted.** The issue title is trimmed, its whitespace
   collapsed, a trailing period dropped, and the remainder shortened at a word
   boundary so the whole subject stays within the project's commit-subject limit

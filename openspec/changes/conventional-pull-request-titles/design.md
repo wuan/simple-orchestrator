@@ -75,8 +75,10 @@ Deduction order for the created title:
    to `feat`. Labels are the machine-readable hint the issue carries about the
    kind of change.
 3. **The scope is only taken from a conventional issue title at creation.** The
-   outcome usually makes a scope clear later, so the created title normally has
-   no scope; the reconciliation step (below) adds one.
+   task (the issue) rarely names a scope before any turn runs, so the created
+   title normally has no scope; the reconciliation step (below) adds one when
+   the applied outcome makes it clear. When neither the task nor the outcome
+   makes a scope clear, no scope is invented.
 
 Alternatives considered: a configured `type`/`scope` (rejected by the review);
 inferring the type with the model from the issue prose (rejected: the runtime's
@@ -119,8 +121,10 @@ the title:
 - when the applied commits agree on a type and (if any) a scope, the title is
   recomposed with that type and scope and the compacted issue-title summary, and
   updated when it differs from the current title;
-- when the applied commits do not agree, or carry no Conventional Commit
-  subject, the deduced title is kept.
+- when the applied commits agree on a type but not on a scope, only the type is
+  reconciled and the deduced scope (usually none) is kept;
+- when the applied commits do not agree on a type, or carry no Conventional
+  Commit subject, the deduced title is kept unchanged.
 
 The commits are the outcome because the project requires turns to commit with
 Conventional Commit messages, so their subjects are an authoritative record the
@@ -193,11 +197,10 @@ does not reach into git itself.
 
 ## Open Questions
 
-- Should the mechanical summary compaction be replaced, or supplemented, by a
-  model rewrite toward the imperative? The current design keeps the author's
-  words and enforces the project's length limit; a rewrite would need a
-  structured model output the runtime does not currently produce.
-- Is the applied-commit subject the right outcome source, or should the archived
-  OpenSpec change name be used for the summary? The change name is a compact
-  outcome summary but is a kebab-case slug, not the declarative issue title the
-  review asked to compact.
+None blocking implementation. The review settled the two forks in the first
+revision: the `type` is deduced from the issue context rather than configured,
+and a `scope` is added only when the task (a conventional issue title) or the
+applied outcome makes it clear. Mechanical compaction is the deliberate
+boundary for the summary - it keeps the author's words and enforces the
+project's length limit - so no model rewrite is proposed; a future change can
+revisit imperative summaries if the project wants them.
