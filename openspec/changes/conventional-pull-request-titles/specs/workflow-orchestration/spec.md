@@ -72,7 +72,8 @@ workflow advances, the orchestrator SHALL derive the applied type and optional
 scope from the implementation Conventional Commit subjects that turn added - not
 from an earlier propose turn or OpenSpec bookkeeping subjects - and update the
 pull request title, keeping its summary, when the type or scope differs. A scope
-SHALL come only from the issue context or the applied commits, never invented.
+SHALL come only from a conventional issue title or the applied commits, never
+invented.
 
 #### Scenario: Applied outcome changes the type
 
@@ -130,8 +131,9 @@ SHALL come only from the issue context or the applied commits, never invented.
 ### Requirement: Reconciled pull request title stays within the subject limit
 
 When reconciliation applies an applied type or scope, the resulting title SHALL
-stay under the project's commit-subject limit by shortening the kept summary at
-a word boundary, bounded only in length and never in its words.
+stay under the project's commit-subject limit of 72 characters (per `AGENTS.md`)
+by shortening the kept summary at a word boundary, bounded only in length and
+never in its words.
 
 #### Scenario: Reconciled title keeps the subject limit
 

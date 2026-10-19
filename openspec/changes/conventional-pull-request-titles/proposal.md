@@ -17,8 +17,8 @@ turns' own commits do. (Reported as issue #35.)
   `type` from an already-conventional issue title, else from the issue's labels
   (matched case-insensitively), else `feat`; a `scope` from an
   already-conventional issue title; and the `summary` from the issue title. A
-  scope is added only when the issue context or the applied outcome makes one
-  clear; the title never carries an invented scope.
+  scope is added only when a conventional issue title or the applied commits
+  make one clear; the title never carries an invented scope.
 - **The summary is compacted as much as the project's convention allows.** The
   issue title is trimmed, its whitespace collapsed, a trailing period dropped,
   and the remainder shortened at a word boundary so the whole subject stays

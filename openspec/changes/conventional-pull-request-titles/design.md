@@ -80,6 +80,10 @@ Deduction order for the created title:
    the applied outcome makes it clear. An issue label names the kind of change
    (the type), not the area of the code, so labels are not a scope source. When
    neither the task nor the outcome makes a scope clear, no scope is invented.
+   A free-form issue body is not parsed for a scope either: turning prose into an
+   area name is semantic inference, so "clear from the task" means the
+   deterministic signal a conventional issue title carries, not any area a human
+   happens to mention in the body.
 
 Alternatives considered: a configured `type`/`scope` (rejected by the review);
 inferring the type with the model from the issue prose (rejected: the runtime's
