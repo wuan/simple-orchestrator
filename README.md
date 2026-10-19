@@ -88,10 +88,11 @@ poll from labels and timestamps alone. That makes the rules exact:
 - **Nothing is reacted to in `openspec:implementing`.** Reviews no longer run
   turns; the workflow only waits for the merge. Any further changes are yours to
   push to the branch.
-- **The revise limit** (`maxReviseRounds`, default 3) bounds the propose turns.
-  It is counted from the orchestrator's comments on the pull request (their
-  number minus one); a review that arrives once the limit is reached fails the
-  workflow instead of running a turn.
+- **The revise limit** (`maxReviseRounds`, default 3) bounds the propose turns
+  that answer reviews. Every propose turn after the first one counts (including
+  a recovery); readiness prompts, failure and other notices, and apply turns do
+  not. A review that arrives once the limit is reached fails the workflow
+  instead of running a turn.
 - **Everything happens on the next poll** (`pollIntervalSeconds`, default 60),
   never instantly.
 
