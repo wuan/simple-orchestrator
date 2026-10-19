@@ -59,11 +59,11 @@ generated marker that repeats the issue number.
 ### Requirement: Pull request title is reconciled with the applied outcome
 
 After an apply turn finishes and its commits are published, the orchestrator
-SHALL derive the applied type and optional scope from the turn's Conventional
-Commit subjects and update the pull request title when the reconciled title
-differs, so the subject the host derives on merge reflects what was implemented.
-A scope SHALL be added only when the issue context or the applied commits make
-one clear, so the title never carries an invented scope.
+SHALL derive the applied type and optional scope from the Conventional Commit
+subjects the apply turn itself added, not from an earlier propose turn, and
+update the pull request title when it differs. A scope SHALL be added only when
+the issue context or the applied commits make one clear, so the title never
+carries an invented scope.
 
 #### Scenario: Applied outcome changes the type
 
@@ -88,6 +88,13 @@ one clear, so the title never carries an invented scope.
 - **WHEN** the apply turn's commits do not agree on a type or scope, or carry no
   Conventional Commit subject
 - **THEN** the orchestrator leaves the deduced title unchanged
+
+#### Scenario: Propose commits do not decide the outcome
+
+- **WHEN** the apply turn adds a Conventional Commit subject and the workflow
+  branch also carries the propose turn's `docs(openspec)` commits
+- **THEN** the orchestrator reconciles from the apply turn's commits only, and
+  the propose commits do not force the deduced title to be kept
 
 #### Scenario: Title update failure does not fail the workflow
 

@@ -29,11 +29,12 @@ turns' own commits do. (Reported as issue #35.)
   title conventionally (`fix: ...` or `docs(api): ...`), which is preserved.
 - **The title is verified at the end of the apply job.** After an apply turn
   finishes and its commits are published, the orchestrator derives the applied
-  type and scope from the turn's Conventional Commit subjects - the outcome -
-  and updates the pull request title when it differs, so the subject the host
-  derives on merge reflects what was actually implemented. An update that is not
-  clear from the outcome is skipped, and a failed update does not fail an
-  otherwise successful workflow.
+  type and scope from the Conventional Commit subjects the apply turn itself
+  added - the outcome - and updates the pull request title when it differs, so
+  the subject the host derives on merge reflects what was actually implemented.
+  The propose turn's earlier commits are not the outcome and are not considered.
+  An update that is not clear from the outcome is skipped, and a failed update
+  does not fail an otherwise successful workflow.
 - **A provider operation updates the title.** The provider contract gains an
   operation to set a pull request's title (GitHub `PATCH
   /repos/{owner}/{repo}/pulls/{number}`), so reconciliation is host-agnostic.
@@ -60,11 +61,11 @@ None.
   scope from the issue context and compact the summary into a Conventional
   Commit subject.
 - `src/orchestrator/engine.ts` - compose the title with the helpers in `start`;
-  after a successful apply turn, read the applied commit subjects and reconcile
+  after a successful apply turn, read the subjects that turn added and reconcile
   the title, updating it through the provider when it differs.
-- `src/runtime/sandbox.ts` - a `SandboxHandle` method that lists the workflow
-  branch's commit subjects ahead of the base, so the orchestrator can read the
-  applied outcome.
+- `src/runtime/sandbox.ts` - a `SandboxHandle` method that lists the commit
+  subjects a turn added (in `from..HEAD`), so the orchestrator can read the
+  apply turn's outcome.
 - `src/provider/types.ts`, `src/provider/contract.ts`,
   `src/provider/fake/fake-provider.ts`, `src/provider/github/provider.ts`,
   `src/provider/github/testing/in-memory-github.ts` - the `updatePullRequest`

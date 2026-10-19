@@ -113,10 +113,11 @@ the architecture does not trust as an objective value).
 
 ### Verify the title against the applied outcome at the end of the apply job
 
-After an apply turn finishes and its commits are published, the orchestrator
-reads the workflow branch's commit subjects ahead of the base (the outcome),
-keeps those that are Conventional Commit subjects, and uses them to reconcile
-the title:
+The outcome is the commits the apply turn itself adds, so the orchestrator
+records the branch tip before the turn runs and, once the turn's commits are
+published, reads the commit subjects in `beforeTip..HEAD` - only what the apply
+turn committed. It keeps those that are Conventional Commit subjects and uses
+them to reconcile the title:
 
 - when the applied commits agree on a type and (if any) a scope, the title is
   recomposed with that type and scope and the compacted issue-title summary, and
@@ -126,11 +127,19 @@ the title:
 - when the applied commits do not agree on a type, or carry no Conventional
   Commit subject, the deduced title is kept unchanged.
 
+Scoping to the turn's own commits matters: the workflow branch already carries
+the propose turn's `docs(openspec)` commits, so reading every commit ahead of
+the base would mix bookkeeping subjects with the implementation and make the
+commits "disagree" almost always, leaving the deduced title untouched. The
+turn's own commits are the applied outcome; the earlier propose commits are not.
+
 The commits are the outcome because the project requires turns to commit with
 Conventional Commit messages, so their subjects are an authoritative record the
 orchestrator can read from the repository rather than trust from agent prose
 (the same principle as the readiness predicate and the propose "no progress"
-check).
+check). Reading the range is also robust to a turn that commits more than once:
+every subject the turn added is considered, and a mixed set keeps the deduced
+title rather than guessing.
 
 Alternative considered: reconciling from the archived OpenSpec change name and
 its touched capabilities. The change is archived by the apply turn and is no
@@ -159,8 +168,9 @@ content and the GitHub adapter can use its REST endpoint without leaking into
 orchestration.
 
 Reading the applied subjects is an internal `SandboxHandle` addition
-(`commitSubjects`), alongside the existing repository-state reads, so the engine
-does not reach into git itself.
+(`commitSubjects(from)`), alongside the existing repository-state reads, so the
+engine does not reach into git itself; the engine passes the tip it recorded
+before the turn, so the method returns only that turn's subjects.
 
 ## Risks / Trade-offs
 
@@ -178,8 +188,9 @@ does not reach into git itself.
   keeps the deduced title rather than guessing; the requirement covers this
   case explicitly.
 - [Reading commit subjects adds a git call to the apply path] -> Accepted; it is
-  one `git log` on the workspace already alive for the turn, and a failure to
-  read it keeps the deduced title rather than failing the workflow.
+  one `git log` over the turn's own commit range on the workspace already alive
+  for the turn, and a failure to read it keeps the deduced title rather than
+  failing the workflow.
 - [A repository that wants a fixed type cannot force one] -> It can label its
   issues accordingly, or authors can write conventional issue titles; the
   review asked for deduction rather than configuration.
@@ -188,9 +199,10 @@ does not reach into git itself.
 
 1. Add the pure title helpers; no behavior change until the engine uses them.
 2. Compose the created title with the helpers in `start`.
-3. Add `commitSubjects` to the sandbox and `updatePullRequest` to the provider,
-   with their test doubles.
-4. Reconcile the title at the end of the apply turn.
+3. Add `commitSubjects(from)` to the sandbox and `updatePullRequest` to the
+   provider, with their test doubles.
+4. Reconcile the title at the end of the apply turn from the tip recorded before
+   that turn.
 5. Document the deduction, compaction, and reconciliation.
 6. Rollback is code-only: reverting the engine change restores the issue title,
    and the new provider/sandbox operations are additive.
