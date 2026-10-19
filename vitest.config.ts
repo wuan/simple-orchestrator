@@ -6,6 +6,7 @@ export default defineConfig({
     passWithNoTests: true,
     environment: 'node',
     coverage: {
+      enabled: process.env.COVERAGE === 'true',
       provider: 'v8',
       reporter: ['text', 'lcov'],
     },

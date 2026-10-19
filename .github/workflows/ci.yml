@@ -22,7 +22,8 @@ jobs:
       - run: npm ci
       - run: npm install -g @fission-ai/openspec@1.14.2
       - run: npm run verify
-      - run: npm run test:coverage
+        env:
+          COVERAGE: 'true'
       - name: SonarCloud scan
         if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
         uses: SonarSource/sonarqube-scan-action@v8

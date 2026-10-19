@@ -311,11 +311,12 @@ cluster.
 ## Testing
 
 ```bash
-npm test              # unit + integration (fakes; no network)
+npm test                  # unit + integration (fakes; no network)
+npm run test:coverage     # as above, plus coverage/lcov.info
 npm run lint
 npm run typecheck
-npm run format:check  # Prettier: is the tree formatted?
-npm run format        # Prettier: rewrite the tree in place
+npm run format:check      # Prettier: is the tree formatted?
+npm run format            # Prettier: rewrite the tree in place
 ```
 
 The end-to-end tests cover the full lifecycle against fakes and verify that
@@ -327,7 +328,11 @@ Formatting is [Prettier](https://prettier.io), configured in `.prettierrc.json`
 layout via `eslint-config-prettier`.
 
 `npm run verify` runs the whole gate — format check, lint, typecheck, tests, and
-OpenSpec validation — and is what both the git hook and CI invoke.
+OpenSpec validation — and is what both the git hook and CI invoke. The gate's
+test run collects coverage only when `COVERAGE=true`, which CI sets so that its
+single run writes the `coverage/lcov.info` its code-analysis step consumes;
+locally the gate stays coverage-free. Use `npm run test:coverage` for ad-hoc
+coverage collection.
 
 ### Git hooks
 
