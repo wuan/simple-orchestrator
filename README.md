@@ -14,12 +14,12 @@ stateDiagram-v2
     state "IMPLEMENTING (openspec:implementing)" as IMPLEMENTING
     state "DONE (openspec:done)" as DONE
     state "FAILED (openspec:failed)" as FAILED
-    [*] --> PROPOSING: you label the issue "openspec"; change not yet ready
-    [*] --> READY: you label the issue "openspec"; change ready
-    PROPOSING --> PROPOSING: you submit a review; still not ready
-    PROPOSING --> READY: you submit a review; now ready
-    READY --> READY: you request changes or comment; still ready
-    READY --> PROPOSING: you request changes or comment; no longer ready
+    [*] --> PROPOSING: you label the issue "openspec", change not yet ready
+    [*] --> READY: you label the issue "openspec", change ready
+    PROPOSING --> PROPOSING: you submit a review, still not ready
+    PROPOSING --> READY: you submit a review, now ready
+    READY --> READY: you request changes or comment, still ready
+    READY --> PROPOSING: you request changes or comment, no longer ready
     READY --> IMPLEMENTING: you approve
     IMPLEMENTING --> DONE: you merge the pull request
     DONE --> [*]
