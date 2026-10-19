@@ -68,6 +68,28 @@ describe('decide', () => {
     expect(action.kind).toBe('apply');
   });
 
+  it('is idle in READY for an approval it has already answered', () => {
+    const action = decide(
+      input({
+        phase: 'ready',
+        latestHumanReview: APPROVAL,
+        lastTurnAt: '2026-02-01T00:00:00.000Z',
+      }),
+    );
+    expect(action.kind).toBe('idle');
+  });
+
+  it('applies an approval newer than the last answered review', () => {
+    const action = decide(
+      input({
+        phase: 'ready',
+        latestHumanReview: APPROVAL,
+        lastTurnAt: '2026-01-31T00:00:00.000Z',
+      }),
+    );
+    expect(action.kind).toBe('apply');
+  });
+
   it('honors the implementing claim: approval while implementing is idle', () => {
     const action = decide(input({ phase: 'implementing', latestHumanReview: APPROVAL }));
     expect(action.kind).toBe('idle');

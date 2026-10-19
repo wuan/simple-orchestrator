@@ -339,6 +339,27 @@ describe('WorkflowEngine.drive', () => {
     expect(action.kind).toBe('revise');
   });
 
+  it('requires a new approval when an early approval made the change ready', async () => {
+    const { harness: h, pullRequestNumber } = await started({ ready: false });
+    const current = async (): Promise<ProviderPullRequest> =>
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number: pullRequestNumber }))!;
+
+    // Approved while still proposing: answered by a propose turn that makes it ready.
+    h.provider.seedReview(pullRequestNumber, { state: 'approved', body: 'early' });
+    h.openspec.markReady('add-x');
+    h.runtime.enqueue(proposeResult());
+    expect((await h.engine.drive(await current())).kind).toBe('revise');
+    expect(await labelsOf(h.provider, pullRequestNumber)).toContain(DEFAULT_LABELS.ready);
+
+    // The early approval does not carry over to the ready change.
+    expect((await h.engine.drive(await current())).kind).toBe('idle');
+    expect(h.runtime.requests.filter((r) => r.context.skill === 'apply')).toHaveLength(0);
+
+    h.provider.seedReview(pullRequestNumber, { state: 'approved', body: 'lgtm' });
+    h.runtime.enqueue(applyResult());
+    expect((await h.engine.drive(await current())).kind).toBe('apply');
+  });
+
   it('finishes a merged pull request', async () => {
     const h = harness();
     await seedIssue(h.provider, 1);

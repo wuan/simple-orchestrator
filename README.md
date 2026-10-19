@@ -79,12 +79,11 @@ poll from labels and timestamps alone. That makes the rules exact:
   review the orchestrator has already read. Each orchestrator comment records
   the newest review it read, so a review submitted while a turn is running is
   answered by the next turn; there is no need to submit it again.
-- **An approval in `openspec:ready` starts implementation even if it is not
-  new.** If you approve while the pull request is still `openspec:proposing`,
-  the approval is treated as feedback and runs a propose turn; if that turn
-  reaches `openspec:ready`, your standing approval starts implementation on the
-  following poll without a second approval (unless the host dismissed it when
-  the branch was pushed).
+- **Only a new approval starts implementation.** If you approve while the pull
+  request is still `openspec:proposing`, the approval is treated as feedback and
+  runs a propose turn. When that turn reaches `openspec:ready`, your earlier
+  approval does not carry over, because it approved a different proposal:
+  review the ready change and approve again.
 - **Nothing is reacted to in `openspec:implementing`.** Reviews no longer run
   turns; the workflow only waits for the merge. Any further changes are yours to
   push to the branch.
@@ -112,13 +111,13 @@ The **trigger label** (`openspec` by default) is on the **issue**: an issue
 carrying it opts into the workflow. The **current phase** is marked by a
 lifecycle label on the **pull request**:
 
-| Phase          | Lifecycle label         | Meaning                                                                                  | What moves it on                                  |
-| -------------- | ----------------------- | ---------------------------------------------------------------------------------------- | ------------------------------------------------- |
-| `PROPOSING`    | `openspec:proposing`    | The change is drafted but not yet ready; it needs review.                                | A submitted review (any kind).                    |
-| `READY`        | `openspec:ready`        | The change satisfies the readiness predicate.                                            | An approval (implement) or other review (revise). |
-| `IMPLEMENTING` | `openspec:implementing` | The approval was claimed; the apply turn is running or finished and the PR awaits merge. | Merging the pull request.                         |
-| `DONE`         | `openspec:done`         | The pull request merged; the workflow is complete and no longer polled.                  | Nothing (terminal).                               |
-| `FAILED`       | `openspec:failed`       | A turn failed or the revise limit was reached; the failure comment says why.             | The automatic retry, or a restart of the service. |
+| Phase          | Lifecycle label         | Meaning                                                                                  | What moves it on                                     |
+| -------------- | ----------------------- | ---------------------------------------------------------------------------------------- | ---------------------------------------------------- |
+| `PROPOSING`    | `openspec:proposing`    | The change is drafted but not yet ready; it needs review.                                | A submitted review (any kind).                       |
+| `READY`        | `openspec:ready`        | The change satisfies the readiness predicate.                                            | A new approval (implement) or other review (revise). |
+| `IMPLEMENTING` | `openspec:implementing` | The approval was claimed; the apply turn is running or finished and the PR awaits merge. | Merging the pull request.                            |
+| `DONE`         | `openspec:done`         | The pull request merged; the workflow is complete and no longer polled.                  | Nothing (terminal).                                  |
+| `FAILED`       | `openspec:failed`       | A turn failed or the revise limit was reached; the failure comment says why.             | The automatic retry, or a restart of the service.    |
 
 **READY** is computed objectively from `openspec status --json` and
 `openspec validate --strict` after every propose turn, never from agent prose.
@@ -141,10 +140,10 @@ may still update labels or post a comment.
 | PROPOSING                        | Any new review while the revise limit is reached.                                                                                                          | FAILED            | No turn. Set `openspec:failed` and post the failure comment.                                                                                                                                                                                           |
 | PROPOSING                        | No new review (plain comments, or an approval already answered).                                                                                           | PROPOSING         | No turn.                                                                                                                                                                                                                                               |
 | PROPOSING                        | The propose turn fails: turn error, unresolved base merge, or a failed push.                                                                               | FAILED            | No further turn. Set `openspec:failed` and post the failure comment with the turn's metrics.                                                                                                                                                           |
-| READY                            | The review is an _Approve_ review, new or not.                                                                                                             | IMPLEMENTING      | Claim it: set `openspec:implementing`, then run an **apply** turn that implements the tasks and folds `openspec archive` into its final commit, pushes the branch, reconciles the title, marks the pull request ready for review, and posts a comment. |
+| READY                            | A new _Approve_ review.                                                                                                                                    | IMPLEMENTING      | Claim it: set `openspec:implementing`, then run an **apply** turn that implements the tasks and folds `openspec archive` into its final commit, pushes the branch, reconciles the title, marks the pull request ready for review, and posts a comment. |
 | READY                            | A new _Request changes_ or _Comment_ review, with revise rounds left.                                                                                      | PROPOSING / READY | Run a **propose** turn: it returns to PROPOSING if the change is no longer ready, or stays READY.                                                                                                                                                      |
 | READY                            | A new _Request changes_ or _Comment_ review while the revise limit is reached.                                                                             | FAILED            | No turn. Set `openspec:failed` and post the failure comment.                                                                                                                                                                                           |
-| READY                            | No new review.                                                                                                                                             | READY             | No turn.                                                                                                                                                                                                                                               |
+| READY                            | No new review (plain comments, or an approval already answered).                                                                                           | READY             | No turn.                                                                                                                                                                                                                                               |
 | READY                            | The propose turn fails: turn error, unresolved base merge, or a failed push.                                                                               | FAILED            | No further turn. Set `openspec:failed` and post the failure comment with the turn's metrics.                                                                                                                                                           |
 | IMPLEMENTING                     | The apply turn fails: turn error, unresolved base merge, a failed push, or marking the pull request ready for review fails.                                | FAILED            | No further turn. Set `openspec:failed` and post the failure comment with the turn's metrics.                                                                                                                                                           |
 | IMPLEMENTING                     | Any review, or none.                                                                                                                                       | IMPLEMENTING      | No turn: the workflow waits for merge.                                                                                                                                                                                                                 |
