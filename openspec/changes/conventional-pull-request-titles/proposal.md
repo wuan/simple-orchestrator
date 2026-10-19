@@ -47,8 +47,8 @@ turns' own commits do. (Reported as issue #35.)
   `openspec`, such as the apply turn's archive commit), so a multi-commit turn
   still reconciles from its implementation. A title that does not parse as a
   recognized Conventional Commit subject, and an update that is not clear from
-  the outcome, are left unchanged, and a failed update does not fail an
-  otherwise successful workflow.
+  the outcome, are left unchanged, and a failed outcome read or title update
+  does not fail an otherwise successful workflow.
 - **A provider operation updates the title.** The provider contract gains an
   operation to set a pull request's title (GitHub `PATCH
   /repos/{owner}/{repo}/pulls/{number}`), so reconciliation is host-agnostic.

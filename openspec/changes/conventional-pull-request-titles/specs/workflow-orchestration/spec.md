@@ -57,9 +57,10 @@ marker that repeats the issue number.
 
 - **WHEN** the issue title is longer than the project's commit-subject limit
 - **THEN** the created draft pull request's title normalizes the summary (trims
-  it, collapses its whitespace, and drops a trailing period) and shortens it at
-  a word boundary so it stays under the limit, ending the shortened summary with
-  a single ellipsis and never rewriting its words
+  it, collapses its whitespace, drops a trailing period, and drops any stale
+  trailing ellipsis) and shortens it at a word boundary so it stays under the
+  limit, ending the shortened summary with a single ellipsis and never rewriting
+  its words
 
 #### Scenario: Title does not repeat the issue number
 
@@ -79,11 +80,10 @@ marker that repeats the issue number.
 
 After an apply turn finishes and its commits are published, and before the
 workflow advances, the orchestrator SHALL derive the applied type and optional
-scope from the implementation Conventional Commit subjects that turn added - not
-from an earlier propose turn or OpenSpec bookkeeping subjects - and update the
-pull request title, keeping its summary, when the type or scope differs. A scope
-SHALL come only from a conventional issue title or the applied commits, never
-invented.
+scope from the implementation Conventional Commit subjects that turn added, and
+update the pull request title, keeping its summary, when the agreed type or
+scope differs. A scope is adopted only with an agreed type and a single agreed
+scope; otherwise it comes only from a conventional issue title, never invented.
 
 #### Scenario: Applied outcome changes the type
 
@@ -94,8 +94,8 @@ invented.
 
 #### Scenario: Applied outcome determines the scope
 
-- **WHEN** the apply turn's implementation subjects that carry a scope all carry
-  the same scope
+- **WHEN** the apply turn's implementation subjects agree on a Conventional
+  Commit type and the subjects that carry a scope all carry the same scope
 - **THEN** the orchestrator updates the pull request title to use that scope,
   replacing a scope deduced from the issue title when the two differ
 
@@ -123,6 +123,12 @@ invented.
 - **WHEN** the apply turn's commits do not agree on a type, or carry no
   Conventional Commit subject
 - **THEN** the orchestrator leaves the deduced title unchanged
+
+#### Scenario: A failed outcome read keeps the deduced title
+
+- **WHEN** reading the apply turn's commit subjects fails
+- **THEN** the orchestrator leaves the deduced title unchanged and still advances
+  the workflow
 
 #### Scenario: A prefix with an unrecognized type is not an applied subject
 
