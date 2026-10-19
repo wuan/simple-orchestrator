@@ -9,8 +9,9 @@ SHALL be a Conventional Commit subject of the form `<type>(<scope>): <summary>`
 deduced from the issue context: the `type` and optional `scope` from an
 already-conventional issue title, otherwise the `type` from the issue's labels
 (defaulting to `feat`) and no scope, and the `summary` from the issue title
-compacted to fit the project's commit-subject limit. The title SHALL NOT be a
-generated marker that repeats the issue number.
+compacted as much as possible to the project's commit-subject limit (under 72
+characters, per `AGENTS.md`). The title SHALL NOT be a generated marker that
+repeats the issue number.
 
 #### Scenario: Created pull request title summarizes its change
 
@@ -36,11 +37,12 @@ generated marker that repeats the issue number.
 - **THEN** the created draft pull request's title keeps that type, and its scope
   when present, and uses the remaining title as the summary
 
-#### Scenario: Summary is compacted to the subject limit
+#### Scenario: Summary is compacted as much as possible to the subject limit
 
 - **WHEN** the issue title is longer than the project's commit-subject limit
-- **THEN** the created draft pull request's title stays within the limit after
-  shortening the summary at a word boundary
+- **THEN** the created draft pull request's title normalizes the summary (trims
+  it, collapses its whitespace, and drops a trailing period) and shortens it at
+  a word boundary so it stays under the limit, without rewriting its words
 
 #### Scenario: Title does not repeat the issue number
 
@@ -59,11 +61,12 @@ generated marker that repeats the issue number.
 ### Requirement: Pull request title is reconciled with the applied outcome
 
 After an apply turn finishes and its commits are published, the orchestrator
-SHALL derive the applied type and optional scope from the Conventional Commit
-subjects the apply turn itself added, not from an earlier propose turn, and
-update the pull request title when it differs. A scope SHALL be added only when
-the issue context or the applied commits make one clear, so the title never
-carries an invented scope.
+SHALL derive the applied type and optional scope from the implementation
+Conventional Commit subjects the apply turn itself added - not from an earlier
+propose turn and not from OpenSpec bookkeeping subjects - and update the pull
+request title when it differs. A scope SHALL be added only when the issue
+context or the applied commits make one clear, so the title never carries an
+invented scope.
 
 #### Scenario: Applied outcome changes the type
 
@@ -95,6 +98,14 @@ carries an invented scope.
   branch also carries the propose turn's `docs(openspec)` commits
 - **THEN** the orchestrator reconciles from the apply turn's commits only, and
   the propose commits do not force the deduced title to be kept
+
+#### Scenario: OpenSpec bookkeeping commits do not decide the outcome
+
+- **WHEN** an apply turn commits both an implementation subject and an OpenSpec
+  bookkeeping subject scoped `openspec` (for example its archive commit)
+- **THEN** the orchestrator derives the applied type and scope from the
+  implementation subject and does not treat the bookkeeping subject as a
+  disagreement
 
 #### Scenario: Title update failure does not fail the workflow
 

@@ -30,8 +30,8 @@ See `proposal.md` - Why. The current state this builds on:
 - The `type` and `scope` are deduced from the issue context, not configured, so
   a repository that configures nothing still gets a valid subject and an author
   can override per issue by writing the issue title conventionally.
-- The summary is compacted from the declarative issue title to fit the project's
-  commit-subject limit.
+- The summary is compacted as much as possible from the declarative issue title
+  to fit the project's commit-subject limit, without rewriting its words.
 - After the apply turn, the title is verified against the applied outcome and
   updated when the outcome makes a different type or scope clear.
 - Keep the change testable and host-agnostic: deduction and compaction are pure
@@ -98,14 +98,17 @@ bounded:
   to one space;
 - a trailing period is dropped;
 - the summary is shortened at the last word boundary that keeps the whole
-  `type(scope): summary` subject within 72 characters, appending `…` when it is
+  `type(scope): summary` subject under 72 characters, appending `…` when it is
   shortened.
 
 72 is the project's own commit-subject limit in `AGENTS.md` ("keep the subject
 under 72 characters"), so the compaction rule is the project's rule rather than
-an invented one. No words are rewritten: "compact as much as possible" is
-implemented as removing structural noise and enforcing the length limit, not as
-paraphrasing, which would risk changing the author's meaning.
+an invented one. This is what "compact as much as possible" means here: remove
+the structural noise and enforce the limit as far as the author's words allow.
+No words are rewritten - no paraphrase, no imperative rewrite - which would risk
+changing the author's meaning. A declarative title therefore stays declarative,
+just shorter; when even the structural compaction cannot fit within the limit,
+the summary is cut at a word boundary with an ellipsis rather than rephrased.
 
 Alternative considered: a semantic rewrite toward the imperative (rejected:
 rewriting the author's words is out of scope and needs a model call whose output
@@ -116,8 +119,9 @@ the architecture does not trust as an objective value).
 The outcome is the commits the apply turn itself adds, so the orchestrator
 records the branch tip before the turn runs and, once the turn's commits are
 published, reads the commit subjects in `beforeTip..HEAD` - only what the apply
-turn committed. It keeps those that are Conventional Commit subjects and uses
-them to reconcile the title:
+turn committed. It keeps those that are Conventional Commit subjects and not
+OpenSpec bookkeeping (a subject scoped `openspec`, such as the apply turn's
+archive commit) and uses them to reconcile the title:
 
 - when the applied commits agree on a type and (if any) a scope, the title is
   recomposed with that type and scope and the compacted issue-title summary, and
@@ -132,14 +136,20 @@ the propose turn's `docs(openspec)` commits, so reading every commit ahead of
 the base would mix bookkeeping subjects with the implementation and make the
 commits "disagree" almost always, leaving the deduced title untouched. The
 turn's own commits are the applied outcome; the earlier propose commits are not.
+The same reasoning applies inside the turn's own range: an apply turn folds
+`openspec archive` into its final commit and may also add a separate
+`openspec`-scoped bookkeeping commit, so bookkeeping subjects are ignored when
+the applied type and scope are derived. Otherwise those subjects would make a
+turn that both implements and archives "disagree" with itself and the deduced
+title would never be corrected.
 
 The commits are the outcome because the project requires turns to commit with
 Conventional Commit messages, so their subjects are an authoritative record the
 orchestrator can read from the repository rather than trust from agent prose
 (the same principle as the readiness predicate and the propose "no progress"
 check). Reading the range is also robust to a turn that commits more than once:
-every subject the turn added is considered, and a mixed set keeps the deduced
-title rather than guessing.
+every implementation subject the turn added is considered, and a mixed set of
+implementation types keeps the deduced title rather than guessing.
 
 Alternative considered: reconciling from the archived OpenSpec change name and
 its touched capabilities. The change is archived by the apply turn and is no
