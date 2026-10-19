@@ -71,9 +71,9 @@ Deduction order for the created title:
    documented table (`bug` -> `fix`; `documentation`/`docs` -> `docs`;
    `enhancement`/`feature` -> `feat`; `refactor` -> `refactor`;
    `performance`/`perf` -> `perf`; `test`/`tests` -> `test`; `ci` -> `ci`;
-   `build`/`dependencies` -> `build`; `chore`/`maintenance` -> `chore`), defaulting
-   to `feat`. Labels are the machine-readable hint the issue carries about the
-   kind of change.
+   `build`/`dependencies` -> `build`; `chore`/`maintenance` -> `chore`), matched
+   case-insensitively and defaulting to `feat`. Labels are the machine-readable
+   hint the issue carries about the kind of change.
 3. **The scope is only taken from a conventional issue title at creation.** The
    task (the issue) rarely names a scope before any turn runs, so the created
    title normally has no scope; the reconciliation step (below) adds one when
@@ -127,13 +127,20 @@ archive commit) and uses them to reconcile the title:
 - when the implementation subjects agree on a type, the title is recomposed with
   that type and, when the subjects that carry a scope agree on a single one, that
   scope (replacing a scope deduced from the issue title when the two differ),
-  together with the compacted issue-title summary, and updated when it differs
-  from the current title;
+  keeping the summary the title already carries, and updated when it differs from
+  the current title;
 - when the implementation subjects agree on a type but the subjects that carry a
   scope disagree or none carries one, only the agreed type is reconciled and the
   deduced scope (usually none) is kept;
 - when the implementation subjects do not agree on a type, or carry no
   Conventional Commit subject, the deduced title is kept unchanged.
+
+The summary is not recomputed. The title created at `start` already carries the
+compacted issue-title summary, and reconciliation only corrects the type and
+scope, so the engine parses the current title and reuses its summary rather than
+resolving the issue a second time. A title that does not parse as a Conventional
+Commit subject is left unchanged. This keeps reconciliation a pure function of
+the title and the applied commits, with no extra provider read.
 
 Scoping to the turn's own commits matters: the workflow branch already carries
 the propose turn's `docs(openspec)` commits, so reading every commit ahead of
@@ -176,10 +183,11 @@ stuck in draft blocks the human.
 
 Deduction and compaction live in `src/orchestrator/title.ts` as pure functions
 so they are unit-testable without a provider or a runtime. The engine calls them
-at creation and at reconciliation. The title update goes through a new
-`RepoProvider.updatePullRequest` operation, so the provider keeps transporting
-content and the GitHub adapter can use its REST endpoint without leaking into
-orchestration.
+at creation and uses a companion function there to rebuild a subject with a new
+type and scope while keeping its summary at reconciliation. The title update goes
+through a new `RepoProvider.updatePullRequest` operation, so the provider keeps
+transporting content and the GitHub adapter can use its REST endpoint without
+leaking into orchestration.
 
 Reading the applied subjects is an internal `SandboxHandle` addition
 (`commitSubjects(from)`), alongside the existing repository-state reads, so the

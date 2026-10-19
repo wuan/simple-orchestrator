@@ -8,10 +8,10 @@ When the orchestrator creates the draft pull request for a workflow, its title
 SHALL be a Conventional Commit subject of the form `<type>(<scope>): <summary>`
 deduced from the issue context: the `type` and optional `scope` from an
 already-conventional issue title, otherwise the `type` from the issue's labels
-(defaulting to `feat`) and no scope, and the `summary` from the issue title
-compacted as much as possible to the project's commit-subject limit (under 72
-characters, per `AGENTS.md`). The title SHALL NOT be a generated marker that
-repeats the issue number.
+(matched case-insensitively, defaulting to `feat`) and no scope, and the
+`summary` from the issue title compacted as much as possible to the project's
+commit-subject limit (under 72 characters, per `AGENTS.md`). The title SHALL NOT
+be a generated marker that repeats the issue number.
 
 #### Scenario: Created pull request title summarizes its change
 
@@ -24,6 +24,13 @@ repeats the issue number.
 - **WHEN** the issue carries a label naming a change type (for example `bug`)
 - **THEN** the created draft pull request's title begins with the corresponding
   type (for example `fix`)
+
+#### Scenario: Label matching is case-insensitive
+
+- **WHEN** the issue carries the type label in a different case (for example
+  `Bug`)
+- **THEN** the created draft pull request's title still begins with the
+  corresponding type
 
 #### Scenario: Default type applies
 
@@ -64,8 +71,8 @@ After an apply turn finishes and its commits are published, and before the
 workflow advances, the orchestrator SHALL derive the applied type and optional
 scope from the implementation Conventional Commit subjects that turn added - not
 from an earlier propose turn or OpenSpec bookkeeping subjects - and update the
-pull request title when it differs. A scope SHALL come only from the issue
-context or the applied commits, never invented.
+pull request title, keeping its summary, when the type or scope differs. A scope
+SHALL come only from the issue context or the applied commits, never invented.
 
 #### Scenario: Applied outcome changes the type
 

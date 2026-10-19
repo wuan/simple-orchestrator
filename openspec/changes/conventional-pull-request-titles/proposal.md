@@ -14,11 +14,11 @@ turns' own commits do. (Reported as issue #35.)
 - **The created pull request title is a deduced Conventional Commit subject.**
   Instead of the issue title alone, the orchestrator composes
   `<type>(<scope>): <summary>` by deducing the parts from the issue context: the
-  `type` from an already-conventional issue title, else from the issue's labels,
-  else `feat`; a `scope` from an already-conventional issue title; and the
-  `summary` from the issue title. A scope is added only when the issue context
-  or the applied outcome makes one clear; the title never carries an invented
-  scope.
+  `type` from an already-conventional issue title, else from the issue's labels
+  (matched case-insensitively), else `feat`; a `scope` from an
+  already-conventional issue title; and the `summary` from the issue title. A
+  scope is added only when the issue context or the applied outcome makes one
+  clear; the title never carries an invented scope.
 - **The summary is compacted as much as the project's convention allows.** The
   issue title is trimmed, its whitespace collapsed, a trailing period dropped,
   and the remainder shortened at a word boundary so the whole subject stays
@@ -36,13 +36,13 @@ turns' own commits do. (Reported as issue #35.)
   reflects what was actually implemented. The applied type is used when the
   implementation subjects agree on one; a scope is adopted only when the
   subjects that carry a scope agree on a single one (superseding a scope deduced
-  from the issue title), so an ambiguous outcome keeps the deduced type and
-  scope. The propose turn's earlier commits are not
-  the outcome and are not considered, and neither are OpenSpec bookkeeping
-  subjects (a commit scoped `openspec`, such as the apply turn's archive commit),
-  so a multi-commit turn still reconciles from its implementation. An update that
-  is not clear from the outcome is skipped, and a failed update does not fail an
-  otherwise successful workflow.
+  from the issue title), and the summary the title already carries is kept, so an
+  ambiguous outcome keeps the deduced type and scope. The propose turn's earlier
+  commits are not the outcome and are not considered, and neither are OpenSpec
+  bookkeeping subjects (a commit scoped `openspec`, such as the apply turn's
+  archive commit), so a multi-commit turn still reconciles from its
+  implementation. An update that is not clear from the outcome is skipped, and a
+  failed update does not fail an otherwise successful workflow.
 - **A provider operation updates the title.** The provider contract gains an
   operation to set a pull request's title (GitHub `PATCH
   /repos/{owner}/{repo}/pulls/{number}`), so reconciliation is host-agnostic.
@@ -66,8 +66,9 @@ None.
 ## Impact
 
 - `src/orchestrator/title.ts` (new) - pure helpers that deduce the type and
-  scope from the issue context and compact the summary into a Conventional
-  Commit subject.
+  scope from the issue context, compact the summary into a Conventional Commit
+  subject, and rebuild a subject with a new type and scope while keeping its
+  summary at reconciliation.
 - `src/orchestrator/engine.ts` - compose the title with the helpers in `start`;
   after a successful apply turn, read the subjects that turn added and reconcile
   the title, updating it through the provider when it differs.
