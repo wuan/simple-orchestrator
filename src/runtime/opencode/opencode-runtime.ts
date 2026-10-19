@@ -60,6 +60,9 @@ export class OpenCodeRuntime implements AgentRuntime {
       skill: request.context.skill,
       workspace: request.workspace,
       prompt,
+      repo: request.context.repo,
+      store: request.store,
+      environment: request.environment,
       signal: request.signal,
       onUsage: request.onUsage,
     });

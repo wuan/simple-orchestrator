@@ -97,7 +97,8 @@ behind by an earlier attempt is not reused when a workflow starts. See
 
 - Node.js 24+ and git
 - The `openspec` CLI on `PATH` (used for the readiness predicate)
-- A container runtime (Docker) if you want container-level turn isolation
+- A container runtime (Docker) if any repository configures a turn
+  [`environment`](docs/configuration.md#environment)
 - An agent runtime (see [Agent runtime](#agent-runtime)); the shipped one embeds
   OpenCode, so no separate OpenCode server is needed
 
@@ -180,6 +181,13 @@ GITHUB_TOKEN=... node dist/run.js --config config.yaml
 stock CLI without one: it uses an `UnconfiguredRuntime` that fails loudly on the
 first turn, which is what the fake-provider smoke test below relies on.
 
+`dist/run.js` runs each turn in-process unless its repository configures an
+`environment`, in which case the turn runs in a container of that image. That
+path needs Docker on `PATH` and an image that meets the
+[image contract](environments/README.md#image-contract); the orchestrator mounts
+its compiled runner and the repository paths itself, so no image rebuild is
+needed when the orchestrator changes.
+
 ### Entry points
 
 The package ships two entry points over the same CLI (`--config`, `--once`,
@@ -223,6 +231,21 @@ hosts OpenCode **inside the orchestrator process** through `@opencode/sdk` — n
 separate OpenCode server, port, or `OPENCODE_URL` to run. The host is created on
 the first turn, gives each turn its own session at the turn workspace, and is
 closed when the service stops.
+
+When a repository configures an
+[`environment`](docs/configuration.md#environment), its turns instead run in a
+container of that image: the agent loop, the shell and file tools, `git`, and
+`openspec` all execute there. The orchestrator mounts the repository store and
+the turn worktree at their identical host paths (so the worktree's `.git`
+pointer resolves), runs the container as the orchestrator's uid/gid with a
+writable `HOME` and a git identity, passes provider credentials by name from the
+environment, and mounts its compiled runner read-only at `/opt/runner/dist`. The
+image must provide Node.js 24+, git, the toolchain, and `@opencode/sdk` at the
+orchestrator's version; the runner fails fast on a version mismatch. The host
+still publishes the branch, gates on merge readiness, and evaluates readiness.
+See [`environments`](environments/README.md) for the image contract and the
+flavours CI publishes to GHCR, and
+[`docs/configuration.md`](docs/configuration.md#environment) for the fields.
 
 `@opencode/sdk` uses explicit resource management and therefore requires
 **Node.js 24+** (Node 22 cannot load it).
@@ -269,8 +292,10 @@ cluster.
 - Give it the `openspec` CLI and git on `PATH`.
 - Give it a writable workspace root (default `~/workspace`) for the persistent
   per-repository clones, plus a writable temp directory for turn worktrees.
-- For container-isolated turns, make a container runtime available and run the
-  turn command via the provided container args (`buildDockerRunArgs`).
+- For containerized turns, make Docker available and build each repository's
+  [`environment`](docs/configuration.md#environment) image per the
+  [image contract](environments/README.md#image-contract); the orchestrator
+  mounts its compiled runner and the repository paths itself.
 - Restart freely: on start it re-discovers in-flight workflows from their
   lifecycle labels and resumes without duplicating turns.
 
@@ -320,5 +345,6 @@ src/
   service.ts      composition root
   index.ts        CLI
 docs/             operator documentation
+environments/     turn environment images published to GHCR
 examples/         example configuration
 ```

@@ -8,10 +8,20 @@ defaults:
   maxReviseRounds: 3
   labels:
     trigger: openspec
+  environment:
+    image: ghcr.io/acme/agent-base:latest
+    gitIdentity:
+      name: OpenSpec Agent
+      email: agent@example.com
 repositories:
   - name: widget
   - name: gadget
     baseBranch: develop
+    environment:
+      image: ghcr.io/acme/agent-java:latest
+      caches:
+        - name: gradle
+          path: /home/agent/.gradle
 limits:
   maxSteps: 200
   maxTokens: 200000

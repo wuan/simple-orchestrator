@@ -32,6 +32,7 @@ the `gh` CLI.
 | `pollIntervalSeconds` | no       | `30`      | How often the repository is polled.                                        |
 | `maxReviseRounds`     | no       | `3`       | Maximum propose/review/revise rounds before the workflow is marked failed. |
 | `labels`              | no       | see below | Label name overrides.                                                      |
+| `environment`         | no       | —         | Container the repository's turns run in; in-process when omitted.          |
 
 ### `defaults`
 
@@ -47,6 +48,7 @@ omits them. It accepts the same fields as a repository entry except `name`:
 | `pollIntervalSeconds` | `30`             |
 | `maxReviseRounds`     | `3`              |
 | `labels`              | see below        |
+| `environment`         | —                |
 
 Each field resolves as the entry's value, else the `defaults` value, else the
 built-in default above. Label names merge key by key, so an entry can override
@@ -126,9 +128,60 @@ The simplest source is the provider's API-key environment variable (for example
 `GREENPT_API_KEY`; `opencode auth export` prints stored credentials), which lets
 the host use its own private database. Alternatively, `database` (or
 `OPENCODE_DB`) points the host at the `opencode` CLI's database to reuse stored
-auth (find it with `opencode debug paths db`) — but do **not** point it at a
+auth (find it with `opencode debug paths db`) - but do **not** point it at a
 database a running OpenCode service is using: two hosts on one database disrupt
 each other.
+
+### `environment`
+
+By default a turn runs in-process on the host, with whatever toolchains the host
+carries. An optional `environment` block runs the repository's turns inside a
+container instead, so an agent can use a pre-built toolchain - an Android
+SDK/Gradle image, a JDK, a Rust toolchain - without installing it on the host.
+The whole turn (the OpenCode loop, the agent's `bash`, `read`, `write`, and
+`edit`, `git`, and `openspec`) runs in the container. The GitHub push credential
+never enters it: the orchestrator publishes the branch from the host after the
+turn.
+
+The repository store and the turn's worktree are mounted at their identical
+absolute paths, the container runs as the orchestrator's user with a writable
+home, and the compiled runner is mounted read-only. The image must provide
+Node.js 24+, `git`, and the toolchain, and must have `@opencode/sdk` installed at
+the orchestrator's version; the runner fails fast when the version differs. See
+[`environments`](../environments/README.md) for the image contract and the
+ready-made flavours CI publishes to GHCR.
+
+| Field         | Required | Default  | Description                                                                                       |
+| ------------- | -------- | -------- | ------------------------------------------------------------------------------------------------- |
+| `image`       | yes      | —        | Container image providing the environment.                                                        |
+| `network`     | no       | `bridge` | Container network mode. The model loop runs inside the container, so provider egress is required. |
+| `env`         | no       | —        | Names of the orchestrator's environment variables passed into the container (for provider auth).  |
+| `gitIdentity` | no       | —        | `name` and `email` an in-container commit uses.                                                   |
+| `caches`      | no       | —        | Named volumes reused across the repository's turns, each a `name` and a container `path`.         |
+
+```yaml
+defaults:
+  environment:
+    image: ghcr.io/acme/agent-base:latest
+    gitIdentity:
+      name: OpenSpec Agent
+      email: agent@example.com
+repositories:
+  - name: widget
+  - name: gadget
+    environment:
+      image: ghcr.io/acme/agent-java:latest
+      env:
+        - GREENPT_API_KEY
+      caches:
+        - name: gradle
+          path: /home/agent/.gradle
+```
+
+An entry inherits the shared environment field by field, so `gadget` above uses
+its own image and caches while keeping the shared `gitIdentity`; `widget` uses
+the shared image unchanged. An `environment` block that names no image (after
+the merge) fails startup naming the repository.
 
 ## Credential schemes
 
@@ -159,10 +212,14 @@ defaults:
   maxReviseRounds: 3
   labels:
     trigger: openspec
+  environment:
+    image: ghcr.io/acme/agent-base:latest
 repositories:
   - name: widget
   - name: gadget
     baseBranch: develop
+    environment:
+      image: ghcr.io/acme/agent-java:latest
 limits:
   maxSteps: 200
   maxTokens: 200000

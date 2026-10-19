@@ -1,9 +1,16 @@
-import type { TurnSkill, TurnUsage } from '../../domain/types.js';
+import type { EnvironmentSpec } from '../../config/types.js';
+import type { RepoRef, TurnSkill, TurnUsage } from '../../domain/types.js';
 
 export interface OpenCodeSkillRequest {
   skill: TurnSkill;
   workspace: string;
   prompt: string;
+  /** Repository the turn belongs to; scopes container cache volumes. */
+  repo?: RepoRef;
+  /** Repository store path, mounted alongside the workspace for container turns. */
+  store?: string;
+  /** Container environment for the turn; in-process when omitted. */
+  environment?: EnvironmentSpec;
   signal?: AbortSignal;
   onUsage?: (usage: Partial<TurnUsage>) => void;
 }

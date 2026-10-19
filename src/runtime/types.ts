@@ -1,10 +1,20 @@
-import type { Limits } from '../config/types.js';
+import type { EnvironmentSpec, Limits } from '../config/types.js';
 import type { TurnContext, TurnResult, TurnUsage } from '../domain/types.js';
 
 export interface TurnRequest {
   context: TurnContext;
   /** Directory holding the branch checkout for this turn. */
   workspace: string;
+  /**
+   * Persistent repository clone the workspace is a worktree of. Carried so a
+   * container runtime can mount it at the same absolute path as the workspace.
+   */
+  store?: string;
+  /**
+   * Container environment the repository's turns run in. Omitted (or absent)
+   * means the turn runs in-process.
+   */
+  environment?: EnvironmentSpec;
   limits: Limits;
   /** Aborted when a limit is exceeded, so a runtime should stop promptly. */
   signal?: AbortSignal;

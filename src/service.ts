@@ -9,12 +9,18 @@ import { GhCliTransport } from './provider/github/gh-cli.js';
 import { GitHubProvider } from './provider/github/provider.js';
 import type { RepoProvider } from './provider/types.js';
 import { RepositoryStore } from './runtime/repository-store.js';
-import { WorktreeSandbox } from './runtime/sandbox.js';
+import { WorktreeSandbox, type Sandbox } from './runtime/sandbox.js';
 import type { AgentRuntime } from './runtime/types.js';
 import { UnconfiguredRuntime } from './runtime/unconfigured.js';
 import { NodeCommandRunner } from './system/commands.js';
 
 export type ProviderFactory = (repo: RepositoryConfig, credential: string) => RepoProvider;
+
+/** Builds the per-repository sandbox; overridable so service wiring is testable. */
+export type SandboxFactory = (
+  repo: RepositoryConfig,
+  context: { provider: RepoProvider; store: RepositoryStore; worktrees: string | undefined },
+) => Sandbox;
 
 export interface ServiceRepository {
   key: string;
@@ -30,6 +36,8 @@ export interface Service {
 export interface BuildServiceOptions {
   credentials: CredentialResolver;
   providerFactory?: ProviderFactory;
+  /** Builds the per-repository sandbox; defaults to a git worktree sandbox. */
+  sandboxFactory?: SandboxFactory;
   runtime?: AgentRuntime;
   /** Builds the runtime from configuration; used when `runtime` is not supplied. */
   runtimeFactory?: (config: OrchestratorConfig) => AgentRuntime;
@@ -77,16 +85,24 @@ export async function createService(
   const openspec = options.openspec ?? new NodeOpenspecCli(new NodeCommandRunner());
   const store = new RepositoryStore({ root: config.workspace.root });
   const logger = options.logger ?? options.loggerFactory?.(credentials);
+  const sandboxFactory: SandboxFactory =
+    options.sandboxFactory ??
+    ((repo, context) =>
+      new WorktreeSandbox({
+        store: context.store,
+        source: context.provider,
+        baseBranch: repo.baseBranch,
+        root: context.worktrees,
+      }));
 
   const repositories = config.repositories.map((repo): ServiceRepository => {
     const key = repoKey(repo);
     const credential = credentials.get(key) ?? '';
     const provider = providerFactory(repo, credential);
-    const sandbox = new WorktreeSandbox({
+    const sandbox = sandboxFactory(repo, {
+      provider,
       store,
-      source: provider,
-      baseBranch: repo.baseBranch,
-      root: config.workspace.worktrees,
+      worktrees: config.workspace.worktrees,
     });
     const poller = new Poller({
       provider,
@@ -95,6 +111,7 @@ export async function createService(
       openspec,
       labels: repo.labels,
       baseBranch: repo.baseBranch,
+      ...(repo.environment === undefined ? {} : { environment: repo.environment }),
       limits: config.limits,
       maxReviseRounds: repo.maxReviseRounds,
       logger,

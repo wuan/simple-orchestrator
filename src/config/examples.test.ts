@@ -26,6 +26,22 @@ describe('documented example config', () => {
     expect(config.workspace.worktrees).toBe('/tmp');
     expect(config.logging.verbose).toBe(false);
 
+    // A shared environment is inherited; the second entry layers its own image
+    // and cache on top.
+    expect(repo?.environment?.image).toBe('ghcr.io/acme/agent-base:latest');
+    expect(repo?.environment?.gitIdentity).toEqual({
+      name: 'OpenSpec Agent',
+      email: 'agent@example.com',
+    });
+    expect(override?.environment?.image).toBe('ghcr.io/acme/agent-java:latest');
+    expect(override?.environment?.caches).toEqual([
+      { name: 'gradle', path: '/home/agent/.gradle' },
+    ]);
+    expect(override?.environment?.gitIdentity).toEqual({
+      name: 'OpenSpec Agent',
+      email: 'agent@example.com',
+    });
+
     const resolved = await resolveCredentials(
       config,
       new EnvCredentialResolver({ GITHUB_TOKEN: 'example-token' }),

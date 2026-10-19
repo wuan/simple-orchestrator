@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_LABELS } from '../config/types.js';
+import { DEFAULT_LABELS, type EnvironmentSpec } from '../config/types.js';
 import type { TurnResult } from '../domain/types.js';
 import { FakeProvider } from '../provider/fake/fake-provider.js';
 import { FakeRuntime } from '../runtime/fake/fake-runtime.js';
@@ -25,6 +25,7 @@ function makePoller(
   runtime: FakeRuntime,
   openspec: FakeOpenspecCli,
   logger?: (message: string) => void,
+  environment?: EnvironmentSpec,
 ): Poller {
   return new Poller({
     provider,
@@ -33,6 +34,7 @@ function makePoller(
     openspec,
     labels: DEFAULT_LABELS,
     baseBranch: 'main',
+    ...(environment === undefined ? {} : { environment }),
     logger,
   });
 }
@@ -342,6 +344,38 @@ describe('Poller.pollOnce', () => {
     const report = await makePoller(provider, runtime, openspec).pollOnce();
     expect(report.recovered).toEqual([1]);
     expect(runtime.requests).toHaveLength(2);
+  });
+});
+
+describe('Poller container environment', () => {
+  it('carries a configured environment onto every turn request', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    const environment: EnvironmentSpec = { image: 'ghcr.io/acme/agent-java:latest' };
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    runtime.enqueue(proposeResult());
+
+    await makePoller(provider, runtime, openspec, undefined, environment).pollOnce();
+
+    expect(runtime.requests).toHaveLength(1);
+    expect(runtime.requests[0]?.environment).toEqual(environment);
+    expect(runtime.requests[0]?.store).toBe('/tmp/fake-store');
+  });
+
+  it('leaves the environment undefined when the repository configures none', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    runtime.enqueue(proposeResult());
+
+    await makePoller(provider, runtime, openspec).pollOnce();
+
+    expect(runtime.requests).toHaveLength(1);
+    expect(runtime.requests[0]?.environment).toBeUndefined();
   });
 });
 

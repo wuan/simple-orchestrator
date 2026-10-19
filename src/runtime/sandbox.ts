@@ -1,13 +1,21 @@
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import process from 'node:process';
 
+import { DEFAULT_ENVIRONMENT_NETWORK } from '../config/types.js';
 import { NodeCommandRunner, type CommandRunner, type CommandResult } from '../system/commands.js';
 import { expandHome } from '../system/paths.js';
 import type { RepositorySource, RepositoryStore } from './repository-store.js';
 
 export interface SandboxHandle {
   readonly workspace: string;
+  /**
+   * The persistent repository clone the workspace is a worktree of. Mounted
+   * into a turn container at its identical absolute path so the worktree's
+   * `.git` pointer resolves.
+   */
+  readonly store: string;
   /**
    * The commit the workspace's branch currently points at. Read before and
    * after a turn so the orchestrator can tell whether the turn committed
@@ -228,6 +236,7 @@ export class WorktreeSandbox implements Sandbox {
     let disposed = false;
     return {
       workspace,
+      store,
       head: () => this.headSha(workspace),
       baseIntegrated: () => this.isBaseIntegrated(workspace),
       hasChanges: () => this.branchHasChanges(workspace),
@@ -245,32 +254,71 @@ export class WorktreeSandbox implements Sandbox {
   }
 }
 
+/** A named cache volume mounted into a turn container at an absolute path. */
+export interface DockerCacheMount {
+  /** Fully-resolved named volume; the caller scopes it per repository. */
+  volume: string;
+  /** Absolute path inside the container the volume is mounted at. */
+  path: string;
+}
+
 export interface DockerRunOptions {
   image: string;
-  /** Host directory bind-mounted into the container. */
+  /** Host path of the turn's worktree, bind-mounted at the identical path. */
   workspace: string;
-  containerWorkspace?: string;
+  /** Host path of the repository store, bind-mounted at the identical path. */
+  store: string;
+  /** Host directory holding the compiled turn runner, bind-mounted read-only. */
+  runner: string;
+  /** Absolute path the runner directory is mounted at inside the container. */
+  runnerMount: string;
   command: string[];
-  /** Container network mode; defaults to `none` for isolation. */
+  /** Container network mode; defaults to {@link DEFAULT_ENVIRONMENT_NETWORK}. */
   network?: string;
+  /** uid:gid the container runs as; defaults to the orchestrator process. */
+  user?: string;
+  /** Writable home directory inside the container; defaults to `/tmp`. */
+  home?: string;
+  /** Names of the orchestrator's environment variables passed into the container. */
+  env?: string[];
+  /** Named cache volumes reused across the repository's turns. */
+  caches?: DockerCacheMount[];
+  /** Git author/committer identity for commits made in the container. */
+  gitIdentity?: { name: string; email: string };
 }
 
 /**
- * Build the argv for running a command against a workspace inside a container.
- * Used to execute a turn with container-level isolation.
+ * Build the argv for running the turn runner against a workspace inside a
+ * container. The store and the worktree are mounted at their identical absolute
+ * host paths so the worktree's `.git` pointer resolves, and the compiled runner
+ * is mounted read-only so a turn cannot modify orchestrator code.
  */
 export function buildDockerRunArgs(options: DockerRunOptions): string[] {
-  const containerWorkspace = options.containerWorkspace ?? '/workspace';
-  return [
-    'run',
-    '--rm',
-    '--network',
-    options.network ?? 'none',
-    '--workdir',
-    containerWorkspace,
-    '--volume',
-    `${options.workspace}:${containerWorkspace}`,
-    options.image,
-    ...options.command,
-  ];
+  const network = options.network ?? DEFAULT_ENVIRONMENT_NETWORK;
+  const user = options.user ?? `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`;
+  const home = options.home ?? '/tmp';
+  const args = ['run', '--rm', '-i', '--network', network, '--user', user, '--env', `HOME=${home}`];
+  for (const name of options.env ?? []) args.push('--env', name);
+  if (options.gitIdentity !== undefined) {
+    const { name, email } = options.gitIdentity;
+    args.push(
+      '--env',
+      `GIT_AUTHOR_NAME=${name}`,
+      '--env',
+      `GIT_AUTHOR_EMAIL=${email}`,
+      '--env',
+      `GIT_COMMITTER_NAME=${name}`,
+      '--env',
+      `GIT_COMMITTER_EMAIL=${email}`,
+    );
+  }
+  args.push('--workdir', options.workspace);
+  args.push('--volume', `${options.store}:${options.store}`);
+  args.push('--volume', `${options.workspace}:${options.workspace}`);
+  args.push('--volume', `${options.runner}:${options.runnerMount}:ro`);
+  for (const cache of options.caches ?? []) {
+    args.push('--volume', `${cache.volume}:${cache.path}`);
+  }
+  args.push(options.image, ...options.command);
+  return args;
 }

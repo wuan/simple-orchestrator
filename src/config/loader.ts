@@ -12,6 +12,7 @@ import {
   DEFAULT_POLL_INTERVAL_SECONDS,
   DEFAULT_WORKSPACE_ROOT,
   type AgentConfig,
+  type EnvironmentSpec,
   type LabelConfig,
   type Limits,
   type LoggingConfig,
@@ -131,6 +132,81 @@ function parseLabels(
 }
 
 /**
+ * Read the environment fields actually present, leaving the rest unset so a
+ * partial `defaults.environment` can supply the remainder. Only `image` is
+ * checked for presence after the entry and defaults have merged.
+ */
+function parseEnvironmentValues(
+  raw: unknown,
+  context: string,
+  repo?: string,
+): Partial<EnvironmentSpec> | undefined {
+  if (raw === undefined) return undefined;
+  const record = asRecord(raw, context);
+  const environment: Partial<EnvironmentSpec> = {};
+
+  const image = optionalNonEmptyStringValue(record, 'image', context, repo);
+  if (image !== undefined) environment.image = image;
+
+  const network = optionalNonEmptyStringValue(record, 'network', context, repo);
+  if (network !== undefined) environment.network = network;
+
+  const env = record['env'];
+  if (env !== undefined) {
+    if (!Array.isArray(env)) {
+      throw new ConfigError(`${context}: 'env' must be a list of non-empty strings`, repo);
+    }
+    environment.env = env.map((value, index) => {
+      if (typeof value !== 'string' || value.trim() === '') {
+        throw new ConfigError(`${context}: 'env[${index}]' must be a non-empty string`, repo);
+      }
+      return value;
+    });
+  }
+
+  const gitIdentity = record['gitIdentity'];
+  if (gitIdentity !== undefined) {
+    const identityContext = `${context}.gitIdentity`;
+    const identity = asRecord(gitIdentity, identityContext);
+    environment.gitIdentity = {
+      name: requireNonEmptyString(identity, 'name', identityContext, repo),
+      email: requireNonEmptyString(identity, 'email', identityContext, repo),
+    };
+  }
+
+  const caches = record['caches'];
+  if (caches !== undefined) {
+    if (!Array.isArray(caches)) {
+      throw new ConfigError(`${context}: 'caches' must be a list of mappings`, repo);
+    }
+    environment.caches = caches.map((value, index) => {
+      const cacheContext = `${context}.caches[${index}]`;
+      const cache = asRecord(value, cacheContext);
+      return {
+        name: requireNonEmptyString(cache, 'name', cacheContext, repo),
+        path: requireNonEmptyString(cache, 'path', cacheContext, repo),
+      };
+    });
+  }
+
+  return environment;
+}
+
+/**
+ * Merge a repository entry's environment over the shared default, field by
+ * field: an entry that sets only `image` keeps the default network, identity,
+ * and caches. Arrays are taken wholesale from the layer that sets them.
+ */
+function mergeEnvironment(
+  defaults: Partial<EnvironmentSpec> | undefined,
+  entry: Partial<EnvironmentSpec> | undefined,
+): Partial<EnvironmentSpec> | undefined {
+  if (defaults === undefined) return entry;
+  if (entry === undefined) return defaults;
+  return { ...defaults, ...entry };
+}
+
+/**
  * Validate the optional top-level `defaults` block. Only the fields actually
  * present are set, so a plain entry-over-`defaults` merge preserves the
  * `defaults`-over-built-in order. Required fields are checked after the merge.
@@ -156,6 +232,8 @@ function parseDefaults(raw: unknown): RepositoryDefaults {
   }
   const labels = parseLabelValues(record['labels'], `${context}.labels`);
   if (labels !== undefined) defaults.labels = labels;
+  const environment = parseEnvironmentValues(record['environment'], `${context}.environment`);
+  if (environment !== undefined) defaults.environment = environment;
   return defaults;
 }
 
@@ -201,7 +279,14 @@ function parseRepository(
     repo,
   );
 
-  return {
+  const environment = resolveEnvironment(
+    defaults.environment,
+    record['environment'],
+    context,
+    repo,
+  );
+
+  const config: RepositoryConfig = {
     provider,
     owner,
     name,
@@ -211,6 +296,33 @@ function parseRepository(
     maxReviseRounds,
     labels: parseLabels(record, context, repo, defaultLabels),
   };
+  if (environment !== undefined) config.environment = environment;
+  return config;
+}
+
+/**
+ * Resolve a repository's environment from the shared default and its own block
+ * and require the merged result to name an image. Absent from both, the
+ * repository keeps the in-process runtime.
+ */
+function resolveEnvironment(
+  defaults: Partial<EnvironmentSpec> | undefined,
+  entry: unknown,
+  context: string,
+  repo: string,
+): EnvironmentSpec | undefined {
+  const merged = mergeEnvironment(
+    defaults,
+    parseEnvironmentValues(entry, `${context}.environment`, repo),
+  );
+  if (merged === undefined) return undefined;
+  if (merged.image === undefined) {
+    throw new ConfigError(
+      `${context}: 'environment.image' is required and must be a non-empty string`,
+      repo,
+    );
+  }
+  return merged as EnvironmentSpec;
 }
 
 function parseLimits(raw: unknown): Limits {
