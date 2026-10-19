@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { isBotActor, latestHumanReview } from './reviews.js';
+import { isBotActor, isOrchestratorActor, latestHumanReview } from './reviews.js';
 import type { ProviderReview } from './types.js';
 
 function review(overrides: Partial<ProviderReview>): ProviderReview {
@@ -19,6 +19,22 @@ describe('isBotActor', () => {
     expect(isBotActor({ login: 'dependabot', isBot: true })).toBe(true);
     expect(isBotActor({ login: 'github-actions[bot]', isBot: false })).toBe(true);
     expect(isBotActor({ login: 'alice', isBot: false })).toBe(false);
+  });
+});
+
+describe('isOrchestratorActor', () => {
+  it('recognises a host-flagged bot', () => {
+    expect(isOrchestratorActor({ login: 'dependabot', isBot: true }, 'wuan-bot')).toBe(true);
+    expect(isOrchestratorActor({ login: 'github-actions[bot]', isBot: false })).toBe(true);
+  });
+
+  it('recognises the configured login even when the host does not flag it', () => {
+    expect(isOrchestratorActor({ login: 'wuan-bot', isBot: false }, 'wuan-bot')).toBe(true);
+  });
+
+  it('leaves other human authors alone', () => {
+    expect(isOrchestratorActor({ login: 'alice', isBot: false }, 'wuan-bot')).toBe(false);
+    expect(isOrchestratorActor({ login: 'alice', isBot: false })).toBe(false);
   });
 });
 
