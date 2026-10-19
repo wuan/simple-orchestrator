@@ -75,10 +75,10 @@ poll from labels and timestamps alone. That makes the rules exact:
   comments count when they are part of a submitted review). Plain conversation
   comments on the pull request, pending reviews, and dismissed reviews are
   ignored, as are reviews by the orchestrator's own account.
-- **Only the newest human review counts**, and it must be newer than the
-  orchestrator's latest comment on the pull request. A review submitted while a
-  turn is running is older than that turn's comment, so it is not acted on;
-  submit it again after the turn comment appears.
+- **Only the newest human review counts**, and it must be newer than every
+  review the orchestrator has already read. Each orchestrator comment records
+  the newest review it read, so a review submitted while a turn is running is
+  answered by the next turn; there is no need to submit it again.
 - **An approval in `openspec:ready` starts implementation even if it is not
   new.** If you approve while the pull request is still `openspec:proposing`,
   the approval is treated as feedback and runs a propose turn; if that turn
@@ -129,8 +129,8 @@ configurable through `labels`; see [configuration](docs/configuration.md#labels)
 ### Workflow transitions
 
 Each row is keyed by the state the workflow is in. "Review" means the newest
-submitted human review, and "new" means it is newer than the orchestrator's
-latest comment. "No turn" means the orchestrator runs no agent turn, though it
+submitted human review, and "new" means it is newer than the newest review the
+orchestrator's comments record having read. "No turn" means the orchestrator runs no agent turn, though it
 may still update labels or post a comment.
 
 | State                            | Trigger                                                                                                                                                    | Next state        | Action                                                                                                                                                                                                                                                 |
@@ -181,7 +181,8 @@ work, so it fails the workflow rather than leaving the pull request parked in
   exposes the transition.
 
 There is no database: phase lives in host labels, and the watermark is the
-timestamp of the last human review versus the orchestrator's last comment. The
+newest review timestamp recorded in an invisible marker on the orchestrator's
+own comments. The
 service polls (outbound-only) and can restart at any time without duplicating
 work.
 

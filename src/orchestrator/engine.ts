@@ -38,6 +38,7 @@ import {
   withLastTurnMetrics,
   withTurnMetrics,
 } from './usage.js';
+import { answeredMarker, answeredWatermark } from './watermark.js';
 
 export interface WorkflowEngineOptions {
   provider: RepoProvider;
@@ -138,12 +139,6 @@ function withMeasuredUsage(reported: TurnUsage, startedAt: number, attempts: num
   return { ...reported, durationMs: Date.now() - startedAt, attempts };
 }
 
-/**
- * When the orchestrator last acted on a workflow: the timestamp of its most
- * recent comment, whether the host flags its account as a bot or it matches the
- * configured bot login. This is the durable record that the newest feedback was
- * answered.
- */
 /** The heading that opens every turn comment, which identifies the turn's skill. */
 function turnHeading(skill: TurnSkill): string {
   return `**OpenSpec ${skill} turn**`;
@@ -162,12 +157,16 @@ function ownProposeTurns(comments: ProviderComment[], botLogin?: string): number
   ).length;
 }
 
-function lastOwnCommentAt(comments: ProviderComment[], botLogin?: string): string | null {
-  const ownComments = comments.filter((comment) => isOrchestratorActor(comment.author, botLogin));
-  if (ownComments.length === 0) return null;
-  return ownComments.reduce((latest, comment) =>
-    Date.parse(comment.at) > Date.parse(latest.at) ? comment : latest,
-  ).at;
+/**
+ * The record that the newest feedback was answered: the newest human review
+ * the orchestrator's own comments record having read (see `watermark.ts`). Its
+ * comments are recognised whether the host flags its account as a bot or it
+ * matches the configured bot login.
+ */
+function answeredAt(comments: ProviderComment[], botLogin?: string): string | null {
+  return answeredWatermark(
+    comments.filter((comment) => isOrchestratorActor(comment.author, botLogin)),
+  );
 }
 
 /**
@@ -333,7 +332,7 @@ export class WorkflowEngine {
       pullRequestState: pullRequest.state,
       phase: phaseFromLabels(this.labels, pullRequest.labels) ?? 'proposing',
       latestHumanReview: latestHumanReviewEvent,
-      lastTurnAt: lastOwnCommentAt(comments, botLogin),
+      lastTurnAt: answeredAt(comments, botLogin),
       reviseRounds: Math.max(0, ownProposeTurns(comments, botLogin) - 1),
       maxReviseRounds: this.maxReviseRounds,
     });
@@ -365,19 +364,21 @@ export class WorkflowEngine {
         return;
       case 'finish':
         await this.setPhase(pullRequest, 'done');
-        await this.provider.comment(
-          this.target(pullRequest),
+        await this.comment(
+          pullRequest,
           withLastTurnMetrics('Merged. Workflow complete.', latestUsage(comments)),
+          reviews,
         );
         return;
       case 'fail':
-        await this.signalFailure(pullRequest, new Error(action.reason), { comments });
+        await this.signalFailure(pullRequest, new Error(action.reason), { comments, reviews });
         return;
       case 'cancel':
         await this.clearPhase(pullRequest);
-        await this.provider.comment(
-          this.target(pullRequest),
+        await this.comment(
+          pullRequest,
           withLastTurnMetrics(`Workflow cancelled: ${action.reason}.`, latestUsage(comments)),
+          reviews,
         );
         return;
     }
@@ -470,7 +471,7 @@ export class WorkflowEngine {
       // branch (and leaving an unmergeable pull request).
       if (!(await handle.baseIntegrated())) throw new BaseIntegrationError(this.baseBranch);
       await this.provider.push({ branch: pullRequest.branch, destination: handle.workspace });
-      await this.postTurn(pullRequest, result, usage);
+      await this.postTurn(pullRequest, result, usage, reviews);
       const commits =
         result.commits.length === 0 ? 'no commits' : `commits ${result.commits.join(', ')}`;
       this.logger(`${turn} succeeded with ${commits}`);
@@ -482,9 +483,10 @@ export class WorkflowEngine {
         );
         await this.setPhase(pullRequest, readiness.ready ? 'ready' : 'proposing');
         if (readiness.ready) {
-          await this.provider.comment(
-            this.target(pullRequest),
+          await this.comment(
+            pullRequest,
             withTurnMetrics('The change is ready for development. Approve to implement.', usage),
+            reviews,
           );
         }
       } else {
@@ -494,7 +496,7 @@ export class WorkflowEngine {
         // now so a human can review and merge it. A failure here falls through
         // to the catch and marks the workflow failed rather than leaving a
         // task-complete pull request stuck in draft.
-        await this.reconcileTitle(pullRequest, handle, beforeTip);
+        await this.reconcileTitle(pullRequest, handle, beforeTip, reviews);
         await this.provider.markPullRequestReady(pullRequest.ref);
         await this.setPhase(pullRequest, 'implementing');
       }
@@ -504,6 +506,7 @@ export class WorkflowEngine {
       // attempts of the turn that just failed.
       await this.signalFailure(pullRequest, error, {
         usage: withMeasuredUsage(reported, startedAt, attempts),
+        reviews,
       });
     } finally {
       await handle.dispose();
@@ -531,6 +534,7 @@ export class WorkflowEngine {
     pullRequest: ProviderPullRequest,
     handle: SandboxHandle,
     beforeTip: string,
+    reviews: ProviderReview[],
   ): Promise<void> {
     let subjects: string[];
     try {
@@ -551,9 +555,10 @@ export class WorkflowEngine {
       const message = describeError(error);
       this.logger(`PR #${pullRequest.ref.number}: updating the title failed: ${message}`);
       try {
-        await this.provider.comment(
-          this.target(pullRequest),
+        await this.comment(
+          pullRequest,
           `Could not update the pull request title: ${message}`,
+          reviews,
         );
       } catch {
         // Reporting is best-effort; the workflow still advances.
@@ -565,6 +570,7 @@ export class WorkflowEngine {
     pullRequest: ProviderPullRequest,
     result: TurnResult,
     usage: TurnUsage,
+    reviews: ProviderReview[],
   ): Promise<void> {
     const lines = [
       turnHeading(result.skill),
@@ -575,7 +581,24 @@ export class WorkflowEngine {
     if (result.questions.length > 0) {
       lines.push('', '**Questions for the reviewer:**', ...result.questions.map((q) => `- ${q}`));
     }
-    await this.provider.comment(this.target(pullRequest), withTurnMetrics(lines.join('\n'), usage));
+    await this.comment(pullRequest, withTurnMetrics(lines.join('\n'), usage), reviews);
+  }
+
+  /**
+   * Post on the workflow pull request. Every comment records the newest human
+   * review the action read, which is what marks that feedback answered: a
+   * review submitted while a turn runs is newer and drives the next turn.
+   */
+  private async comment(
+    pullRequest: ProviderPullRequest,
+    body: string,
+    reviews: ProviderReview[],
+  ): Promise<void> {
+    const read = latestHumanReview(reviews, await this.getBotLogin());
+    await this.provider.comment(
+      this.target(pullRequest),
+      `${body}\n${answeredMarker(read?.at ?? null)}`,
+    );
   }
 
   private async setPhase(pullRequest: ProviderPullRequest, phase: WorkflowPhase): Promise<void> {
@@ -600,7 +623,7 @@ export class WorkflowEngine {
   private async signalFailure(
     pullRequest: ProviderPullRequest,
     error: unknown,
-    context: { usage?: TurnUsage; comments?: ProviderComment[] },
+    context: { usage?: TurnUsage; comments?: ProviderComment[]; reviews: ProviderReview[] },
   ): Promise<void> {
     await this.setPhase(pullRequest, 'failed');
     const body = `Workflow failed: ${describeError(error)}`;
@@ -608,7 +631,7 @@ export class WorkflowEngine {
       context.usage === undefined
         ? withLastTurnMetrics(body, latestUsage(context.comments ?? []))
         : withTurnMetrics(body, context.usage);
-    await this.provider.comment(this.target(pullRequest), comment);
+    await this.comment(pullRequest, comment, context.reviews);
     this.logger(`PR #${pullRequest.ref.number} failed: ${describeError(error)}`);
   }
 }
