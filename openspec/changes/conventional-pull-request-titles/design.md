@@ -123,13 +123,15 @@ turn committed. It keeps those that are Conventional Commit subjects and not
 OpenSpec bookkeeping (a subject scoped `openspec`, such as the apply turn's
 archive commit) and uses them to reconcile the title:
 
-- when the applied commits agree on a type and (if any) a scope, the title is
-  recomposed with that type and scope and the compacted issue-title summary, and
-  updated when it differs from the current title;
-- when the applied commits agree on a type but not on a scope, only the type is
-  reconciled and the deduced scope (usually none) is kept;
-- when the applied commits do not agree on a type, or carry no Conventional
-  Commit subject, the deduced title is kept unchanged.
+- when the implementation subjects agree on a type, the title is recomposed with
+  that type and, when the subjects that carry a scope agree on a single one, that
+  scope, together with the compacted issue-title summary, and updated when it
+  differs from the current title;
+- when the implementation subjects agree on a type but the subjects that carry a
+  scope disagree or none carries one, only the agreed type is reconciled and the
+  deduced scope (usually none) is kept;
+- when the implementation subjects do not agree on a type, or carry no
+  Conventional Commit subject, the deduced title is kept unchanged.
 
 Scoping to the turn's own commits matters: the workflow branch already carries
 the propose turn's `docs(openspec)` commits, so reading every commit ahead of
@@ -195,8 +197,9 @@ before the turn, so the method returns only that turn's subjects.
   boundary with an ellipsis, and an author can shorten the issue title or write
   it conventionally.
 - [The applied commits may disagree on a type or scope] -> The orchestrator
-  keeps the deduced title rather than guessing; the requirement covers this
-  case explicitly.
+  reconciles only what they agree on - the type - and keeps the deduced scope
+  when they disagree on it; a disagreement on the type keeps the deduced title.
+  The requirement covers both cases explicitly.
 - [Reading commit subjects adds a git call to the apply path] -> Accepted; it is
   one `git log` over the turn's own commit range on the workspace already alive
   for the turn, and a failure to read it keeps the deduced title rather than

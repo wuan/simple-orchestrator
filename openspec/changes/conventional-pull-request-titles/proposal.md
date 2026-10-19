@@ -29,15 +29,19 @@ turns' own commits do. (Reported as issue #35.)
   author can still choose a type or scope for one issue by writing the issue
   title conventionally (`fix: ...` or `docs(api): ...`), which is preserved.
 - **The title is verified at the end of the apply job.** After an apply turn
-  finishes and its commits are published, the orchestrator derives the applied
-  type and scope from the Conventional Commit subjects the apply turn itself
-  added - the outcome - and updates the pull request title when it differs, so
-  the subject the host derives on merge reflects what was actually implemented.
-  The propose turn's earlier commits are not the outcome and are not considered,
-  and neither are OpenSpec bookkeeping subjects (a commit scoped `openspec`, such
-  as the apply turn's archive commit), so a multi-commit turn still reconciles
-  from its implementation. An update that is not clear from the outcome is
-  skipped, and a failed update does not fail an otherwise successful workflow.
+  finishes and its commits are published, and before the workflow advances, the
+  orchestrator derives the applied type and scope from the Conventional Commit
+  subjects the apply turn itself added - the outcome - and updates the pull
+  request title when it differs, so the subject the host derives on merge
+  reflects what was actually implemented. The applied type is used when the
+  implementation subjects agree on one; a scope is adopted only when the
+  subjects that carry a scope agree on a single one, so an ambiguous outcome
+  keeps the deduced type and scope. The propose turn's earlier commits are not
+  the outcome and are not considered, and neither are OpenSpec bookkeeping
+  subjects (a commit scoped `openspec`, such as the apply turn's archive commit),
+  so a multi-commit turn still reconciles from its implementation. An update that
+  is not clear from the outcome is skipped, and a failed update does not fail an
+  otherwise successful workflow.
 - **A provider operation updates the title.** The provider contract gains an
   operation to set a pull request's title (GitHub `PATCH
   /repos/{owner}/{repo}/pulls/{number}`), so reconciliation is host-agnostic.

@@ -60,26 +60,32 @@ repeats the issue number.
 
 ### Requirement: Pull request title is reconciled with the applied outcome
 
-After an apply turn finishes and its commits are published, the orchestrator
-SHALL derive the applied type and optional scope from the implementation
-Conventional Commit subjects the apply turn itself added - not from an earlier
-propose turn and not from OpenSpec bookkeeping subjects - and update the pull
-request title when it differs. A scope SHALL be added only when the issue
-context or the applied commits make one clear, so the title never carries an
-invented scope.
+After an apply turn finishes and its commits are published, and before the
+workflow advances, the orchestrator SHALL derive the applied type and optional
+scope from the implementation Conventional Commit subjects that turn added - not
+from an earlier propose turn or OpenSpec bookkeeping subjects - and update the
+pull request title when it differs. A scope SHALL be added only when the issue
+context or the applied commits make one clear, never invented.
 
 #### Scenario: Applied outcome changes the type
 
-- **WHEN** the apply turn's commits carry a Conventional Commit type different
-  from the deduced one
+- **WHEN** the apply turn's implementation subjects agree on a Conventional
+  Commit type different from the deduced one
 - **THEN** the orchestrator updates the pull request title to the applied type
   before the workflow advances
 
 #### Scenario: Applied outcome adds a scope
 
-- **WHEN** the apply turn's commits carry a single Conventional Commit scope and
-  the current title has none
+- **WHEN** the apply turn's implementation subjects that carry a scope all carry
+  the same scope and the current title has none
 - **THEN** the orchestrator updates the pull request title to include that scope
+
+#### Scenario: Several applied scopes keep the deduced scope
+
+- **WHEN** the apply turn's implementation subjects carry more than one
+  Conventional Commit scope
+- **THEN** the orchestrator keeps the deduced scope and reconciles only the type
+  the subjects agree on
 
 #### Scenario: No scope is invented
 
@@ -88,7 +94,7 @@ invented scope.
 
 #### Scenario: Ambiguous outcome keeps the deduced title
 
-- **WHEN** the apply turn's commits do not agree on a type or scope, or carry no
+- **WHEN** the apply turn's commits do not agree on a type, or carry no
   Conventional Commit subject
 - **THEN** the orchestrator leaves the deduced title unchanged
 
