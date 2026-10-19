@@ -99,6 +99,13 @@ scope; otherwise it comes only from a conventional issue title, never invented.
 - **THEN** the orchestrator updates the pull request title to use that scope,
   replacing a scope deduced from the issue title when the two differ
 
+#### Scenario: Reconciled title keeps its summary
+
+- **WHEN** the orchestrator reconciles the pull request title with the applied
+  type or scope
+- **THEN** the title keeps the summary it already carried, changing only its type
+  and scope
+
 #### Scenario: Several applied scopes keep the deduced scope
 
 - **WHEN** the apply turn's implementation subjects carry more than one
