@@ -51,6 +51,10 @@ export interface CreatePullRequestInput {
   branch?: string;
 }
 
+export interface UpdatePullRequestInput {
+  title: string;
+}
+
 export interface CloneInput {
   branch: string;
   destination: string;
@@ -96,6 +100,11 @@ export interface RepoProvider {
    * pull request that is already ready for review is left unchanged.
    */
   markPullRequestReady(pullRequest: PullRequestRef): Promise<void>;
+  /**
+   * Update a pull request's (or merge request's) title, so the orchestrator can
+   * reconcile the subject the host derives on merge with the applied outcome.
+   */
+  updatePullRequest(pullRequest: PullRequestRef, input: UpdatePullRequestInput): Promise<void>;
   getPullRequest(pullRequest: PullRequestRef): Promise<ProviderPullRequest | null>;
   listPullRequestsForIssue(issue: IssueRef): Promise<ProviderPullRequest[]>;
   /** All pull requests carrying a label, in any state (used to resume work). */

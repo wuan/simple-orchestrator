@@ -10,6 +10,7 @@ import type {
   PushInput,
   RepoProvider,
   ThreadTarget,
+  UpdatePullRequestInput,
 } from '../types.js';
 import { defaultIssueBranch } from '../types.js';
 
@@ -47,6 +48,7 @@ export class FakeProvider implements RepoProvider {
   readonly fetches: FetchInput[] = [];
   readonly pushes: PushInput[] = [];
   readonly commentLog: { target: ThreadTarget; body: string }[] = [];
+  readonly pullRequestUpdates: { ref: PullRequestRef; input: UpdatePullRequestInput }[] = [];
 
   constructor(options: FakeProviderOptions = {}) {
     this.id = options.id ?? 'fake';
@@ -186,6 +188,15 @@ export class FakeProvider implements RepoProvider {
   async markPullRequestReady(pullRequest: PullRequestRef): Promise<void> {
     const stored = this.pulls.get(pullRequest.number);
     if (stored !== undefined) stored.draft = false;
+  }
+
+  async updatePullRequest(
+    pullRequest: PullRequestRef,
+    input: UpdatePullRequestInput,
+  ): Promise<void> {
+    const stored = this.pulls.get(pullRequest.number);
+    if (stored !== undefined) stored.title = input.title;
+    this.pullRequestUpdates.push({ ref: pullRequest, input: { ...input } });
   }
 
   async listPullRequestsForIssue(issue: IssueRef): Promise<ProviderPullRequest[]> {

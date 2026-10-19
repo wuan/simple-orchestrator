@@ -72,6 +72,16 @@ export function runProviderContractTests(name: string, makeFixture: () => Provid
       expect(stored?.draft).toBe(false);
     });
 
+    it('updates a pull request title and reads it back', async () => {
+      const fixture = makeFixture();
+      const { provider } = fixture;
+      const pr = await startWorkflow(fixture);
+
+      await provider.updatePullRequest(pr.ref, { title: 'fix(api): handle timeout' });
+      const stored = await provider.getPullRequest(pr.ref);
+      expect(stored?.title).toBe('fix(api): handle timeout');
+    });
+
     it('round-trips labels on a pull request', async () => {
       const fixture = makeFixture();
       const { provider } = fixture;

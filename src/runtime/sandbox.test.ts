@@ -136,6 +136,49 @@ describe('WorktreeSandbox', () => {
     await handle.dispose();
   });
 
+  it('lists the subjects the branch gained since a commit, excluding earlier ones', async () => {
+    const f = await fixture();
+    const handle = await sandboxFor(f).create({ branch: 'openspec/issue-1' });
+    const before = await handle.head();
+
+    // The branch's own earlier commit (`change`) is behind `before`, so it is
+    // not part of the range.
+    expect(await handle.commitSubjects(before)).toEqual([]);
+
+    await writeFile(join(handle.workspace, 'a.md'), 'a\n');
+    await git(['-C', handle.workspace, 'add', '.']);
+    await git([
+      '-C',
+      handle.workspace,
+      '-c',
+      'user.email=test@example.com',
+      '-c',
+      'user.name=Test',
+      'commit',
+      '-m',
+      'feat: add a',
+    ]);
+    await writeFile(join(handle.workspace, 'b.md'), 'b\n');
+    await git(['-C', handle.workspace, 'add', '.']);
+    await git([
+      '-C',
+      handle.workspace,
+      '-c',
+      'user.email=test@example.com',
+      '-c',
+      'user.name=Test',
+      'commit',
+      '-m',
+      'not conventional',
+    ]);
+
+    const subjects = await handle.commitSubjects(before);
+    expect(subjects).toContain('feat: add a');
+    expect(subjects).toContain('not conventional');
+    expect(subjects).not.toContain('change');
+    await handle.dispose();
+  });
+
   it('reports whether the branch carries a change relative to the base', async () => {
     const f = await fixture();
     const sandbox = sandboxFor(f);

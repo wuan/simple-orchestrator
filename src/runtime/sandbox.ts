@@ -34,6 +34,12 @@ export interface SandboxHandle {
    * `proposing` with no changes has no proposal for a human to review.
    */
   hasChanges(): Promise<boolean>;
+  /**
+   * The subjects of the commits the branch gained since `from`
+   * (`git log --format=%s <from>..HEAD`), so the orchestrator can read what a
+   * turn committed from repository state. Throws on a git failure.
+   */
+  commitSubjects(from: string): Promise<string[]>;
   dispose(): Promise<void>;
 }
 
@@ -179,6 +185,18 @@ export class WorktreeSandbox implements Sandbox {
     return status.stdout.split('\n').some((line) => /^(DD|AU|UD|UA|DU|AA|UU) /.test(line));
   }
 
+  /** The subjects of the commits the branch gained since `from`, newest first. */
+  private async commitSubjectsIn(workspace: string, from: string): Promise<string[]> {
+    const result = await this.git(['-C', workspace, 'log', '--format=%s', `${from}..HEAD`]);
+    if (result.code !== 0) {
+      throw new Error(`git log failed (${result.code}): ${result.stderr.trim()}`);
+    }
+    return result.stdout
+      .split('\n')
+      .map((line) => line.trim())
+      .filter((line) => line !== '');
+  }
+
   /**
    * Merge the current base branch into the workflow branch before the turn. A
    * clean merge is committed (or fast-forwards); a conflicted merge is left
@@ -240,6 +258,7 @@ export class WorktreeSandbox implements Sandbox {
       head: () => this.headSha(workspace),
       baseIntegrated: () => this.isBaseIntegrated(workspace),
       hasChanges: () => this.branchHasChanges(workspace),
+      commitSubjects: (from: string) => this.commitSubjectsIn(workspace, from),
       dispose: async () => {
         if (disposed) return;
         disposed = true;

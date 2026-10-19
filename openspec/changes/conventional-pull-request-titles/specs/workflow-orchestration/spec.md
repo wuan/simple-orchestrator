@@ -6,14 +6,8 @@
 
 When the orchestrator creates the draft pull request for a workflow, its title
 SHALL be a Conventional Commit subject of the form `<type>(<scope>): <summary>`
-deduced from the issue context: the `type` and optional `scope` from an issue
-title already beginning with one of the project's Conventional Commit types
-`feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore` (per
-`AGENTS.md`), otherwise the `type` from the issue's labels (matched
-case-insensitively, defaulting to `feat`) and no scope, and the `summary` from
-the issue title compacted as much as possible to the project's commit-subject
-limit (under 72 characters, per `AGENTS.md`). The title SHALL NOT be a generated
-marker that repeats the issue number.
+deduced from the issue context, and SHALL NOT be a generated marker that repeats
+the issue number.
 
 #### Scenario: Created pull request title summarizes its change
 
@@ -75,6 +69,35 @@ marker that repeats the issue number.
 - **THEN** the resulting commit subject is that Conventional Commit subject
 
 ## ADDED Requirements
+
+### Requirement: Workflow pull request title parts are deduced and compacted
+
+The `type` and optional `scope` of the created title SHALL come from an issue
+title already beginning with one of the project's Conventional Commit types
+(`feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore`);
+otherwise the `type` SHALL come from the issue's labels, matched
+case-insensitively and defaulting to `feat`, with no scope. The `summary` SHALL be
+the issue title compacted to the project's 72-character commit-subject limit,
+keeping the author's words.
+
+#### Scenario: The recognized types are the project's Conventional Commit types
+
+- **WHEN** an issue title begins with a type that is one of the project's
+  Conventional Commit types
+- **THEN** the created draft pull request's title keeps that type
+
+#### Scenario: No scope is taken from the issue labels
+
+- **WHEN** the issue title is not already conventional and the issue's labels
+  name a type
+- **THEN** the created draft pull request's title carries no scope
+
+#### Scenario: A stale ellipsis is replaced rather than repeated
+
+- **WHEN** the issue title already ends with an ellipsis left by an earlier
+  compaction and is still longer than the limit
+- **THEN** the created draft pull request's title drops that ellipsis before
+  measuring and ends the shortened summary with a single ellipsis, not two
 
 ### Requirement: Pull request title is reconciled with the applied outcome
 

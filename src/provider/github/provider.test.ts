@@ -133,6 +133,21 @@ describe('GitHubProvider', () => {
     );
   });
 
+  it('updates a pull request title through the REST endpoint', async () => {
+    const { provider, github } = setup();
+    github.seedPull({ number: 10, head: 'openspec/issue-1' });
+
+    await provider.updatePullRequest({ repo: provider.repo, number: 10 }, { title: 'feat: new' });
+
+    const pr = await provider.getPullRequest({ repo: provider.repo, number: 10 });
+    expect(pr?.title).toBe('feat: new');
+    expect(
+      github.calls.some(
+        (call) => call.method === 'PATCH' && call.path === '/repos/acme/widget/pulls/10',
+      ),
+    ).toBe(true);
+  });
+
   it('manages lifecycle labels on a pull request', async () => {
     const { provider, github } = setup();
     github.seedPull({ number: 10, head: 'openspec/issue-1' });
