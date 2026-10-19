@@ -77,8 +77,9 @@ Deduction order for the created title:
 3. **The scope is only taken from a conventional issue title at creation.** The
    task (the issue) rarely names a scope before any turn runs, so the created
    title normally has no scope; the reconciliation step (below) adds one when
-   the applied outcome makes it clear. When neither the task nor the outcome
-   makes a scope clear, no scope is invented.
+   the applied outcome makes it clear. An issue label names the kind of change
+   (the type), not the area of the code, so labels are not a scope source. When
+   neither the task nor the outcome makes a scope clear, no scope is invented.
 
 Alternatives considered: a configured `type`/`scope` (rejected by the review);
 inferring the type with the model from the issue prose (rejected: the runtime's
@@ -125,8 +126,9 @@ archive commit) and uses them to reconcile the title:
 
 - when the implementation subjects agree on a type, the title is recomposed with
   that type and, when the subjects that carry a scope agree on a single one, that
-  scope, together with the compacted issue-title summary, and updated when it
-  differs from the current title;
+  scope (replacing a scope deduced from the issue title when the two differ),
+  together with the compacted issue-title summary, and updated when it differs
+  from the current title;
 - when the implementation subjects agree on a type but the subjects that carry a
   scope disagree or none carries one, only the agreed type is reconciled and the
   deduced scope (usually none) is kept;

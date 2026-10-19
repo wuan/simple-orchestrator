@@ -64,8 +64,8 @@ After an apply turn finishes and its commits are published, and before the
 workflow advances, the orchestrator SHALL derive the applied type and optional
 scope from the implementation Conventional Commit subjects that turn added - not
 from an earlier propose turn or OpenSpec bookkeeping subjects - and update the
-pull request title when it differs. A scope SHALL be added only when the issue
-context or the applied commits make one clear, never invented.
+pull request title when it differs. A scope SHALL come only from the issue
+context or the applied commits, never invented.
 
 #### Scenario: Applied outcome changes the type
 
@@ -74,11 +74,12 @@ context or the applied commits make one clear, never invented.
 - **THEN** the orchestrator updates the pull request title to the applied type
   before the workflow advances
 
-#### Scenario: Applied outcome adds a scope
+#### Scenario: Applied outcome determines the scope
 
 - **WHEN** the apply turn's implementation subjects that carry a scope all carry
-  the same scope and the current title has none
-- **THEN** the orchestrator updates the pull request title to include that scope
+  the same scope
+- **THEN** the orchestrator updates the pull request title to use that scope,
+  replacing a scope deduced from the issue title when the two differ
 
 #### Scenario: Several applied scopes keep the deduced scope
 

@@ -35,8 +35,9 @@ turns' own commits do. (Reported as issue #35.)
   request title when it differs, so the subject the host derives on merge
   reflects what was actually implemented. The applied type is used when the
   implementation subjects agree on one; a scope is adopted only when the
-  subjects that carry a scope agree on a single one, so an ambiguous outcome
-  keeps the deduced type and scope. The propose turn's earlier commits are not
+  subjects that carry a scope agree on a single one (superseding a scope deduced
+  from the issue title), so an ambiguous outcome keeps the deduced type and
+  scope. The propose turn's earlier commits are not
   the outcome and are not considered, and neither are OpenSpec bookkeeping
   subjects (a commit scoped `openspec`, such as the apply turn's archive commit),
   so a multi-commit turn still reconciles from its implementation. An update that
