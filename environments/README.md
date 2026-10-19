@@ -41,6 +41,11 @@ builds every flavour and publishes it to the GitHub Container Registry:
 ghcr.io/wuan/simple-orchestrator/<flavour>
 ```
 
+Every flavour is published as a **multi-platform** image covering `linux/amd64`
+and `linux/arm64`. The tags name an image index rather than a single
+architecture, so the host's container runtime selects the image matching its own
+platform and the flavour runs natively on either architecture.
+
 Pushes to `main` publish `latest` and the branch name; version tags publish the
 semantic versions; pull requests build the image without pushing, so an image
 change is validated before it lands. Point a repository at a published flavour:

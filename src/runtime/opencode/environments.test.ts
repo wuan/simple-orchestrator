@@ -28,7 +28,7 @@ interface Workflow {
       needs?: string[];
       outputs?: Record<string, string>;
       strategy?: { matrix?: Record<string, unknown> };
-      steps?: { id?: string; run?: string; with?: Record<string, unknown> }[];
+      steps?: { id?: string; uses?: string; run?: string; with?: Record<string, unknown> }[];
     }
   >;
 }
@@ -75,6 +75,28 @@ describe('environment image flavours', () => {
 
     const buildStep = job?.steps?.find((step) => step.with?.target === '${{ matrix.flavour }}');
     expect(buildStep?.with?.context).toBe('environments');
+  });
+
+  it('publishes every flavour for both amd64 and arm64', () => {
+    const workflow = parse(readFileSync(WORKFLOW, 'utf8')) as Workflow;
+    const steps = workflow.jobs?.build?.steps ?? [];
+
+    // The runner is amd64, so the build registers QEMU to emulate arm64 and
+    // buildx emits a single index covering both supported platforms.
+    expect(steps.some((step) => step.uses?.startsWith('docker/setup-qemu-action'))).toBe(true);
+
+    const buildStep = steps.find((step) => step.with?.target === '${{ matrix.flavour }}');
+    const platforms = String(buildStep?.with?.platforms ?? '')
+      .split(',')
+      .map((platform) => platform.trim());
+    expect(platforms).toContain('linux/amd64');
+    expect(platforms).toContain('linux/arm64');
+
+    // The platform set lives only on the build step; the flavour matrix still
+    // comes from the Dockerfile stages rather than a second, driftable list.
+    expect(workflow.jobs?.build?.strategy?.matrix?.flavour).toBe(
+      '${{ fromJSON(needs.flavours.outputs.list) }}',
+    );
   });
 
   it('discovers the flavours from the Dockerfile and passes the lockfile SDK', () => {

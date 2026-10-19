@@ -77,6 +77,11 @@ jobs:
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
+      # The runner is amd64, so QEMU supplies the arm64 emulation the
+      # multi-platform build needs; buildx then emits one image index per tag
+      # that a host on either architecture can pull from.
+      - uses: docker/setup-qemu-action@v4
+
       - uses: docker/setup-buildx-action@v4
 
       # No push on pull requests, so no login is needed (and no package write
@@ -107,6 +112,9 @@ jobs:
         with:
           context: environments
           target: ${{ matrix.flavour }}
+          # Every flavour is one image index covering both supported platforms,
+          # so the pulling host's Docker selects the matching image.
+          platforms: linux/amd64,linux/arm64
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
