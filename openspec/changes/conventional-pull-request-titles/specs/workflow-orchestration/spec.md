@@ -5,35 +5,42 @@
 ### Requirement: Workflow pull request title summarizes its change
 
 When the orchestrator creates the draft pull request for a workflow, its title
-SHALL be a Conventional Commit subject of the form
-`<type>(<scope>): <summary>`, where `type` and optional `scope` come from the
-repository's `pullRequest` configuration (`feat` and no scope by default) and
-`summary` is the workflow's issue title. When the issue title already begins
-with a Conventional Commit prefix, the orchestrator SHALL use it unchanged. The
-title SHALL NOT be a generated marker that repeats the issue number.
+SHALL be a Conventional Commit subject of the form `<type>(<scope>): <summary>`
+deduced from the issue context: the `type` and optional `scope` from an
+already-conventional issue title, otherwise the `type` from the issue's labels
+(defaulting to `feat`) and no scope, and the `summary` from the issue title
+compacted to fit the project's commit-subject limit. The title SHALL NOT be a
+generated marker that repeats the issue number.
 
 #### Scenario: Created pull request title summarizes its change
 
 - **WHEN** the orchestrator starts a workflow for a labeled issue
-- **THEN** the title of the created draft pull request is
-  `<type>(<scope>): <summary>` with the configured type and scope and the
-  issue title as the summary
+- **THEN** the title of the created draft pull request is a Conventional Commit
+  subject whose summary is the compacted issue title
+
+#### Scenario: Type is deduced from the issue labels
+
+- **WHEN** the issue carries a label naming a change type (for example `bug`)
+- **THEN** the created draft pull request's title begins with the corresponding
+  type (for example `fix`)
 
 #### Scenario: Default type applies
 
-- **WHEN** the repository configures no pull request title type
+- **WHEN** neither the issue title nor the issue labels name a Conventional
+  Commit type
 - **THEN** the created draft pull request's title begins with `feat`
-
-#### Scenario: Configured scope is applied
-
-- **WHEN** the repository configures a pull request title scope
-- **THEN** the created draft pull request's title begins with
-  `<type>(<scope>):`
 
 #### Scenario: Already-conventional issue title is preserved
 
 - **WHEN** the issue title already begins with a Conventional Commit prefix
-- **THEN** the created draft pull request's title is that issue title unchanged
+- **THEN** the created draft pull request's title keeps that type, and its scope
+  when present, and uses the remaining title as the summary
+
+#### Scenario: Summary is compacted to the subject limit
+
+- **WHEN** the issue title is longer than the project's commit-subject limit
+- **THEN** the created draft pull request's title stays within the limit after
+  shortening the summary at a word boundary
 
 #### Scenario: Title does not repeat the issue number
 
@@ -46,3 +53,37 @@ title SHALL NOT be a generated marker that repeats the issue number.
 - **WHEN** a workflow pull request titled with a Conventional Commit subject is
   squash-merged into the host's default branch
 - **THEN** the resulting commit subject is that Conventional Commit subject
+
+## ADDED Requirements
+
+### Requirement: Pull request title is reconciled with the applied outcome
+
+After an apply turn finishes and its commits are published, the orchestrator
+SHALL derive the applied type and optional scope from the turn's Conventional
+Commit subjects and update the pull request title when the reconciled title
+differs, so the subject the host derives on merge reflects what was implemented.
+
+#### Scenario: Applied outcome changes the type
+
+- **WHEN** the apply turn's commits carry a Conventional Commit type different
+  from the deduced one
+- **THEN** the orchestrator updates the pull request title to the applied type
+  before the workflow advances
+
+#### Scenario: Applied outcome adds a scope
+
+- **WHEN** the apply turn's commits carry a single Conventional Commit scope and
+  the current title has none
+- **THEN** the orchestrator updates the pull request title to include that scope
+
+#### Scenario: Ambiguous outcome keeps the deduced title
+
+- **WHEN** the apply turn's commits do not agree on a type or scope, or carry no
+  Conventional Commit subject
+- **THEN** the orchestrator leaves the deduced title unchanged
+
+#### Scenario: Title update failure does not fail the workflow
+
+- **WHEN** updating the pull request title fails
+- **THEN** the orchestrator reports the failure and still advances the workflow
+  to implementing and ready for review

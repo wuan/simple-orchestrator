@@ -5,18 +5,21 @@
 See `proposal.md` - Why. The current state this builds on:
 
 - `WorkflowEngine.start` (`src/orchestrator/engine.ts`) creates the draft pull
-  request with `pullRequestTitle(issue)`, which returns the issue title
-  verbatim, and a body that carries only the closing reference. The provider
-  (`RepoProvider.createDraftPullRequest`) transports the title and has no
-  operation to edit a pull request afterwards.
-- `ProviderIssue` carries the issue `title`, so `start` already has a
-  human-written summary of the requested change before the propose turn runs.
+  request with `pullRequestTitle(issue)`, which returns the issue title verbatim,
+  and a body that carries only the closing reference. The provider
+  (`RepoProvider.createDraftPullRequest`) transports the title and, before this
+  change, has no operation to edit a pull request afterwards.
+- `ProviderIssue` carries the issue `title`, `body`, and `labels`, so `start`
+  already has the issue context from which a Conventional Commit subject can be
+  deduced before any turn runs.
+- The `WorkflowEngine` runs apply turns with `SandboxHandle`
+  (`src/runtime/sandbox.ts`), which already reads repository state
+  (`head`, `baseIntegrated`, `hasChanges`) to judge a turn from the repository
+  rather than from runtime self-report.
+- The orchestrator's own turns commit with Conventional Commit messages, so the
+  applied commits are an authoritative, machine-readable record of the outcome.
 - Repository configuration is a declarative list with optional `defaults`
-  merged beneath each entry; `environment` shows the pattern for an optional
-  block with a built-in default and fail-fast validation (`src/config/loader.ts`).
-- The orchestrator's own turns commit with Conventional Commit messages, so a
-  squash-merged pull request whose title is prose is the one non-conforming
-  message the project produces.
+  merged beneath each entry.
 
 ## Goals / Non-Goals
 
@@ -24,97 +27,177 @@ See `proposal.md` - Why. The current state this builds on:
 
 - The created pull request title is a Conventional Commit subject, so the
   message the host derives from it on merge follows the project convention.
-- A repository that configures nothing still gets a valid subject.
-- An author can choose the type and scope for a single issue without changing
-  configuration.
-- Keep the change localized: composition happens where the title already is
-  composed, and no provider operation is added.
+- The `type` and `scope` are deduced from the issue context, not configured, so
+  a repository that configures nothing still gets a valid subject and an author
+  can override per issue by writing the issue title conventionally.
+- The summary is compacted from the declarative issue title to fit the project's
+  commit-subject limit.
+- After the apply turn, the title is verified against the applied outcome and
+  updated when the outcome makes a different type or scope clear.
+- Keep the change testable and host-agnostic: deduction and compaction are pure
+  functions, the outcome is read from the repository, and the title is updated
+  through the provider contract.
 
 **Non-Goals:**
 
-- Deriving the title from the generated change, its proposal, or the agent's
-  first commit (that needs a provider update operation and rewrites the title
-  after the first turn; previously rejected in
-  `improve-pull-request-generation`).
-- Editing or backfilling pull requests created before this change.
-- Rewriting the issue title into an imperative sentence, or linting the entire
-  subject. The type prefix is what makes the subject conventional; the summary
-  stays the author's words.
-- Inferring the type from issue labels (for example `bug` to `fix`). Left as a
-  later enhancement, see Open Questions.
+- Inferring the type from issue labels alone when an even clearer signal (a
+  conventional issue title, or the applied commits) is available. The issue
+  labels are one input to deduction, not the only one.
+- Rewriting the issue title into an imperative sentence or otherwise rewriting
+  its meaning. The summary keeps the author's words; only structure and length
+  are changed.
+- Backfilling or editing pull requests created before this change.
+- Adding a configuration surface for the type or scope. The review asked for
+  deduction from the issue context instead of a configured default.
 
 ## Decisions
 
-### Type and scope come from configuration, not inference
+### Deduce the type and scope from the issue context, not from configuration
 
-Add an optional `pullRequest` block with `type` (default `feat`) and optional
-`scope`. Alternatives considered: infer the type from the issue's labels, or
-have the agent name the title after proposing the change. Label inference is
-guesswork on labels the workflow does not require and silently produces the
-wrong type when they are absent; the agent route needs a provider update
-operation and a mid-flight title change, which the previous title change
-deliberately avoided. Configuration is explicit, testable, and already a
-familiar surface.
+The first revision of this change proposed an optional `pullRequest`
+configuration block with a default `type` and optional `scope`. The review
+rejected that: the type should be deduced from the issue context, and a scope
+should be added when it is clear from the task and the outcome. This revision
+removes the configuration block.
 
-### The default is `feat`, and the summary is the issue title verbatim
+Deduction order for the created title:
 
-An OpenSpec workflow proposes behavior changes, so `feat` is the honest default
-and makes the feature work with no configuration. The summary is the trimmed
-issue title, not a rewritten sentence: the title is the human's own summary and
-editing it risks changing its meaning. The consequence is that a declarative
-issue title reads as a declarative commit subject (`feat: Allow to extract ...`),
-which is acceptable; a stricter imperative rewrite would be a separate change.
+1. **A conventional issue title wins.** If the issue title already begins with a
+   recognized Conventional Commit prefix (`<type>: ` or `<type>(<scope>): `),
+   that type and scope are authoritative and the prefix is kept. This is the
+   per-issue override for `fix`, `docs`, or a scope, and it needs no
+   configuration.
+2. **Otherwise the type is deduced from the issue's labels** through a
+   documented table (`bug` -> `fix`; `documentation`/`docs` -> `docs`;
+   `enhancement`/`feature` -> `feat`; `refactor` -> `refactor`;
+   `performance`/`perf` -> `perf`; `test`/`tests` -> `test`; `ci` -> `ci`;
+   `build`/`dependencies` -> `build`; `chore`/`maintenance` -> `chore`), defaulting
+   to `feat`. Labels are the machine-readable hint the issue carries about the
+   kind of change.
+3. **The scope is only taken from a conventional issue title at creation.** The
+   outcome usually makes a scope clear later, so the created title normally has
+   no scope; the reconciliation step (below) adds one.
 
-### An already-conventional issue title passes through unchanged
+Alternatives considered: a configured `type`/`scope` (rejected by the review);
+inferring the type with the model from the issue prose (rejected: the runtime's
+structured result deliberately does not carry machine-readable agent output, and
+readiness already sets the precedent that objective facts are computed, not
+self-reported); deriving the type from the generated OpenSpec change at creation
+(rejected: the change does not exist until the propose turn commits).
 
-Before composing, the title is checked for a leading Conventional Commit prefix
-(`<type>: ` or `<type>(<scope>): `). If present, it is used as-is. This gives an
-author a per-issue override for `fix`, `docs`, or a scope without touching
-configuration, and it preserves issue titles that were written conventionally
-on purpose. It also means the configured `type` is only a default, so an author
-can still escape a repository-wide default.
+### Compact the summary from the issue title
 
-### Compose in the engine at creation, and validate in the loader
+The summary is the issue title with its structure normalized and its length
+bounded:
 
-Composition stays in the engine beside the existing body helper, so the
-provider keeps transporting content and its interface is unchanged. Validation
-lives in the loader with the other blocks: the type must be one of the
-documented Conventional Commit types (`feat`, `fix`, `docs`, `test`,
-`refactor`, `perf`, `build`, `ci`, `chore`) and neither field may be empty,
-failing startup naming the repository. An unknown type is a configuration
-mistake worth surfacing at startup rather than in a pull request title.
+- a conventional prefix, if present, is split off as the type/scope rather than
+  repeated in the summary;
+- leading/trailing whitespace is trimmed and internal whitespace runs collapsed
+  to one space;
+- a trailing period is dropped;
+- the summary is shortened at the last word boundary that keeps the whole
+  `type(scope): summary` subject within 72 characters, appending `…` when it is
+  shortened.
+
+72 is the project's own commit-subject limit in `AGENTS.md` ("keep the subject
+under 72 characters"), so the compaction rule is the project's rule rather than
+an invented one. No words are rewritten: "compact as much as possible" is
+implemented as removing structural noise and enforcing the length limit, not as
+paraphrasing, which would risk changing the author's meaning.
+
+Alternative considered: a semantic rewrite toward the imperative (rejected:
+rewriting the author's words is out of scope and needs a model call whose output
+the architecture does not trust as an objective value).
+
+### Verify the title against the applied outcome at the end of the apply job
+
+After an apply turn finishes and its commits are published, the orchestrator
+reads the workflow branch's commit subjects ahead of the base (the outcome),
+keeps those that are Conventional Commit subjects, and uses them to reconcile
+the title:
+
+- when the applied commits agree on a type and (if any) a scope, the title is
+  recomposed with that type and scope and the compacted issue-title summary, and
+  updated when it differs from the current title;
+- when the applied commits do not agree, or carry no Conventional Commit
+  subject, the deduced title is kept.
+
+The commits are the outcome because the project requires turns to commit with
+Conventional Commit messages, so their subjects are an authoritative record the
+orchestrator can read from the repository rather than trust from agent prose
+(the same principle as the readiness predicate and the propose "no progress"
+check).
+
+Alternative considered: reconciling from the archived OpenSpec change name and
+its touched capabilities. The change is archived by the apply turn and is no
+longer an active change, so reading it needs new filesystem/CLI surface, and the
+capability names do not map cleanly to short Conventional Commit scopes. The
+committed subjects are already conventional and already published, so they are
+the smaller, more reliable source.
+
+### The title update is best-effort and does not fail the workflow
+
+A failed title update leaves a title that is still a valid Conventional Commit
+subject, so it is a cosmetic failure rather than a broken workflow. The
+orchestrator logs and reports it and still advances the workflow to
+implementing/ready-for-review, matching the requirement that a workflow does not
+regress for a non-essential step. This is narrower than the ready-for-review
+transition, which does fail the workflow because a task-complete pull request
+stuck in draft blocks the human.
+
+### Compose in the engine through pure helpers, and update through the provider
+
+Deduction and compaction live in `src/orchestrator/title.ts` as pure functions
+so they are unit-testable without a provider or a runtime. The engine calls them
+at creation and at reconciliation. The title update goes through a new
+`RepoProvider.updatePullRequest` operation, so the provider keeps transporting
+content and the GitHub adapter can use its REST endpoint without leaking into
+orchestration.
+
+Reading the applied subjects is an internal `SandboxHandle` addition
+(`commitSubjects`), alongside the existing repository-state reads, so the engine
+does not reach into git itself.
 
 ## Risks / Trade-offs
 
-- [The issue title is not imperative, so the subject reads declaratively] ->
-  Accepted; the type prefix is what the convention requires, and the summary
-  stays the author's words. An imperative rewrite would be a separate change.
-- [A long issue title makes a long subject line] -> Accepted for now; capping
-  the summary is a later change and the previous title change accepted the same
-  trade-off.
-- [Constraining the configured type to a fixed set blocks a custom type] ->
-  An author can still escape with a conventional issue title; the set matches
-  the project's documented types and can grow in code when the project does.
-- [A repository default of `feat` mislabels a fix] -> The author can override
-  per issue with a conventional title, and the operator can set the repository
-  default; label-based inference is deferred.
-- [Pull requests created before this change keep a prose title] -> Accepted:
-  the provider has no update operation, and backfilling is one-time work.
+- [The deduced `type` can be wrong when the issue carries no type label and no
+  conventional title] -> Accepted; it defaults to `feat`, and the apply-time
+  reconciliation corrects it from the applied commits, which is the outcome.
+- [Label names are repository conventions, not enforced by the workflow] -> The
+  mapping covers GitHub's default labels and is documented; an unmatched label
+  falls back to `feat`, and a conventional issue title overrides it.
+- [Mechanical compaction can truncate a long declarative title mid-thought] ->
+  Accepted; the limit is the project's own, the truncation happens at a word
+  boundary with an ellipsis, and an author can shorten the issue title or write
+  it conventionally.
+- [The applied commits may disagree on a type or scope] -> The orchestrator
+  keeps the deduced title rather than guessing; the requirement covers this
+  case explicitly.
+- [Reading commit subjects adds a git call to the apply path] -> Accepted; it is
+  one `git log` on the workspace already alive for the turn, and a failure to
+  read it keeps the deduced title rather than failing the workflow.
+- [A repository that wants a fixed type cannot force one] -> It can label its
+  issues accordingly, or authors can write conventional issue titles; the
+  review asked for deduction rather than configuration.
 
 ## Migration Plan
 
-1. The block is optional and defaults to `feat`, so nothing changes for an
-   existing configuration and no migration is required.
-2. Add the configuration surface and validation; no behavior change until the
-   title composition lands.
-3. Compose the title in the engine and thread the block through the service.
-4. Document the block and the passthrough rule.
-5. Rollback is configuration-only: removing the block restores the built-in
-   `feat` default, and reverting the engine change restores the issue title.
+1. Add the pure title helpers; no behavior change until the engine uses them.
+2. Compose the created title with the helpers in `start`.
+3. Add `commitSubjects` to the sandbox and `updatePullRequest` to the provider,
+   with their test doubles.
+4. Reconcile the title at the end of the apply turn.
+5. Document the deduction, compaction, and reconciliation.
+6. Rollback is code-only: reverting the engine change restores the issue title,
+   and the new provider/sandbox operations are additive.
 
 ## Open Questions
 
-- Should the type later be inferred from issue labels (`bug` to `fix`,
-  `documentation` to `docs`, otherwise `feat`)? Deferred; it can be added
-  without changing this contract, because the configured type remains the
-  default.
+- Should the mechanical summary compaction be replaced, or supplemented, by a
+  model rewrite toward the imperative? The current design keeps the author's
+  words and enforces the project's length limit; a rewrite would need a
+  structured model output the runtime does not currently produce.
+- Is the applied-commit subject the right outcome source, or should the archived
+  OpenSpec change name be used for the summary? The change name is a compact
+  outcome summary but is a kebab-case slug, not the declarative issue title the
+  review asked to compact.
