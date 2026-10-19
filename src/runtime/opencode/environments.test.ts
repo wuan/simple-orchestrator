@@ -5,6 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { parse } from 'yaml';
 
 const DOCKERFILE = fileURLToPath(new URL('../../../environments/Dockerfile', import.meta.url));
+const README = fileURLToPath(new URL('../../../environments/README.md', import.meta.url));
 const WORKFLOW = fileURLToPath(
   new URL('../../../.github/workflows/environments.yml', import.meta.url),
 );
@@ -42,8 +43,17 @@ describe('environment image flavours', () => {
     expect(text).toContain('@opencode/sdk@${OPENCODE_SDK_VERSION}');
     expect(text).toMatch(/install -y --no-install-recommends git\b/);
 
-    // At least the Rust flavour for bo-srv-rs.
+    // The plain Node.js flavour is the base itself; the Rust flavour adds the
+    // toolchain bo-srv-rs needs.
+    expect(flavours()).toContain('node');
     expect(flavours()).toContain('rust');
+    expect(dockerfile()).toMatch(/^FROM base AS node$/m);
+  });
+
+  it('documents the image contract and the read-only runner mount', () => {
+    const readme = readFileSync(README, 'utf8');
+    expect(readme).toContain('/opt/runner/dist');
+    expect(readme).toContain('@opencode/sdk');
   });
 
   it('fails fast when the SDK build argument is missing', () => {

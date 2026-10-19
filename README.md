@@ -184,9 +184,9 @@ first turn, which is what the fake-provider smoke test below relies on.
 `dist/run.js` runs each turn in-process unless its repository configures an
 `environment`, in which case the turn runs in a container of that image. That
 path needs Docker on `PATH` and an image that meets the
-[image contract](examples/environment/README.md); the orchestrator mounts its
-compiled runner and the repository paths itself, so no image rebuild is needed
-when the orchestrator changes.
+[image contract](environments/README.md#image-contract); the orchestrator mounts
+its compiled runner and the repository paths itself, so no image rebuild is
+needed when the orchestrator changes.
 
 ### Entry points
 
@@ -243,9 +243,9 @@ environment, and mounts its compiled runner read-only at `/opt/runner/dist`. The
 image must provide Node.js 24+, git, the toolchain, and `@opencode/sdk` at the
 orchestrator's version; the runner fails fast on a version mismatch. The host
 still publishes the branch, gates on merge readiness, and evaluates readiness.
-See [`examples/environment`](examples/environment/README.md) for a minimal image,
-[`environments`](environments/README.md) for the flavours CI publishes to GHCR,
-and [`docs/configuration.md`](docs/configuration.md#environment) for the fields.
+See [`environments`](environments/README.md) for the image contract and the
+flavours CI publishes to GHCR, and
+[`docs/configuration.md`](docs/configuration.md#environment) for the fields.
 
 `@opencode/sdk` uses explicit resource management and therefore requires
 **Node.js 24+** (Node 22 cannot load it).
@@ -294,8 +294,8 @@ cluster.
   per-repository clones, plus a writable temp directory for turn worktrees.
 - For containerized turns, make Docker available and build each repository's
   [`environment`](docs/configuration.md#environment) image per the
-  [image contract](examples/environment/README.md); the orchestrator mounts its
-  compiled runner and the repository paths itself.
+  [image contract](environments/README.md#image-contract); the orchestrator
+  mounts its compiled runner and the repository paths itself.
 - Restart freely: on start it re-discovers in-flight workflows from their
   lifecycle labels and resumes without duplicating turns.
 
@@ -345,5 +345,6 @@ src/
   service.ts      composition root
   index.ts        CLI
 docs/             operator documentation
+environments/     turn environment images published to GHCR
 examples/         example configuration
 ```

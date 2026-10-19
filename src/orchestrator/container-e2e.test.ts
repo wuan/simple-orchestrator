@@ -75,7 +75,7 @@ describe('containerized end-to-end workflow', () => {
       sdkVersion: SDK_VERSION,
     });
     const environment: EnvironmentSpec = {
-      image: 'openspec-agent-example',
+      image: 'openspec-environment-node:latest',
       gitIdentity: { name: 'OpenSpec Agent', email: 'agent@example.com' },
     };
     const poller = new Poller({
@@ -123,7 +123,7 @@ describe('containerized end-to-end workflow', () => {
     expect(args).toContain('/tmp/fake-store:/tmp/fake-store');
     expect(args).toContain('/app/dist:/opt/runner/dist:ro');
     expect(args).toContain('GIT_AUTHOR_NAME=OpenSpec Agent');
-    expect(args).toContain('openspec-agent-example');
+    expect(args).toContain('openspec-environment-node:latest');
 
     // The container's usage reached the host and shows up on the turn comment.
     const turnComment = provider.commentLog.find((entry) =>

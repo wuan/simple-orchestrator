@@ -12,7 +12,7 @@
 - [x] 2.2 Expose the repository store path from `SandboxHandle` so the runtime can mount it; verify `src/runtime/sandbox.test.ts` covers the new accessor.
 - [x] 2.3 Add the container entry point in `src/runner.ts` that reads a JSON request, runs the existing `EmbeddedOpenCodeClient`, and writes newline-delimited JSON usage and result events to stdout, mapping errors to a terminal error event; verify unit tests cover success, usage before failure, agent error, and malformed input.
 - [x] 2.4 Add `ContainerOpenCodeClient implements OpenCodeClient` in `src/runtime/opencode/container-client.ts` that shells `docker run --rm -i`, writes the request, parses events, forwards usage, kills the container on abort, maps provisioning/protocol failures to errors, and asserts the image's SDK version; verify unit tests drive it with a fake command runner.
-- [x] 2.5 Document the image contract (Node 24+, git, toolchain, matching `@opencode/sdk`) and add an example environment image under `examples/`; verify the documented build command references the runner mount and the image installs the pinned SDK.
+- [x] 2.5 Document the image contract (Node 24+, git, toolchain, matching `@opencode/sdk`) and add the environment images under `environments/`, with the shared `base` published as the `node` flavour; verify the documented build command references the runner mount and the image installs the pinned SDK.
 
 ## 3. Wiring
 

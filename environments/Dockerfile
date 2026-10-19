@@ -5,11 +5,11 @@
 # A flavour is a repository's toolchain installed on top of the shared `base`
 # stage. The base provides the image contract the orchestrator requires
 # (Node.js 24+, git, and @opencode/sdk at the orchestrator's version; see
-# ../examples/environment), so that contract lives in exactly one place and
-# every flavour inherits it. Add a flavour by appending a `FROM base AS <name>`
-# stage; CI discovers those stages and publishes one image per stage. Keep
-# intermediate stages off `base` (build from the underlying image instead) so
-# they are not mistaken for a publishable flavour.
+# README.md), so that contract lives in exactly one place and every flavour
+# inherits it. Add a flavour by appending a `FROM base AS <name>` stage; CI
+# discovers those stages and publishes one image per stage. Keep intermediate
+# stages off `base` (build from the underlying image instead) so they are not
+# mistaken for a publishable flavour.
 #
 # Build one flavour from the repository root (the build context is this
 # directory):
@@ -55,6 +55,13 @@ RUN mkdir -p /opt/runner \
 # The turn runs as the orchestrator's uid/gid with HOME=/tmp; the workspace is
 # mounted at its host path and set as the working directory at run time.
 WORKDIR /workspace
+
+# Node flavour: the shared base published as an image of its own, for a
+# repository whose toolchain needs nothing beyond the image contract (Node.js
+# 24+, git, and the matching @opencode/sdk). It carries no instructions because
+# it *is* the base; the stage exists so CI discovers and publishes it as
+# ghcr.io/wuan/simple-orchestrator/node.
+FROM base AS node
 
 # Rust flavour, for https://github.com/wuan/bo-srv-rs and other Rust
 # repositories: rustc/cargo (stable, with clippy and rustfmt) plus the native

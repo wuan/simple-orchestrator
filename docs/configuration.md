@@ -148,9 +148,8 @@ absolute paths, the container runs as the orchestrator's user with a writable
 home, and the compiled runner is mounted read-only. The image must provide
 Node.js 24+, `git`, and the toolchain, and must have `@opencode/sdk` installed at
 the orchestrator's version; the runner fails fast when the version differs. See
-[`examples/environment`](../examples/environment/README.md) for a minimal image
-and the pinned-SDK build command, and [`environments`](../environments/README.md)
-for the ready-made flavours CI publishes to GHCR.
+[`environments`](../environments/README.md) for the image contract and the
+ready-made flavours CI publishes to GHCR.
 
 | Field         | Required | Default  | Description                                                                                       |
 | ------------- | -------- | -------- | ------------------------------------------------------------------------------------------------- |

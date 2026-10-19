@@ -11,9 +11,9 @@ import { buildDockerRunArgs } from '../sandbox.js';
 import { resolveSdkVersion } from './sdk-version.js';
 
 const DIST = fileURLToPath(new URL('../../../dist', import.meta.url));
-const EXAMPLE_IMAGE_DIR = fileURLToPath(new URL('../../../examples/environment', import.meta.url));
+const ENVIRONMENTS_DIR = fileURLToPath(new URL('../../../environments', import.meta.url));
 const RUNNER_MOUNT = '/opt/runner/dist';
-const IMAGE = process.env.ORCHESTRATOR_SMOKE_IMAGE ?? 'openspec-agent-example:latest';
+const IMAGE = process.env.ORCHESTRATOR_SMOKE_IMAGE ?? 'openspec-environment-node:latest';
 
 function dockerAvailable(): boolean {
   try {
@@ -38,11 +38,22 @@ beforeAll(() => {
   try {
     execFileSync('docker', ['image', 'inspect', IMAGE], { stdio: 'ignore', timeout: 10_000 });
   } catch {
-    // Not present: build the example image, which installs the pinned SDK.
-    execFileSync('docker', ['build', '-t', IMAGE, EXAMPLE_IMAGE_DIR], {
-      stdio: 'inherit',
-      timeout: 10 * 60 * 1000,
-    });
+    // Not present: build the plain Node.js flavour. It has no default SDK
+    // version, so pass the orchestrator's own.
+    execFileSync(
+      'docker',
+      [
+        'build',
+        '--build-arg',
+        `OPENCODE_SDK_VERSION=${resolveSdkVersion()}`,
+        '--target',
+        'node',
+        '-t',
+        IMAGE,
+        ENVIRONMENTS_DIR,
+      ],
+      { stdio: 'inherit', timeout: 10 * 60 * 1000 },
+    );
   }
   tempDir = mkdtempSync(join(tmpdir(), 'orchestrator-smoke-'));
 });
