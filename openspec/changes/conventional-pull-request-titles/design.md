@@ -66,7 +66,11 @@ Deduction order for the created title:
    recognized Conventional Commit prefix (`<type>: ` or `<type>(<scope>): `),
    that type and scope are authoritative and the prefix is kept. This is the
    per-issue override for `fix`, `docs`, or a scope, and it needs no
-   configuration.
+   configuration. A prefix is recognized only when its type is one of the
+   project's Conventional Commit types (`feat`, `fix`, `docs`, `test`,
+   `refactor`, `perf`, `build`, `ci`, `chore`, per `AGENTS.md`); any other word
+   before the colon is not a Conventional Commit prefix and falls through to the
+   label rule. Reconciliation reads the applied subjects with the same set.
 2. **Otherwise the type is deduced from the issue's labels** through a
    documented table (`bug` -> `fix`; `documentation`/`docs` -> `docs`;
    `enhancement`/`feature` -> `feat`; `refactor` -> `refactor`;
@@ -99,6 +103,9 @@ bounded:
 
 - a conventional prefix, if present, is split off as the type/scope rather than
   repeated in the summary;
+- an existing trailing `…` left by an earlier compaction is dropped before the
+  summary is measured, so a summary is never shortened on top of a previous
+  shortening;
 - leading/trailing whitespace is trimmed and internal whitespace runs collapsed
   to one space;
 - a trailing period is dropped;
@@ -124,9 +131,9 @@ the architecture does not trust as an objective value).
 The outcome is the commits the apply turn itself adds, so the orchestrator
 records the branch tip before the turn runs and, once the turn's commits are
 published, reads the commit subjects in `beforeTip..HEAD` - only what the apply
-turn committed. It keeps those that are Conventional Commit subjects and not
-OpenSpec bookkeeping (a subject scoped `openspec`, such as the apply turn's
-archive commit) and uses them to reconcile the title:
+turn committed. It keeps those that are recognized Conventional Commit subjects
+and not OpenSpec bookkeeping (a subject scoped `openspec`, such as the apply
+turn's archive commit) and uses them to reconcile the title:
 
 - when the implementation subjects agree on a type, the title is recomposed with
   that type and, when the subjects that carry a scope agree on a single one, that
@@ -143,8 +150,13 @@ archive commit) and uses them to reconcile the title:
 The summary is not recomputed. The title created at `start` already carries the
 compacted issue-title summary, and reconciliation only corrects the type and
 scope, so the engine parses the current title and reuses its summary rather than
-resolving the issue a second time. A title that does not parse as a Conventional
-Commit subject is left unchanged. This keeps reconciliation a pure function of
+resolving the issue a second time. Parsing recognizes only the project's
+Conventional Commit types (the same set deduction uses) and reads a single
+optional scope; a title that does not parse as such a subject - including one
+whose prefix carries an unrecognized type - is left unchanged. The reused
+summary has any stale trailing `…` dropped before it is measured, so the
+re-shortening below replaces an earlier ellipsis rather than stacking a second
+one. This keeps reconciliation a pure function of
 the title and the applied commits, with no extra provider read. Applying a
 longer type or a scope still enlarges the subject, so the kept summary is
 re-compacted with the same rule when the new prefix would push it to the limit;

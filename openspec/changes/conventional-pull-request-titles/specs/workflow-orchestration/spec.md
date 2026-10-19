@@ -6,12 +6,14 @@
 
 When the orchestrator creates the draft pull request for a workflow, its title
 SHALL be a Conventional Commit subject of the form `<type>(<scope>): <summary>`
-deduced from the issue context: the `type` and optional `scope` from an
-already-conventional issue title, otherwise the `type` from the issue's labels
-(matched case-insensitively, defaulting to `feat`) and no scope, and the
-`summary` from the issue title compacted as much as possible to the project's
-commit-subject limit (under 72 characters, per `AGENTS.md`). The title SHALL NOT
-be a generated marker that repeats the issue number.
+deduced from the issue context: the `type` and optional `scope` from an issue
+title already beginning with one of the project's Conventional Commit types
+`feat`, `fix`, `docs`, `test`, `refactor`, `perf`, `build`, `ci`, `chore` (per
+`AGENTS.md`), otherwise the `type` from the issue's labels (matched
+case-insensitively, defaulting to `feat`) and no scope, and the `summary` from
+the issue title compacted as much as possible to the project's commit-subject
+limit (under 72 characters, per `AGENTS.md`). The title SHALL NOT be a generated
+marker that repeats the issue number.
 
 #### Scenario: Created pull request title summarizes its change
 
@@ -44,12 +46,20 @@ be a generated marker that repeats the issue number.
 - **THEN** the created draft pull request's title keeps that type, and its scope
   when present, and uses the remaining title as the summary
 
+#### Scenario: A prefix with an unrecognized type is not a Conventional Commit prefix
+
+- **WHEN** the issue title begins with a word before the colon that is not one of
+  the project's Conventional Commit types
+- **THEN** the created draft pull request's title does not keep that prefix and
+  its type is deduced from the issue's labels instead
+
 #### Scenario: Summary is compacted as much as possible to the subject limit
 
 - **WHEN** the issue title is longer than the project's commit-subject limit
 - **THEN** the created draft pull request's title normalizes the summary (trims
   it, collapses its whitespace, and drops a trailing period) and shortens it at
-  a word boundary so it stays under the limit, without rewriting its words
+  a word boundary so it stays under the limit, ending the shortened summary with
+  a single ellipsis and never rewriting its words
 
 #### Scenario: Title does not repeat the issue number
 
@@ -107,6 +117,18 @@ invented.
   Conventional Commit subject
 - **THEN** the orchestrator leaves the deduced title unchanged
 
+#### Scenario: A prefix with an unrecognized type is not an applied subject
+
+- **WHEN** the apply turn's commits carry a `word:`-style prefix whose word is
+  not one of the project's Conventional Commit types
+- **THEN** the orchestrator does not derive the applied type from it
+
+#### Scenario: A title that does not parse is left unchanged
+
+- **WHEN** the current pull request title does not parse as a recognized
+  Conventional Commit subject
+- **THEN** the orchestrator leaves the title unchanged
+
 #### Scenario: Propose commits do not decide the outcome
 
 - **WHEN** the apply turn adds a Conventional Commit subject and the workflow
@@ -139,5 +161,6 @@ never in its words.
 
 - **WHEN** applying the applied type or scope would make the subject reach the
   project's commit-subject limit
-- **THEN** the orchestrator shortens the kept summary at a word boundary so the
-  reconciled title stays under the limit
+- **THEN** the orchestrator shortens the kept summary at a word boundary,
+  replacing any ellipsis it already carried, so the reconciled title stays under
+  the limit

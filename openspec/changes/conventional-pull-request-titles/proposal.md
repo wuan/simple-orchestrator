@@ -22,28 +22,32 @@ turns' own commits do. (Reported as issue #35.)
 - **The summary is compacted as much as the project's convention allows.** The
   issue title is trimmed, its whitespace collapsed, a trailing period dropped,
   and the remainder shortened at a word boundary so the whole subject stays
-  under the project's 72-character commit-subject limit (per `AGENTS.md`).
-  Compaction keeps the author's words: it never paraphrases or rewrites them.
+  under the project's 72-character commit-subject limit (per `AGENTS.md`). A
+  shortened summary ends with a single ellipsis, which re-compaction replaces
+  rather than repeats. Compaction keeps the author's words: it never paraphrases
+  or rewrites them.
 - **No new configuration.** The type and scope are deduced, not configured: a
   repository that configures nothing still gets a conventional title, and an
   author can still choose a type or scope for one issue by writing the issue
   title conventionally (`fix: ...` or `docs(api): ...`), which is preserved.
 - **The title is verified at the end of the apply job.** After an apply turn
   finishes and its commits are published, and before the workflow advances, the
-  orchestrator derives the applied type and scope from the Conventional Commit
-  subjects the apply turn itself added - the outcome - and updates the pull
-  request title when it differs, so the subject the host derives on merge
-  reflects what was actually implemented. The applied type is used when the
-  implementation subjects agree on one; a scope is adopted only when the
-  subjects that carry a scope agree on a single one (superseding a scope deduced
-  from the issue title), and the summary the title already carries is kept -
-  shortened further at a word boundary only when the new type or scope would
-  push the subject to the commit-subject limit - so an ambiguous outcome keeps
-  the deduced type and scope. The propose turn's earlier commits are not the
-  outcome and are not considered, and neither are OpenSpec bookkeeping subjects
-  (a commit scoped `openspec`, such as the apply turn's archive commit), so a
-  multi-commit turn still reconciles from its implementation. An update that is
-  not clear from the outcome is skipped, and a failed update does not fail an
+  orchestrator derives the applied type and scope from the recognized
+  Conventional Commit subjects the apply turn itself added - the outcome - and
+  updates the pull request title when it differs, so the subject the host
+  derives on merge reflects what was actually implemented. The applied type is
+  used when the implementation subjects agree on one; a scope is adopted only
+  when the subjects that carry a scope agree on a single one (superseding a
+  scope deduced from the issue title), and the summary the title already carries
+  is kept - shortened further at a word boundary, replacing any ellipsis it
+  already carried, only when the new type or scope would push the subject to the
+  commit-subject limit - so an ambiguous outcome keeps the deduced type and
+  scope. The propose turn's earlier commits are not the outcome and are not
+  considered, and neither are OpenSpec bookkeeping subjects (a commit scoped
+  `openspec`, such as the apply turn's archive commit), so a multi-commit turn
+  still reconciles from its implementation. A title that does not parse as a
+  recognized Conventional Commit subject, and an update that is not clear from
+  the outcome, are left unchanged, and a failed update does not fail an
   otherwise successful workflow.
 - **A provider operation updates the title.** The provider contract gains an
   operation to set a pull request's title (GitHub `PATCH
