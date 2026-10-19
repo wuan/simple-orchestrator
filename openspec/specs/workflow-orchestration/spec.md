@@ -32,7 +32,7 @@ Starting a workflow SHALL create a branch and exactly one draft pull request (or
 - **THEN** it bases the branch on the current base branch rather than on a branch left behind by an earlier attempt
 
 ### Requirement: Bounded propose, review, revise turns
-Each turn SHALL run as a stateless unit that re-reads the branch and the full review conversation, and the orchestrator SHALL limit the number of revise rounds per workflow, counting its own turns as those authored by its configured identity.
+Each turn SHALL run as a stateless unit that re-reads the branch and the full review conversation, and the orchestrator SHALL limit the number of revise rounds per workflow, counting its own turns as those authored by its configured identity. A revise round SHALL be a propose turn after the initial one; the orchestrator's other comments (readiness prompts, failure, cancellation, completion, and other notices) and apply turns SHALL NOT count toward the limit.
 
 #### Scenario: Review feedback triggers a revise turn
 - **WHEN** a human submits a review that is not an approval and it is newer than the orchestrator's last turn
@@ -46,6 +46,10 @@ Each turn SHALL run as a stateless unit that re-reads the branch and the full re
 - **WHEN** the orchestrator's configured identity is a normal account the host does not flag as a bot
 - **THEN** the turns it posts still count toward the revise-round limit
 
+#### Scenario: Comments that are not propose turns do not count
+- **WHEN** the orchestrator has posted comments other than propose turn comments, such as the prompt that a change is ready for development
+- **THEN** those comments do not count toward the revise-round limit, so a change that reaches READY on every turn still gets the configured number of revise rounds
+
 ### Requirement: Objective readiness predicate
 The orchestrator SHALL mark a change READY only when the OpenSpec change is complete and passes strict validation, computed from the OpenSpec CLI rather than from agent output.
 
@@ -58,15 +62,19 @@ The orchestrator SHALL mark a change READY only when the OpenSpec change is comp
 - **THEN** the orchestrator keeps the change in PROPOSING
 
 ### Requirement: Human approval gate
-The orchestrator SHALL start implementation only for a READY change that has received a host-native approval from a human.
+The orchestrator SHALL start implementation only for a READY change that has received a host-native approval from a human, and only when that approval is newer than the watermark, so an approval the orchestrator has already answered never starts implementation.
 
 #### Scenario: Approved ready change proceeds
-- **WHEN** a READY change receives an approving review from a human
+- **WHEN** a READY change receives an approving review from a human that is newer than the watermark
 - **THEN** the orchestrator enqueues the apply turn
 
 #### Scenario: Approval before ready
 - **WHEN** an approval is present but the change is not READY
 - **THEN** the orchestrator does not start implementation until the change is READY with a valid approval
+
+#### Scenario: An approval given before the change was ready does not carry over
+- **WHEN** a human approves while the change is PROPOSING, the orchestrator answers it with a propose turn, and that turn makes the change READY
+- **THEN** the orchestrator does not start implementation until a human approves again
 
 ### Requirement: Approval is consumed as a claim
 Before starting an apply turn, the orchestrator MUST record that the approval was consumed in a way that survives later commits dismissing the review, so implementation starts at most once per approval.
@@ -98,7 +106,7 @@ The orchestrator SHALL represent workflow state with host-native labels (proposi
 - **THEN** the corresponding lifecycle label is present on the pull request
 
 ### Requirement: Idempotent turn dispatch
-The orchestrator MUST process each human review or approval at most once, using host-native timestamps as the watermark, and SHALL be safe to restart without duplicating turns. The orchestrator SHALL identify the comments it authored by its configured identity as well as by the host's bot flag, and SHALL treat its most recent comment as the record that the newest feedback was answered.
+The orchestrator MUST process each human review or approval at most once, using host-native timestamps as the watermark, and SHALL be safe to restart without duplicating turns. It SHALL identify its own comments by its configured identity as well as by the host's bot flag, and the watermark SHALL be the newest human review timestamp that its comments record having read.
 
 #### Scenario: Restart does not duplicate work
 - **WHEN** the orchestrator restarts after acting on an event
@@ -109,12 +117,24 @@ The orchestrator MUST process each human review or approval at most once, using 
 - **THEN** the orchestrator takes no action for that workflow
 
 #### Scenario: An answered review does not drive another turn
-- **WHEN** the newest human review is not newer than the orchestrator's most recent comment
+- **WHEN** the newest human review is not newer than the watermark
 - **THEN** the orchestrator takes no turn for that workflow
 
 #### Scenario: A configured identity the host does not flag is still the orchestrator
 - **WHEN** the configured identity is a normal account the host does not flag as a bot and the orchestrator has posted a comment for the newest review
 - **THEN** that comment is the watermark and the review does not drive another turn
+
+#### Scenario: A review submitted during a turn drives the next turn
+- **WHEN** a human submits a review after the orchestrator read the reviews for a turn and before that turn's comment is posted
+- **THEN** the review is newer than the watermark and the next poll runs a turn for it
+
+#### Scenario: A comment that read no review does not raise the watermark
+- **WHEN** an orchestrator comment records that no human review had been read
+- **THEN** it does not raise the watermark
+
+#### Scenario: Comments posted before the marker existed still count
+- **WHEN** an orchestrator comment carries no recorded review timestamp
+- **THEN** its own timestamp counts toward the watermark
 
 ### Requirement: Review drives turns, comments do not
 The orchestrator SHALL treat a submitted review (comment or change request) as a turn trigger and SHALL treat plain conversation comments as non-triggering.
@@ -128,11 +148,23 @@ The orchestrator SHALL treat a submitted review (comment or change request) as a
 - **THEN** the orchestrator does not run a turn
 
 ### Requirement: Cancellation
-The orchestrator SHALL stop a workflow when the trigger label is removed or the pull request is closed without merge.
+The orchestrator SHALL stop a workflow when the trigger label is removed or the pull request is closed without merge. When the pull request is closed without merge, the orchestrator SHALL also remove the trigger label from the issue, so a new workflow starts only when a human adds the label again.
 
 #### Scenario: Trigger label removed
 - **WHEN** the trigger label is removed from the issue
 - **THEN** the orchestrator stops the workflow and takes no further turns
+
+#### Scenario: Pull request closed without merge
+- **WHEN** a workflow pull request is closed without being merged
+- **THEN** the orchestrator clears its phase labels, removes the trigger label from the issue, posts a cancellation comment, and starts no new workflow for the issue
+
+#### Scenario: A closed failed pull request is cancelled
+- **WHEN** a pull request in the failed phase is closed without being merged while its issue still carries the trigger label
+- **THEN** the orchestrator cancels it as above instead of starting a new workflow
+
+#### Scenario: Re-adding the trigger label starts over
+- **WHEN** a human adds the trigger label again to the issue of a cancelled, closed pull request
+- **THEN** the orchestrator starts a new workflow with a new pull request
 
 ### Requirement: Transient failure handling
 The orchestrator SHALL retry a transient turn failure at most once and SHALL never leave a partially applied change without signalling failure.
@@ -617,7 +649,7 @@ SHALL NOT resolve the issue.
 
 #### Scenario: Closed-without-merge pull request still starts
 - **WHEN** the only pull request associated with a trigger-labeled issue was
-  closed without being merged
+  closed without being merged and its workflow has already been cancelled
 - **THEN** the orchestrator may start a new workflow for the issue
 
 #### Scenario: The skip is reported
