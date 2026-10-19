@@ -106,6 +106,13 @@ invented.
 - **THEN** the orchestrator keeps the deduced scope and reconciles only the type
   the subjects agree on
 
+#### Scenario: An outcome without a scope keeps the deduced scope
+
+- **WHEN** the issue title brought a scope into the created title and the apply
+  turn's implementation subjects agree on a type but none carries a scope
+- **THEN** the orchestrator reconciles the type and keeps the scope deduced from
+  the issue title
+
 #### Scenario: No scope is invented
 
 - **WHEN** neither the issue title nor the applied commits make a scope clear

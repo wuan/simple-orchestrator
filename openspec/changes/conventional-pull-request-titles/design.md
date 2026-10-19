@@ -143,7 +143,8 @@ turn's archive commit) and uses them to reconcile the title:
   commit-subject limit, and updated when it differs from the current title;
 - when the implementation subjects agree on a type but the subjects that carry a
   scope disagree or none carries one, only the agreed type is reconciled and the
-  deduced scope (usually none) is kept;
+  scope deduced from the issue title is kept (usually none), so an author's
+  explicit scope survives an outcome that does not determine one;
 - when the implementation subjects do not agree on a type, or carry no
   Conventional Commit subject, the deduced title is kept unchanged.
 
