@@ -118,6 +118,39 @@ describe('end-to-end workflow', () => {
     expect(await labelsOf(provider, 100)).toContain(DEFAULT_LABELS.done);
   });
 
+  it('does not start a second workflow when a merged pull request has not closed the issue', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markReady('add-x');
+    const poller = makePoller(provider, runtime, openspec);
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+
+    // 1. Propose: the change is already ready for development.
+    runtime.enqueue(proposeResult('proposed the change'));
+    await poller.pollOnce();
+    expect(await labelsOf(provider, 100)).toContain(DEFAULT_LABELS.ready);
+
+    // 2. Approve and implement, so the workflow is in flight.
+    provider.seedReview(100, { state: 'approved', body: 'lgtm' });
+    runtime.enqueue(applyResult());
+    await poller.pollOnce();
+    expect(await labelsOf(provider, 100)).toContain(DEFAULT_LABELS.implementing);
+    const turnsBefore = runtime.requests.length;
+
+    // 3. The pull request is merged, but the host has not closed the issue and
+    // it still carries the trigger label. The next poll must complete the
+    // workflow rather than start a duplicate.
+    provider.setPullRequestState(100, 'merged');
+    await poller.pollOnce();
+
+    expect(await labelsOf(provider, 100)).toContain(DEFAULT_LABELS.done);
+    expect(runtime.requests).toHaveLength(turnsBefore);
+    expect(
+      await provider.listPullRequestsForIssue({ repo: provider.repo, number: 1 }),
+    ).toHaveLength(1);
+  });
+
   it('resumes after a restart mid-workflow without duplicating turns', async () => {
     const provider = new FakeProvider();
     const runtime = new FakeRuntime();

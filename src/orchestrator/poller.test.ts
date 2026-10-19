@@ -61,6 +61,34 @@ describe('Poller.pollOnce', () => {
     expect(runtime.requests).toHaveLength(1);
   });
 
+  it('skips a trigger-labeled issue resolved by a merged pull request', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      linkedIssue: 1,
+      state: 'merged',
+    });
+
+    const messages: string[] = [];
+    const report = await makePoller(provider, runtime, openspec, (message) =>
+      messages.push(message),
+    ).pollOnce();
+
+    expect(report.started).toEqual([]);
+    expect(runtime.requests).toHaveLength(0);
+    expect(
+      await provider.listPullRequestsForIssue({ repo: provider.repo, number: 1 }),
+    ).toHaveLength(1);
+    expect(messages.join('\n')).toContain(
+      'issue #1 was resolved by merged pull request #100; not starting a workflow',
+    );
+  });
+
   it('resumes an in-flight workflow after a restart without duplicating turns', async () => {
     const provider = new FakeProvider();
     const runtime = new FakeRuntime();
