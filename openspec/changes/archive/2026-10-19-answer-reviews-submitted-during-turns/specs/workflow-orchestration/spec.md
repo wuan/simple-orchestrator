@@ -3,7 +3,7 @@
 ## MODIFIED Requirements
 
 ### Requirement: Idempotent turn dispatch
-The orchestrator MUST process each human review or approval at most once, using host-native timestamps as the watermark, and SHALL be safe to restart without duplicating turns. The orchestrator SHALL identify the comments it authored by its configured identity as well as by the host's bot flag. Each comment it posts on a workflow pull request SHALL record the host timestamp of the newest human review it had read when it acted, and the watermark SHALL be the newest such recorded timestamp. A comment that records that no human review had been read SHALL NOT raise the watermark, and a comment that carries no record at all SHALL count with its own timestamp.
+The orchestrator MUST process each human review or approval at most once, using host-native timestamps as the watermark, and SHALL be safe to restart without duplicating turns. It SHALL identify its own comments by its configured identity as well as by the host's bot flag, and the watermark SHALL be the newest human review timestamp that its comments record having read.
 
 #### Scenario: Restart does not duplicate work
 - **WHEN** the orchestrator restarts after acting on an event
@@ -24,6 +24,10 @@ The orchestrator MUST process each human review or approval at most once, using 
 #### Scenario: A review submitted during a turn drives the next turn
 - **WHEN** a human submits a review after the orchestrator read the reviews for a turn and before that turn's comment is posted
 - **THEN** the review is newer than the watermark and the next poll runs a turn for it
+
+#### Scenario: A comment that read no review does not raise the watermark
+- **WHEN** an orchestrator comment records that no human review had been read
+- **THEN** it does not raise the watermark
 
 #### Scenario: Comments posted before the marker existed still count
 - **WHEN** an orchestrator comment carries no recorded review timestamp

@@ -89,6 +89,70 @@ describe('Poller.pollOnce', () => {
     );
   });
 
+  it('cancels a closed pull request instead of starting a replacement', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    openspec.markInProgress('add-x');
+    const issueRef = { repo: provider.repo, number: 1 };
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    runtime.enqueue(proposeResult());
+    const poller = makePoller(provider, runtime, openspec);
+    expect((await poller.pollOnce()).started).toEqual([1]);
+
+    // A human rejects the change by closing its pull request.
+    provider.setPullRequestState(100, 'closed');
+    expect((await poller.pollOnce()).started).toEqual([]);
+    expect((await provider.getIssue(issueRef))?.labels).not.toContain('openspec');
+    expect((await provider.getPullRequest({ repo: provider.repo, number: 100 }))?.labels).toEqual(
+      [],
+    );
+    expect(
+      provider.commentLog.some((c) =>
+        c.body.includes('Removed the `openspec` label from #1; add it again to start over.'),
+      ),
+    ).toBe(true);
+
+    expect((await poller.pollOnce()).started).toEqual([]);
+    expect(await provider.listPullRequestsForIssue(issueRef)).toHaveLength(1);
+    expect(runtime.requests).toHaveLength(1);
+
+    // Adding the label again starts over with a fresh pull request.
+    await provider.addLabels({ kind: 'issue', ref: issueRef }, ['openspec']);
+    runtime.enqueue(proposeResult());
+    expect((await poller.pollOnce()).started).toEqual([1]);
+    expect(await provider.listPullRequestsForIssue(issueRef)).toHaveLength(2);
+  });
+
+  it('cancels a closed failed pull request instead of starting a replacement', async () => {
+    const provider = new FakeProvider();
+    const runtime = new FakeRuntime();
+    const openspec = new FakeOpenspecCli();
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+    provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      linkedIssue: 1,
+      state: 'closed',
+      labels: [DEFAULT_LABELS.failed],
+    });
+
+    const messages: string[] = [];
+    const report = await makePoller(provider, runtime, openspec, (message) =>
+      messages.push(message),
+    ).pollOnce();
+
+    expect(report.started).toEqual([]);
+    expect(runtime.requests).toHaveLength(0);
+    expect(
+      await provider.listPullRequestsForIssue({ repo: provider.repo, number: 1 }),
+    ).toHaveLength(1);
+    expect((await provider.getIssue({ repo: provider.repo, number: 1 }))?.labels).not.toContain(
+      'openspec',
+    );
+    expect(messages.some((m) => m.includes('#100 was closed without merge'))).toBe(true);
+  });
+
   it('resumes an in-flight workflow after a restart without duplicating turns', async () => {
     const provider = new FakeProvider();
     const runtime = new FakeRuntime();
