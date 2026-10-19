@@ -41,15 +41,18 @@ ARG OPENCODE_SDK_VERSION
 RUN test -n "$OPENCODE_SDK_VERSION" \
   || { echo 'set --build-arg OPENCODE_SDK_VERSION=<orchestrator @opencode/sdk version>' >&2; exit 1; }
 
-# git is required by the turn; add the repository's toolchain in a flavour stage
-# (for example openjdk-21-jdk, the Android SDK, or Rust) on top of this base.
+# git is required by the turn, and the SDK includes native modules that may need
+# to compile during installation; add repository-specific toolchains in a flavour
+# stage (for example openjdk-21-jdk, the Android SDK, or Rust) on top of this base.
 RUN apt-get update \
   && apt-get install -y --no-install-recommends git ca-certificates \
+       python3 make g++ \
   && rm -rf /var/lib/apt/lists/*
 
 RUN mkdir -p /opt/runner \
   && cd /opt/runner \
   && npm init -y >/dev/null \
+  && npm pkg set type=module >/dev/null \
   && npm install --no-audit --no-fund --omit=dev "@opencode/sdk@${OPENCODE_SDK_VERSION}"
 
 # The turn runs as the orchestrator's uid/gid with HOME=/tmp; the workspace is

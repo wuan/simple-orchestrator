@@ -41,7 +41,7 @@ describe('environment image flavours', () => {
     // base, so no flavour can drift from it.
     expect(text).toMatch(/^FROM node:24\S* AS base$/m);
     expect(text).toContain('@opencode/sdk@${OPENCODE_SDK_VERSION}');
-    expect(text).toMatch(/install -y --no-install-recommends git\b/);
+    expect(text).toMatch(/install -y --no-install-recommends[\s\S]*\bgit\b/);
 
     // The plain Node.js flavour is the base itself; the Rust flavour adds the
     // toolchain bo-srv-rs needs.

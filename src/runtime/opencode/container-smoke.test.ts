@@ -96,9 +96,12 @@ describe('container smoke test', () => {
         .filter((line) => line !== '')
         .map((line) => JSON.parse(line) as { type: string; sdkVersion?: string; error?: string });
 
-      expect(events[0]).toEqual({ type: 'ready', sdkVersion: resolveSdkVersion() });
-      expect(events.at(-1)?.type).toBe('error');
-      expect(events.at(-1)?.error).toContain('does not match');
+      expect(events).toEqual([
+        {
+          type: 'error',
+          error: `the image's @opencode/sdk version ${resolveSdkVersion()} does not match the orchestrator's 0.0.0; rebuild the environment image`,
+        },
+      ]);
     },
   );
 });
