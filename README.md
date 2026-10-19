@@ -383,7 +383,8 @@ image must provide Node.js 24+, git, the toolchain, and `@opencode/sdk` at the
 orchestrator's version; the runner fails fast on a version mismatch. The host
 still publishes the branch, gates on merge readiness, and evaluates readiness.
 See [`environments`](environments/README.md) for the image contract and the
-flavours CI publishes to GHCR, and
+flavours CI publishes to GHCR for `linux/amd64` and `linux/arm64` (the host's
+container runtime selects the matching image), and
 [`docs/configuration.md`](docs/configuration.md#environment) for the fields.
 
 `@opencode/sdk` uses explicit resource management and therefore requires
