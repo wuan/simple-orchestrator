@@ -14,7 +14,7 @@ import type {
   WorkflowPhase,
 } from '../domain/types.js';
 import { reviewEvent } from '../provider/normalize.js';
-import { latestHumanReview } from '../provider/reviews.js';
+import { isOrchestratorActor, latestHumanReview } from '../provider/reviews.js';
 import type {
   ProviderComment,
   ProviderIssue,
@@ -133,10 +133,16 @@ function withMeasuredUsage(reported: TurnUsage, startedAt: number, attempts: num
   return { ...reported, durationMs: Date.now() - startedAt, attempts };
 }
 
-function lastBotCommentAt(comments: ProviderComment[]): string | null {
-  const botComments = comments.filter((comment) => comment.author.isBot);
-  if (botComments.length === 0) return null;
-  return botComments.reduce((latest, comment) =>
+/**
+ * When the orchestrator last acted on a workflow: the timestamp of its most
+ * recent comment, whether the host flags its account as a bot or it matches the
+ * configured bot login. This is the durable record that the newest feedback was
+ * answered.
+ */
+function lastOwnCommentAt(comments: ProviderComment[], botLogin?: string): string | null {
+  const ownComments = comments.filter((comment) => isOrchestratorActor(comment.author, botLogin));
+  if (ownComments.length === 0) return null;
+  return ownComments.reduce((latest, comment) =>
     Date.parse(comment.at) > Date.parse(latest.at) ? comment : latest,
   ).at;
 }
@@ -292,14 +298,16 @@ export class WorkflowEngine {
             pullRequest: pullRequest.ref,
           });
 
-    const botTurns = comments.filter((comment) => comment.author.isBot).length;
+    const ownTurns = comments.filter((comment) =>
+      isOrchestratorActor(comment.author, botLogin),
+    ).length;
     const action = decide({
       triggerLabelPresent: issue !== null && issue.labels.includes(this.labels.trigger),
       pullRequestState: pullRequest.state,
       phase: phaseFromLabels(this.labels, pullRequest.labels) ?? 'proposing',
       latestHumanReview: latestHumanReviewEvent,
-      lastTurnAt: lastBotCommentAt(comments),
-      reviseRounds: Math.max(0, botTurns - 1),
+      lastTurnAt: lastOwnCommentAt(comments, botLogin),
+      reviseRounds: Math.max(0, ownTurns - 1),
       maxReviseRounds: this.maxReviseRounds,
     });
 

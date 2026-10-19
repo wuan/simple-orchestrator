@@ -1181,3 +1181,80 @@ describe('WorkflowEngine title reconciliation', () => {
     expect(await labelsOf(h.provider, number)).not.toContain(DEFAULT_LABELS.failed);
   });
 });
+
+/** A provider whose configured bot is a normal account the host does not flag. */
+function nonFlaggedBotProvider(): FakeProvider {
+  return new FakeProvider({ bot: { login: 'wuan-bot', isBot: false } });
+}
+
+describe('WorkflowEngine answered review feedback', () => {
+  async function startedWith(h: Harness): Promise<number> {
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    const started = await h.engine.start(issue);
+    return started.pullRequest?.ref.number ?? -1;
+  }
+
+  async function current(h: Harness, number: number): Promise<ProviderPullRequest> {
+    const pr = await h.provider.getPullRequest({ repo: h.provider.repo, number });
+    if (pr === null) throw new Error('pull request not found');
+    return pr;
+  }
+
+  it('does not re-answer feedback when the configured bot is not host-flagged', async () => {
+    const h = harness({ provider: nonFlaggedBotProvider() });
+    const number = await startedWith(h);
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'fix X' });
+    h.runtime.enqueue(proposeResult({ summary: 'revised' }));
+    const first = await h.engine.drive(await current(h, number));
+    expect(first.kind).toBe('revise');
+
+    const second = await h.engine.drive(await current(h, number));
+    expect(second.kind).toBe('idle');
+    expect(h.runtime.requests.filter((r) => r.context.skill === 'propose')).toHaveLength(2);
+  });
+
+  it('leaves an answered review idle and acts on a newer one', async () => {
+    const h = harness();
+    const number = await startedWith(h);
+    const target = { kind: 'pull_request' as const, ref: { repo: h.provider.repo, number } };
+
+    // The orchestrator's turn comment is the watermark that marks the newest
+    // review answered once it is not newer than that comment.
+    const comments = await h.provider.listComments(target);
+    const watermark = comments.reduce(
+      (latest, comment) => (comment.at > latest ? comment.at : latest),
+      '',
+    );
+    h.provider.seedReview(number, {
+      state: 'changes_requested',
+      body: 'already answered',
+      at: watermark,
+    });
+
+    const answered = await h.engine.drive(await current(h, number));
+    expect(answered.kind).toBe('idle');
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'new feedback' });
+    h.runtime.enqueue(proposeResult({ summary: 'revised' }));
+    const acted = await h.engine.drive(await current(h, number));
+    expect(acted.kind).toBe('revise');
+    expect(h.runtime.requests.filter((r) => r.context.skill === 'propose')).toHaveLength(2);
+  });
+
+  it("counts a non-host-flagged bot's turns toward the revise limit", async () => {
+    const h = harness({ provider: nonFlaggedBotProvider(), maxReviseRounds: 1 });
+    const number = await startedWith(h);
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'first' });
+    h.runtime.enqueue(proposeResult({ summary: 'revised once' }));
+    const first = await h.engine.drive(await current(h, number));
+    expect(first.kind).toBe('revise');
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'second' });
+    const second = await h.engine.drive(await current(h, number));
+    expect(second.kind).toBe('fail');
+    expect(await labelsOf(h.provider, number)).toContain(DEFAULT_LABELS.failed);
+  });
+});
