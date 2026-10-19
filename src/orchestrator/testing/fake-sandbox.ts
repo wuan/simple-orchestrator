@@ -22,6 +22,13 @@ export class FakeSandbox implements Sandbox {
    * a workflow branch with no proposal.
    */
   hasChangesResults: boolean[] = [];
+  /**
+   * Clusters of subjects returned by each handle's `commitSubjects()`, consumed
+   * in order; when exhausted the range is reported to carry no subjects.
+   */
+  commitSubjectsResults: string[][] = [];
+  /** The `from` value each `commitSubjects()` call was made with, in order. */
+  readonly commitSubjectRanges: string[] = [];
   private headCalls = 0;
 
   async create(input: { branch: string }): Promise<SandboxHandle> {
@@ -33,6 +40,10 @@ export class FakeSandbox implements Sandbox {
       head: async () => this.headResults.shift() ?? `fake-head-${++this.headCalls}`,
       baseIntegrated: async () => this.baseIntegrationResults.shift() ?? true,
       hasChanges: async () => this.hasChangesResults.shift() ?? true,
+      commitSubjects: async (from: string) => {
+        this.commitSubjectRanges.push(from);
+        return this.commitSubjectsResults.shift() ?? [];
+      },
       dispose: async () => {
         this.disposed.push(workspace);
       },
