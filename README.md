@@ -243,7 +243,8 @@ environment, and mounts its compiled runner read-only at `/opt/runner/dist`. The
 image must provide Node.js 24+, git, the toolchain, and `@opencode/sdk` at the
 orchestrator's version; the runner fails fast on a version mismatch. The host
 still publishes the branch, gates on merge readiness, and evaluates readiness.
-See [`examples/environment`](examples/environment/README.md) for a minimal image
+See [`examples/environment`](examples/environment/README.md) for a minimal image,
+[`environments`](environments/README.md) for the flavours CI publishes to GHCR,
 and [`docs/configuration.md`](docs/configuration.md#environment) for the fields.
 
 `@opencode/sdk` uses explicit resource management and therefore requires

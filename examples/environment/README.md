@@ -38,6 +38,15 @@ docker build \
 The `Dockerfile` in this directory is a minimal base: it installs Node 24 and
 git and pins the SDK. Add the repository's toolchain on top of it.
 
+## Published flavours
+
+This directory is the minimal example and the reference for the image contract.
+Ready-made flavours - a Rust toolchain for
+[`bo-srv-rs`](https://github.com/wuan/bo-srv-rs), for example - live in
+[`environments/`](../../environments/README.md), where they extend the same
+contract from a shared `base` stage and are published to GHCR by CI. Prefer
+`ghcr.io/wuan/simple-orchestrator/<flavour>` when one fits the repository.
+
 ## Configure
 
 Point a repository at the built image (see
