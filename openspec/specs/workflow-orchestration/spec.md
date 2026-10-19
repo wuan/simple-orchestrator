@@ -32,7 +32,7 @@ Starting a workflow SHALL create a branch and exactly one draft pull request (or
 - **THEN** it bases the branch on the current base branch rather than on a branch left behind by an earlier attempt
 
 ### Requirement: Bounded propose, review, revise turns
-Each turn SHALL run as a stateless unit that re-reads the branch and the full review conversation, and the orchestrator SHALL limit the number of revise rounds per workflow.
+Each turn SHALL run as a stateless unit that re-reads the branch and the full review conversation, and the orchestrator SHALL limit the number of revise rounds per workflow, counting its own turns as those authored by its configured identity.
 
 #### Scenario: Review feedback triggers a revise turn
 - **WHEN** a human submits a review that is not an approval and it is newer than the orchestrator's last turn
@@ -41,6 +41,10 @@ Each turn SHALL run as a stateless unit that re-reads the branch and the full re
 #### Scenario: Revise limit reached
 - **WHEN** the number of revise rounds reaches the configured maximum without reaching READY
 - **THEN** the orchestrator stops the workflow, marks it failed, and notifies on the pull request
+
+#### Scenario: Own turns count toward the revise limit
+- **WHEN** the orchestrator's configured identity is a normal account the host does not flag as a bot
+- **THEN** the turns it posts still count toward the revise-round limit
 
 ### Requirement: Objective readiness predicate
 The orchestrator SHALL mark a change READY only when the OpenSpec change is complete and passes strict validation, computed from the OpenSpec CLI rather than from agent output.
@@ -94,7 +98,7 @@ The orchestrator SHALL represent workflow state with host-native labels (proposi
 - **THEN** the corresponding lifecycle label is present on the pull request
 
 ### Requirement: Idempotent turn dispatch
-The orchestrator MUST process each human review or approval at most once, using labels and timestamps as the watermark, and SHALL be safe to restart without duplicating turns.
+The orchestrator MUST process each human review or approval at most once, using host-native timestamps as the watermark, and SHALL be safe to restart without duplicating turns. The orchestrator SHALL identify the comments it authored by its configured identity as well as by the host's bot flag, and SHALL treat its most recent comment as the record that the newest feedback was answered.
 
 #### Scenario: Restart does not duplicate work
 - **WHEN** the orchestrator restarts after acting on an event
@@ -103,6 +107,14 @@ The orchestrator MUST process each human review or approval at most once, using 
 #### Scenario: Poll observes no change
 - **WHEN** a poll cycle finds no new human activity since the last turn
 - **THEN** the orchestrator takes no action for that workflow
+
+#### Scenario: An answered review does not drive another turn
+- **WHEN** the newest human review is not newer than the orchestrator's most recent comment
+- **THEN** the orchestrator takes no turn for that workflow
+
+#### Scenario: A configured identity the host does not flag is still the orchestrator
+- **WHEN** the configured identity is a normal account the host does not flag as a bot and the orchestrator has posted a comment for the newest review
+- **THEN** that comment is the watermark and the review does not drive another turn
 
 ### Requirement: Review drives turns, comments do not
 The orchestrator SHALL treat a submitted review (comment or change request) as a turn trigger and SHALL treat plain conversation comments as non-triggering.
