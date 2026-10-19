@@ -127,8 +127,9 @@ archive commit) and uses them to reconcile the title:
 - when the implementation subjects agree on a type, the title is recomposed with
   that type and, when the subjects that carry a scope agree on a single one, that
   scope (replacing a scope deduced from the issue title when the two differ),
-  keeping the summary the title already carries, and updated when it differs from
-  the current title;
+  keeping the summary the title already carries, shortened further at a word
+  boundary when the new type or scope would push the subject to the
+  commit-subject limit, and updated when it differs from the current title;
 - when the implementation subjects agree on a type but the subjects that carry a
   scope disagree or none carries one, only the agreed type is reconciled and the
   deduced scope (usually none) is kept;
@@ -140,7 +141,10 @@ compacted issue-title summary, and reconciliation only corrects the type and
 scope, so the engine parses the current title and reuses its summary rather than
 resolving the issue a second time. A title that does not parse as a Conventional
 Commit subject is left unchanged. This keeps reconciliation a pure function of
-the title and the applied commits, with no extra provider read.
+the title and the applied commits, with no extra provider read. Applying a
+longer type or a scope still enlarges the subject, so the kept summary is
+re-compacted with the same rule when the new prefix would push it to the limit;
+that bounds the reconciled subject without rewriting the author's words.
 
 Scoping to the turn's own commits matters: the workflow branch already carries
 the propose turn's `docs(openspec)` commits, so reading every commit ahead of
@@ -184,10 +188,12 @@ stuck in draft blocks the human.
 Deduction and compaction live in `src/orchestrator/title.ts` as pure functions
 so they are unit-testable without a provider or a runtime. The engine calls them
 at creation and uses a companion function there to rebuild a subject with a new
-type and scope while keeping its summary at reconciliation. The title update goes
-through a new `RepoProvider.updatePullRequest` operation, so the provider keeps
-transporting content and the GitHub adapter can use its REST endpoint without
-leaking into orchestration.
+type and scope while keeping its summary, re-shortening that summary at a word
+boundary when the new prefix would reach the commit-subject limit, at
+reconciliation. The title update goes through a new
+`RepoProvider.updatePullRequest` operation, so the provider keeps transporting
+content and the GitHub adapter can use its REST endpoint without leaking into
+orchestration.
 
 Reading the applied subjects is an internal `SandboxHandle` addition
 (`commitSubjects(from)`), alongside the existing repository-state reads, so the
@@ -205,7 +211,9 @@ before the turn, so the method returns only that turn's subjects.
 - [Mechanical compaction can truncate a long declarative title mid-thought] ->
   Accepted; the limit is the project's own, the truncation happens at a word
   boundary with an ellipsis, and an author can shorten the issue title or write
-  it conventionally.
+  it conventionally. Reconciliation can shorten the kept summary a little
+  further when the applied type or scope lengthens the prefix, but it never
+  rewrites the author's words.
 - [The applied commits may disagree on a type or scope] -> The orchestrator
   reconciles only what they agree on - the type - and keeps the deduced scope
   when they disagree on it; a disagreement on the type keeps the deduced title.

@@ -36,13 +36,15 @@ turns' own commits do. (Reported as issue #35.)
   reflects what was actually implemented. The applied type is used when the
   implementation subjects agree on one; a scope is adopted only when the
   subjects that carry a scope agree on a single one (superseding a scope deduced
-  from the issue title), and the summary the title already carries is kept, so an
-  ambiguous outcome keeps the deduced type and scope. The propose turn's earlier
-  commits are not the outcome and are not considered, and neither are OpenSpec
-  bookkeeping subjects (a commit scoped `openspec`, such as the apply turn's
-  archive commit), so a multi-commit turn still reconciles from its
-  implementation. An update that is not clear from the outcome is skipped, and a
-  failed update does not fail an otherwise successful workflow.
+  from the issue title), and the summary the title already carries is kept -
+  shortened further at a word boundary only when the new type or scope would
+  push the subject to the commit-subject limit - so an ambiguous outcome keeps
+  the deduced type and scope. The propose turn's earlier commits are not the
+  outcome and are not considered, and neither are OpenSpec bookkeeping subjects
+  (a commit scoped `openspec`, such as the apply turn's archive commit), so a
+  multi-commit turn still reconciles from its implementation. An update that is
+  not clear from the outcome is skipped, and a failed update does not fail an
+  otherwise successful workflow.
 - **A provider operation updates the title.** The provider contract gains an
   operation to set a pull request's title (GitHub `PATCH
   /repos/{owner}/{repo}/pulls/{number}`), so reconciliation is host-agnostic.

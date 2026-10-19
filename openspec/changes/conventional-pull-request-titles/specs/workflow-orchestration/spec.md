@@ -126,3 +126,16 @@ SHALL come only from the issue context or the applied commits, never invented.
 - **WHEN** updating the pull request title fails
 - **THEN** the orchestrator reports the failure and still advances the workflow
   to implementing and ready for review
+
+### Requirement: Reconciled pull request title stays within the subject limit
+
+When reconciliation applies an applied type or scope, the resulting title SHALL
+stay under the project's commit-subject limit by shortening the kept summary at
+a word boundary, bounded only in length and never in its words.
+
+#### Scenario: Reconciled title keeps the subject limit
+
+- **WHEN** applying the applied type or scope would make the subject reach the
+  project's commit-subject limit
+- **THEN** the orchestrator shortens the kept summary at a word boundary so the
+  reconciled title stays under the limit
