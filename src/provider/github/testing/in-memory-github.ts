@@ -425,6 +425,13 @@ export class InMemoryGitHub implements HttpClient {
       return json(200, this.pullPayload(record));
     }
 
+    if (pullMatch !== null && input.method === 'PATCH') {
+      const record = this.pulls.get(Number(pullMatch[1]));
+      if (record === undefined) return json(404, { message: 'Not Found' });
+      if (typeof body?.['title'] === 'string') record.title = body['title'];
+      return json(200, this.pullPayload(record));
+    }
+
     const reviewsMatch = /^\/repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/reviews$/.exec(path);
     if (reviewsMatch !== null && input.method === 'GET') {
       return json(200, [...(this.reviews.get(Number(reviewsMatch[1])) ?? [])]);

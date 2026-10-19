@@ -10,6 +10,7 @@ import type {
   PushInput,
   RepoProvider,
   ThreadTarget,
+  UpdatePullRequestInput,
 } from '../types.js';
 import { defaultIssueBranch } from '../types.js';
 import type { GitHubCloner } from './clone.js';
@@ -197,6 +198,16 @@ export class GitHubProvider implements RepoProvider {
       }`,
       { pullRequestId: nodeId },
     );
+  }
+
+  /** Update a pull request's title through the REST `PATCH /pulls/{number}` endpoint. */
+  async updatePullRequest(
+    pullRequest: PullRequestRef,
+    input: UpdatePullRequestInput,
+  ): Promise<void> {
+    await this.transport.json('PATCH', `${this.repoPath()}/pulls/${pullRequest.number}`, {
+      body: { title: input.title },
+    });
   }
 
   async listPullRequestsForIssue(issue: IssueRef): Promise<ProviderPullRequest[]> {

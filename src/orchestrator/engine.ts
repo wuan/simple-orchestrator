@@ -14,7 +14,7 @@ import type {
   WorkflowPhase,
 } from '../domain/types.js';
 import { reviewEvent } from '../provider/normalize.js';
-import { latestHumanReview } from '../provider/reviews.js';
+import { isOrchestratorActor, latestHumanReview } from '../provider/reviews.js';
 import type {
   ProviderComment,
   ProviderIssue,
@@ -30,6 +30,7 @@ import type { AgentRuntime } from '../runtime/types.js';
 import { decide, type WorkflowAction } from './decision.js';
 import { allPhaseLabels, issueNumberFromBranch, labelForPhase, phaseFromLabels } from './labels.js';
 import { evaluateReadiness, type OpenspecCli } from './readiness.js';
+import { conventionalTitle, reconcileConventionalTitle } from './title.js';
 import {
   accumulateUsage,
   latestUsage,
@@ -107,13 +108,14 @@ function buildTranscript(
 }
 
 /**
- * The title of a workflow's draft pull request: a short summary of the change,
- * drawn from the issue's title (a human-written summary that exists before the
- * change does), so a reviewer can tell pull requests apart without opening the
- * issue. It carries no generated `OpenSpec change for issue #<n>` marker.
+ * The title of a workflow's draft pull request: a Conventional Commit subject
+ * deduced from the issue's context (its title or labels) and compacted to the
+ * project's commit-subject limit, so the subject the host derives from it on
+ * merge follows the project convention. It carries no generated
+ * `OpenSpec change for issue #<n>` marker.
  */
 function pullRequestTitle(issue: ProviderIssue): string {
-  return issue.title;
+  return conventionalTitle({ title: issue.title, labels: issue.labels });
 }
 
 /**
@@ -131,10 +133,16 @@ function withMeasuredUsage(reported: TurnUsage, startedAt: number, attempts: num
   return { ...reported, durationMs: Date.now() - startedAt, attempts };
 }
 
-function lastBotCommentAt(comments: ProviderComment[]): string | null {
-  const botComments = comments.filter((comment) => comment.author.isBot);
-  if (botComments.length === 0) return null;
-  return botComments.reduce((latest, comment) =>
+/**
+ * When the orchestrator last acted on a workflow: the timestamp of its most
+ * recent comment, whether the host flags its account as a bot or it matches the
+ * configured bot login. This is the durable record that the newest feedback was
+ * answered.
+ */
+function lastOwnCommentAt(comments: ProviderComment[], botLogin?: string): string | null {
+  const ownComments = comments.filter((comment) => isOrchestratorActor(comment.author, botLogin));
+  if (ownComments.length === 0) return null;
+  return ownComments.reduce((latest, comment) =>
     Date.parse(comment.at) > Date.parse(latest.at) ? comment : latest,
   ).at;
 }
@@ -290,14 +298,16 @@ export class WorkflowEngine {
             pullRequest: pullRequest.ref,
           });
 
-    const botTurns = comments.filter((comment) => comment.author.isBot).length;
+    const ownTurns = comments.filter((comment) =>
+      isOrchestratorActor(comment.author, botLogin),
+    ).length;
     const action = decide({
       triggerLabelPresent: issue !== null && issue.labels.includes(this.labels.trigger),
       pullRequestState: pullRequest.state,
       phase: phaseFromLabels(this.labels, pullRequest.labels) ?? 'proposing',
       latestHumanReview: latestHumanReviewEvent,
-      lastTurnAt: lastBotCommentAt(comments),
-      reviseRounds: Math.max(0, botTurns - 1),
+      lastTurnAt: lastOwnCommentAt(comments, botLogin),
+      reviseRounds: Math.max(0, ownTurns - 1),
       maxReviseRounds: this.maxReviseRounds,
     });
 
@@ -390,12 +400,13 @@ export class WorkflowEngine {
     let attempts = 0;
     const startedAt = Date.now();
     try {
-      // A propose turn with no review trigger is expected to produce the change.
-      // The branch tip is read around the turn so a turn that commits nothing is
-      // detected from repository state, not from the runtime's self-report (the
-      // embedded adapter always reports an empty commit list). The base merge,
-      // if any, is committed while provisioning, before this first read.
-      const beforeTip = skill === 'propose' ? await handle.head() : undefined;
+      // The branch tip is read around every turn: a propose turn that commits
+      // nothing is detected from repository state, not from the runtime's
+      // self-report (the embedded adapter always reports an empty commit list),
+      // and an apply turn's own commits are read from `beforeTip..HEAD` to
+      // reconcile the pull request title. The base merge, if any, is committed
+      // while provisioning, before this first read.
+      const beforeTip = await handle.head();
       const pendingBaseIntegration = !(await handle.baseIntegrated());
       const context = this.buildContext(
         skill,
@@ -419,12 +430,7 @@ export class WorkflowEngine {
       // Combine what the runtime reported with the time and attempts the
       // orchestrator measured, so the comment is complete for every runtime.
       const usage = withMeasuredUsage(mergeUsage(reported, result.usage), startedAt, attempts);
-      if (
-        skill === 'propose' &&
-        trigger === null &&
-        beforeTip !== undefined &&
-        (await handle.head()) === beforeTip
-      ) {
+      if (skill === 'propose' && trigger === null && (await handle.head()) === beforeTip) {
         this.logger(`${turn}: the workflow branch tip is unchanged; treating the turn as failed`);
         throw new NoProgressError();
       }
@@ -455,10 +461,13 @@ export class WorkflowEngine {
           );
         }
       } else {
-        // The apply turn implements and archives the change; release the draft
-        // pull request now so a human can review and merge it. A failure here
-        // falls through to the catch and marks the workflow failed rather than
-        // leaving a task-complete pull request stuck in draft.
+        // The apply turn implements and archives the change. Reconcile the pull
+        // request title with the subjects the turn committed (best-effort: a
+        // failure is reported, not fatal), then release the draft pull request
+        // now so a human can review and merge it. A failure here falls through
+        // to the catch and marks the workflow failed rather than leaving a
+        // task-complete pull request stuck in draft.
+        await this.reconcileTitle(pullRequest, handle, beforeTip);
         await this.provider.markPullRequestReady(pullRequest.ref);
         await this.setPhase(pullRequest, 'implementing');
       }
@@ -481,6 +490,47 @@ export class WorkflowEngine {
       if (!isRetryable(error)) throw error;
       this.logger(`${context}: retrying after transient failure: ${describeError(error)}`);
       return operation();
+    }
+  }
+
+  /**
+   * Reconcile the pull request title with the Conventional Commit subjects the
+   * just-finished apply turn added (the applied outcome), so the subject the
+   * host derives on merge reflects what was implemented. Best-effort: reading
+   * the subjects or updating the title may fail without failing the workflow,
+   * because the title is already a valid Conventional Commit subject.
+   */
+  private async reconcileTitle(
+    pullRequest: ProviderPullRequest,
+    handle: SandboxHandle,
+    beforeTip: string,
+  ): Promise<void> {
+    let subjects: string[];
+    try {
+      subjects = await handle.commitSubjects(beforeTip);
+    } catch (error) {
+      this.logger(
+        `PR #${pullRequest.ref.number}: could not read the apply turn's commit subjects; ` +
+          `keeping the deduced title (${describeError(error)})`,
+      );
+      return;
+    }
+    const title = reconcileConventionalTitle(pullRequest.title, subjects);
+    if (title === pullRequest.title) return;
+    try {
+      await this.provider.updatePullRequest(pullRequest.ref, { title });
+      this.logger(`PR #${pullRequest.ref.number}: reconciled the title to '${title}'`);
+    } catch (error) {
+      const message = describeError(error);
+      this.logger(`PR #${pullRequest.ref.number}: updating the title failed: ${message}`);
+      try {
+        await this.provider.comment(
+          this.target(pullRequest),
+          `Could not update the pull request title: ${message}`,
+        );
+      } catch {
+        // Reporting is best-effort; the workflow still advances.
+      }
     }
   }
 

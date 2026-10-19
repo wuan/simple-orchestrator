@@ -45,11 +45,20 @@ stateDiagram-v2
   mutation, because no REST endpoint exposes the transition. A release that fails
   marks the workflow failed rather than leaving a task-complete pull request
   stuck in draft.
-- Merging the PR completes the workflow. The draft pull request title is a short
-  summary of the change drawn from the issue's title, and its body carries only
-  the `Closes #<issue>` reference, so merging it into the host's default branch
-  closes the issue automatically (the host only closes issues for merges into its
-  default branch).
+- Merging the PR completes the workflow. The draft pull request title is a
+  Conventional Commit subject of the form `<type>(<scope>): <summary>`, so the
+  subject the host derives from it on a squash merge follows the project
+  convention. The type and optional scope are deduced from the issue context: a
+  conventional issue title (for example `fix: ...` or `docs(api): ...`) wins;
+  otherwise the type comes from the issue's labels (matched case-insensitively,
+  defaulting to `feat`) and there is no scope. The summary is the issue title
+  compacted to the project's 72-character commit-subject limit without rewriting
+  its words. At the end of a successful apply turn the title is reconciled with
+  the Conventional Commit subjects that turn committed, so an agreed applied type
+  and a clear applied scope replace the deduced ones. Its body carries only the
+  `Closes #<issue>` reference, so merging it into the host's default branch closes
+  the issue automatically (the host only closes issues for merges into its default
+  branch).
 
 There is no database: phase lives in host labels, and the watermark is the
 timestamp of the last human review versus the orchestrator's last turn comment.
@@ -70,8 +79,8 @@ flowchart TD
 Two seams isolate everything external:
 
 - **`RepoProvider`** — issues, comments, labels, pull requests, review state,
-  clone, fetch, push, and releasing a pull request from draft. A GitHub adapter
-  ships first; GitLab is an extension point.
+  clone, fetch, push, releasing a pull request from draft, and updating its title.
+  A GitHub adapter ships first; GitLab is an extension point.
 - **`AgentRuntime`** — runs exactly one OpenSpec skill (`propose` or `apply`) per
   turn in a sandbox and returns a structured result.
 

@@ -62,6 +62,7 @@ function harness(
     runtime?: AgentRuntime;
     logger?: (message: string) => void;
     provider?: FakeProvider;
+    sandbox?: FakeSandbox;
     environment?: EnvironmentSpec;
   } = {},
 ): Harness {
@@ -71,7 +72,7 @@ function harness(
   if (options.ready === true) openspec.markReady('add-x');
   else openspec.markInProgress('add-x');
 
-  const sandbox = new FakeSandbox();
+  const sandbox = options.sandbox ?? new FakeSandbox();
   const messages: string[] = [];
   const logger = options.logger ?? ((message: string) => void messages.push(message));
   const engine = new WorkflowEngine({
@@ -121,15 +122,55 @@ describe('WorkflowEngine.start', () => {
     expect(provider.commentLog.some((c) => c.body.includes('OpenSpec propose turn'))).toBe(true);
   });
 
-  it('titles the created pull request with the change summary from the issue', async () => {
+  it('titles the created pull request with a deduced Conventional Commit subject', async () => {
     const { provider, runtime, engine } = harness();
     const issue = await seedIssue(provider, 7, ['openspec'], 'Improve PR generation');
     runtime.enqueue(proposeResult());
 
     const result = await engine.start(issue);
 
-    expect(result.pullRequest?.title).toBe('Improve PR generation');
+    expect(result.pullRequest?.title).toBe('feat: Improve PR generation');
     expect(result.pullRequest?.title).not.toContain('OpenSpec change for issue #7');
+    // A non-conventional issue title carries no scope.
+    expect(result.pullRequest?.title).not.toContain('(');
+  });
+
+  it('deduces the type from the issue labels', async () => {
+    const { provider, runtime, engine } = harness();
+    const issue = await seedIssue(provider, 7, ['openspec', 'bug'], 'Handle a crash');
+    runtime.enqueue(proposeResult());
+
+    const result = await engine.start(issue);
+
+    expect(result.pullRequest?.title).toBe('fix: Handle a crash');
+  });
+
+  it('preserves a conventional issue title, including its scope', async () => {
+    const { provider, runtime, engine } = harness();
+    const issue = await seedIssue(provider, 7, ['openspec'], 'docs(api): update the reference');
+    runtime.enqueue(proposeResult());
+
+    const result = await engine.start(issue);
+
+    expect(result.pullRequest?.title).toBe('docs(api): update the reference');
+  });
+
+  it('compacts a long issue title within the commit-subject limit', async () => {
+    const { provider, runtime, engine } = harness();
+    const issue = await seedIssue(
+      provider,
+      7,
+      ['openspec'],
+      'Allow to extract default values from the configuration to avoid repeating information',
+    );
+    runtime.enqueue(proposeResult());
+
+    const result = await engine.start(issue);
+
+    const title = result.pullRequest?.title ?? '';
+    expect(title.startsWith('feat: ')).toBe(true);
+    expect(title.endsWith('…')).toBe(true);
+    expect(title.length).toBeLessThan(72);
   });
 
   it('references only the started issue, once, in the created pull request body', async () => {
@@ -964,5 +1005,256 @@ describe('WorkflowEngine lifecycle metrics', () => {
     expect(comment).toContain('**Usage (last turn):**');
     expect(comment).toContain('model unknown');
     expect(comment).toContain('tokens unknown');
+  });
+});
+
+/** A fake sandbox whose `commitSubjects()` always fails, as a broken git read would. */
+class CommitSubjectsFailingSandbox extends FakeSandbox {
+  override async create(input: { branch: string }) {
+    const handle = await super.create(input);
+    return {
+      ...handle,
+      commitSubjects: async (): Promise<string[]> => {
+        throw new Error('git log failed');
+      },
+    };
+  }
+}
+
+describe('WorkflowEngine title reconciliation', () => {
+  async function startedReady(
+    title: string,
+    labels: string[] = ['openspec'],
+    provider?: FakeProvider,
+    sandbox?: FakeSandbox,
+  ): Promise<{ h: Harness; number: number }> {
+    const h = harness({
+      ready: true,
+      ...(provider === undefined ? {} : { provider }),
+      ...(sandbox === undefined ? {} : { sandbox }),
+    });
+    const issue = await seedIssue(h.provider, 1, labels, title);
+    h.runtime.enqueue(proposeResult());
+    const started = await h.engine.start(issue);
+    return { h, number: started.pullRequest?.ref.number ?? -1 };
+  }
+
+  /** Approve and run an apply turn whose committed subjects are `subjects`. */
+  async function applyOutcome(h: Harness, number: number, subjects: string[]): Promise<string> {
+    h.provider.seedReview(number, { state: 'approved', body: 'lgtm' });
+    h.sandbox.commitSubjectsResults = [subjects];
+    h.runtime.enqueue(applyResult());
+    await h.engine.drive((await h.provider.getPullRequest({ repo: h.provider.repo, number }))!);
+    return (await h.provider.getPullRequest({ repo: h.provider.repo, number }))?.title ?? '';
+  }
+
+  it('changes the type from the applied outcome and keeps the summary', async () => {
+    const { h, number } = await startedReady('Add a thing');
+
+    const title = await applyOutcome(h, number, ['fix: correct the crash']);
+
+    expect(title).toBe('fix: Add a thing');
+    expect(h.provider.pullRequestUpdates).toHaveLength(1);
+    expect(h.provider.pullRequestUpdates[0]?.input.title).toBe('fix: Add a thing');
+  });
+
+  it('adds an applied scope to a deduced title that carries none', async () => {
+    const { h, number } = await startedReady('Add a thing');
+
+    expect(await applyOutcome(h, number, ['feat(api): add pagination'])).toBe(
+      'feat(api): Add a thing',
+    );
+  });
+
+  it('replaces a deduced scope with the applied one', async () => {
+    const { h, number } = await startedReady('feat(web): add pagination');
+
+    expect(await applyOutcome(h, number, ['feat(api): add pagination'])).toBe(
+      'feat(api): add pagination',
+    );
+  });
+
+  it('re-shortens the kept summary within the limit without stacking ellipses', async () => {
+    const { h, number } = await startedReady(
+      'Allow to extract default values from the configuration to avoid repeating information',
+    );
+
+    const title = await applyOutcome(h, number, ['refactor(rollout): rework the reader']);
+
+    expect(title).toBe('refactor(rollout): Allow to extract default values from the…');
+    expect(title.length).toBeLessThan(72);
+    expect(title.split('…').length - 1).toBe(1);
+  });
+
+  it('leaves a deduced title scope-less when the outcome carries no scope', async () => {
+    const { h, number } = await startedReady('add pagination');
+
+    expect(await applyOutcome(h, number, ['fix: correct it'])).toBe('fix: add pagination');
+  });
+
+  it('keeps a scope deduced from a conventional issue title when the outcome carries none', async () => {
+    const { h, number } = await startedReady('feat(web): add pagination');
+
+    expect(await applyOutcome(h, number, ['fix: correct it'])).toBe('fix(web): add pagination');
+  });
+
+  it('keeps the deduced scope when the applied subjects disagree on one', async () => {
+    const { h, number } = await startedReady('add pagination');
+
+    expect(
+      await applyOutcome(h, number, ['feat(api): add pagination', 'feat(web): cover it']),
+    ).toBe('feat: add pagination');
+    expect(h.provider.pullRequestUpdates).toHaveLength(0);
+  });
+
+  it('leaves the deduced title unchanged when the outcome does not agree on a type', async () => {
+    const { h, number } = await startedReady('Add a thing');
+
+    expect(await applyOutcome(h, number, ['feat: a', 'fix: b'])).toBe('feat: Add a thing');
+    expect(h.provider.pullRequestUpdates).toHaveLength(0);
+  });
+
+  it('ignores a prefix whose type is not a project type', async () => {
+    const { h, number } = await startedReady('Add a thing');
+
+    expect(await applyOutcome(h, number, ['widget: do a thing'])).toBe('feat: Add a thing');
+    expect(h.provider.pullRequestUpdates).toHaveLength(0);
+  });
+
+  it("reconciles from the apply turn's own range, so propose commits do not decide it", async () => {
+    const h = harness({ ready: true });
+    const issue = await seedIssue(h.provider, 1, ['openspec'], 'Add a thing');
+    h.sandbox.headResults = ['propose-before', 'propose-after'];
+    h.runtime.enqueue(proposeResult());
+    const started = await h.engine.start(issue);
+    const number = started.pullRequest?.ref.number ?? -1;
+
+    // The apply turn's tip is what the range is read from.
+    h.sandbox.headResults = ['apply-tip'];
+    const title = await applyOutcome(h, number, ['fix: correct it']);
+
+    expect(h.sandbox.commitSubjectRanges).toEqual(['apply-tip']);
+    expect(title).toBe('fix: Add a thing');
+  });
+
+  it('ignores an openspec-scoped bookkeeping commit alongside the implementation', async () => {
+    const { h, number } = await startedReady('Add a thing');
+
+    expect(
+      await applyOutcome(h, number, [
+        'chore(openspec): archive the change',
+        'feat(api): add pagination',
+      ]),
+    ).toBe('feat(api): Add a thing');
+  });
+
+  it('does not fail the workflow when the title update fails', async () => {
+    class TitleUpdateFailingProvider extends FakeProvider {
+      override async updatePullRequest(): Promise<void> {
+        throw new Error('title update rejected');
+      }
+    }
+    const { h, number } = await startedReady(
+      'Add a thing',
+      ['openspec'],
+      new TitleUpdateFailingProvider(),
+    );
+
+    const title = await applyOutcome(h, number, ['fix: correct it']);
+
+    expect(title).toBe('feat: Add a thing');
+    expect(await labelsOf(h.provider, number)).toContain(DEFAULT_LABELS.implementing);
+    expect(await labelsOf(h.provider, number)).not.toContain(DEFAULT_LABELS.failed);
+    expect(h.provider.commentLog.some((c) => c.body.includes('title update rejected'))).toBe(true);
+  });
+
+  it('does not fail the workflow when reading the outcome fails', async () => {
+    const { h, number } = await startedReady(
+      'Add a thing',
+      ['openspec'],
+      undefined,
+      new CommitSubjectsFailingSandbox(),
+    );
+
+    expect(await applyOutcome(h, number, ['fix: correct it'])).toBe('feat: Add a thing');
+    expect(await labelsOf(h.provider, number)).toContain(DEFAULT_LABELS.implementing);
+    expect(await labelsOf(h.provider, number)).not.toContain(DEFAULT_LABELS.failed);
+  });
+});
+
+/** A provider whose configured bot is a normal account the host does not flag. */
+function nonFlaggedBotProvider(): FakeProvider {
+  return new FakeProvider({ bot: { login: 'wuan-bot', isBot: false } });
+}
+
+describe('WorkflowEngine answered review feedback', () => {
+  async function startedWith(h: Harness): Promise<number> {
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    const started = await h.engine.start(issue);
+    return started.pullRequest?.ref.number ?? -1;
+  }
+
+  async function current(h: Harness, number: number): Promise<ProviderPullRequest> {
+    const pr = await h.provider.getPullRequest({ repo: h.provider.repo, number });
+    if (pr === null) throw new Error('pull request not found');
+    return pr;
+  }
+
+  it('does not re-answer feedback when the configured bot is not host-flagged', async () => {
+    const h = harness({ provider: nonFlaggedBotProvider() });
+    const number = await startedWith(h);
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'fix X' });
+    h.runtime.enqueue(proposeResult({ summary: 'revised' }));
+    const first = await h.engine.drive(await current(h, number));
+    expect(first.kind).toBe('revise');
+
+    const second = await h.engine.drive(await current(h, number));
+    expect(second.kind).toBe('idle');
+    expect(h.runtime.requests.filter((r) => r.context.skill === 'propose')).toHaveLength(2);
+  });
+
+  it('leaves an answered review idle and acts on a newer one', async () => {
+    const h = harness();
+    const number = await startedWith(h);
+    const target = { kind: 'pull_request' as const, ref: { repo: h.provider.repo, number } };
+
+    // The orchestrator's turn comment is the watermark that marks the newest
+    // review answered once it is not newer than that comment.
+    const comments = await h.provider.listComments(target);
+    const watermark = comments.reduce(
+      (latest, comment) => (comment.at > latest ? comment.at : latest),
+      '',
+    );
+    h.provider.seedReview(number, {
+      state: 'changes_requested',
+      body: 'already answered',
+      at: watermark,
+    });
+
+    const answered = await h.engine.drive(await current(h, number));
+    expect(answered.kind).toBe('idle');
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'new feedback' });
+    h.runtime.enqueue(proposeResult({ summary: 'revised' }));
+    const acted = await h.engine.drive(await current(h, number));
+    expect(acted.kind).toBe('revise');
+    expect(h.runtime.requests.filter((r) => r.context.skill === 'propose')).toHaveLength(2);
+  });
+
+  it("counts a non-host-flagged bot's turns toward the revise limit", async () => {
+    const h = harness({ provider: nonFlaggedBotProvider(), maxReviseRounds: 1 });
+    const number = await startedWith(h);
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'first' });
+    h.runtime.enqueue(proposeResult({ summary: 'revised once' }));
+    const first = await h.engine.drive(await current(h, number));
+    expect(first.kind).toBe('revise');
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'second' });
+    const second = await h.engine.drive(await current(h, number));
+    expect(second.kind).toBe('fail');
+    expect(await labelsOf(h.provider, number)).toContain(DEFAULT_LABELS.failed);
   });
 });

@@ -7,16 +7,25 @@ export function isBotActor(actor: Actor): boolean {
 }
 
 /**
- * The newest review authored by a human. Bot reviews, and reviews by a known
- * bot login, are excluded.
+ * Whether an actor is the orchestrator itself: flagged as a bot by the host
+ * (`isBot` or the `[bot]` login suffix) or matching the configured bot login.
+ * The configured login is what identifies a normal user account the host does
+ * not flag, so the orchestrator's own activity is recognised on either signal.
+ */
+export function isOrchestratorActor(actor: Actor, botLogin?: string): boolean {
+  return isBotActor(actor) || (botLogin !== undefined && actor.login === botLogin);
+}
+
+/**
+ * The newest review authored by a human. The orchestrator's own reviews -
+ * flagged as a bot by the host or matching the configured bot login - are
+ * excluded.
  */
 export function latestHumanReview(
   reviews: ProviderReview[],
   botLogin?: string,
 ): ProviderReview | null {
-  const humans = reviews.filter(
-    (review) => !isBotActor(review.author) && review.author.login !== botLogin,
-  );
+  const humans = reviews.filter((review) => !isOrchestratorActor(review.author, botLogin));
   if (humans.length === 0) return null;
   return humans.reduce((latest, review) =>
     Date.parse(review.at) >= Date.parse(latest.at) ? review : latest,
