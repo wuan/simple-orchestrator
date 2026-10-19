@@ -234,6 +234,27 @@ describe('WorkflowEngine.start', () => {
     expect(runtime.requests).toHaveLength(1);
   });
 
+  it('cancels instead of starting when a closed pull request is still in flight', async () => {
+    const { provider, runtime, engine } = harness();
+    const issue = await seedIssue(provider);
+    provider.seedPullRequest({
+      number: 50,
+      branch: 'openspec/issue-1',
+      linkedIssue: 1,
+      state: 'closed',
+      labels: [DEFAULT_LABELS.ready],
+    });
+
+    const result = await engine.start(issue);
+
+    expect(result.started).toBe(false);
+    expect(result.cancelled?.ref.number).toBe(50);
+    expect(await labelsOf(provider, 50)).toEqual([]);
+    expect((await provider.getIssue(issue.ref))?.labels).not.toContain('openspec');
+    expect(await provider.listPullRequestsForIssue(issue.ref)).toHaveLength(1);
+    expect(runtime.requests).toHaveLength(0);
+  });
+
   it('sets READY from the predicate even when the agent does not claim readiness', async () => {
     const { provider, runtime, engine } = harness({ ready: true });
     const issue = await seedIssue(provider);
@@ -358,6 +379,33 @@ describe('WorkflowEngine.drive', () => {
     h.provider.seedReview(pullRequestNumber, { state: 'approved', body: 'lgtm' });
     h.runtime.enqueue(applyResult());
     expect((await h.engine.drive(await current())).kind).toBe('apply');
+  });
+
+  it('removes the trigger label when the pull request is closed without merge', async () => {
+    const { harness: h, issue, pullRequestNumber } = await started();
+    h.provider.setPullRequestState(pullRequestNumber, 'closed');
+
+    const action = await h.engine.drive(
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number: pullRequestNumber }))!,
+    );
+
+    expect(action.kind).toBe('cancel');
+    expect(await labelsOf(h.provider, pullRequestNumber)).toEqual([]);
+    expect((await h.provider.getIssue(issue.ref))?.labels).not.toContain('openspec');
+  });
+
+  it('keeps the issue labels when the trigger label was removed', async () => {
+    const { harness: h, issue, pullRequestNumber } = await started();
+    await h.provider.removeLabel({ kind: 'issue', ref: issue.ref }, 'openspec');
+
+    const action = await h.engine.drive(
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number: pullRequestNumber }))!,
+    );
+
+    expect(action.kind).toBe('cancel');
+    const comment = h.provider.commentLog.at(-1)?.body ?? '';
+    expect(comment).toContain('Workflow cancelled: trigger label removed from the issue.');
+    expect(comment).not.toContain('add it again');
   });
 
   it('finishes a merged pull request', async () => {

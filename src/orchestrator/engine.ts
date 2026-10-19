@@ -62,6 +62,11 @@ export interface StartResult {
    * prevented the start. The host may not have closed the issue yet.
    */
   resolvedBy?: ProviderPullRequest;
+  /**
+   * A pull request closed without merge whose workflow was still in flight,
+   * set when its cancellation prevented the start.
+   */
+  cancelled?: ProviderPullRequest;
 }
 
 /** A limit or permission failure is permanent; anything else is retried once. */
@@ -240,6 +245,21 @@ export class WorkflowEngine {
     const merged = existing.find((pullRequest) => pullRequest.state === 'merged');
     if (merged !== undefined) return { started: false, resolvedBy: merged };
 
+    // A pull request closed without merge that still carries a phase label is
+    // a cancellation not processed yet. Polls see issues before they drive pull
+    // requests, so cancel it here rather than replace the pull request a human
+    // just closed; the cancellation removes the trigger label.
+    const abandoned = existing.find((pullRequest) => {
+      const phase = phaseFromLabels(this.labels, pullRequest.labels);
+      return pullRequest.state === 'closed' && phase !== null && phase !== 'done';
+    });
+    if (abandoned !== undefined) {
+      const reviews = await this.provider.listReviews(abandoned.ref);
+      const comments = await this.provider.listComments(this.target(abandoned));
+      await this.cancel(abandoned, issue, 'pull request closed without merge', reviews, comments);
+      return { started: false, cancelled: abandoned };
+    }
+
     const pullRequest = await this.provider.createDraftPullRequest({
       issue: issue.ref,
       baseBranch: this.baseBranch,
@@ -340,13 +360,14 @@ export class WorkflowEngine {
     const reason = 'reason' in action ? ` (${action.reason})` : '';
     this.logger(`PR #${pullRequest.ref.number}: decision ${action.kind}${reason}`);
 
-    await this.perform(action, pullRequest, reviews, comments);
+    await this.perform(action, pullRequest, issue, reviews, comments);
     return action;
   }
 
   private async perform(
     action: WorkflowAction,
     pullRequest: ProviderPullRequest,
+    issue: ProviderIssue | null,
     reviews: ProviderReview[],
     comments: ProviderComment[],
   ): Promise<void> {
@@ -374,12 +395,7 @@ export class WorkflowEngine {
         await this.signalFailure(pullRequest, new Error(action.reason), { comments, reviews });
         return;
       case 'cancel':
-        await this.clearPhase(pullRequest);
-        await this.comment(
-          pullRequest,
-          withLastTurnMetrics(`Workflow cancelled: ${action.reason}.`, latestUsage(comments)),
-          reviews,
-        );
+        await this.cancel(pullRequest, issue, action.reason, reviews, comments);
         return;
     }
   }
@@ -599,6 +615,33 @@ export class WorkflowEngine {
       this.target(pullRequest),
       `${body}\n${answeredMarker(read?.at ?? null)}`,
     );
+  }
+
+  /**
+   * Cancel a workflow: clear its phase labels and say why. Closing the pull
+   * request without merge also removes the issue's trigger label, so the next
+   * poll does not start a replacement; a human adds the label to start over.
+   */
+  private async cancel(
+    pullRequest: ProviderPullRequest,
+    issue: ProviderIssue | null,
+    reason: string,
+    reviews: ProviderReview[],
+    comments: ProviderComment[],
+  ): Promise<void> {
+    await this.clearPhase(pullRequest);
+    let body = `Workflow cancelled: ${reason}.`;
+    if (
+      pullRequest.state === 'closed' &&
+      issue !== null &&
+      issue.labels.includes(this.labels.trigger)
+    ) {
+      await this.provider.removeLabel({ kind: 'issue', ref: issue.ref }, this.labels.trigger);
+      body +=
+        ` Removed the \`${this.labels.trigger}\` label from #${issue.ref.number};` +
+        ' add it again to start over.';
+    }
+    await this.comment(pullRequest, withLastTurnMetrics(body, latestUsage(comments)), reviews);
   }
 
   private async setPhase(pullRequest: ProviderPullRequest, phase: WorkflowPhase): Promise<void> {
