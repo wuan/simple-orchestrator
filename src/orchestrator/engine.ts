@@ -144,6 +144,24 @@ function withMeasuredUsage(reported: TurnUsage, startedAt: number, attempts: num
  * configured bot login. This is the durable record that the newest feedback was
  * answered.
  */
+/** The heading that opens every turn comment, which identifies the turn's skill. */
+function turnHeading(skill: TurnSkill): string {
+  return `**OpenSpec ${skill} turn**`;
+}
+
+/**
+ * The propose turns the orchestrator has posted, recognised by their comment
+ * heading. Readiness prompts, failure and lifecycle notices, and apply turns
+ * are not propose turns, so they do not use up the revise limit.
+ */
+function ownProposeTurns(comments: ProviderComment[], botLogin?: string): number {
+  return comments.filter(
+    (comment) =>
+      isOrchestratorActor(comment.author, botLogin) &&
+      comment.body.startsWith(turnHeading('propose')),
+  ).length;
+}
+
 function lastOwnCommentAt(comments: ProviderComment[], botLogin?: string): string | null {
   const ownComments = comments.filter((comment) => isOrchestratorActor(comment.author, botLogin));
   if (ownComments.length === 0) return null;
@@ -310,16 +328,13 @@ export class WorkflowEngine {
             pullRequest: pullRequest.ref,
           });
 
-    const ownTurns = comments.filter((comment) =>
-      isOrchestratorActor(comment.author, botLogin),
-    ).length;
     const action = decide({
       triggerLabelPresent: issue !== null && issue.labels.includes(this.labels.trigger),
       pullRequestState: pullRequest.state,
       phase: phaseFromLabels(this.labels, pullRequest.labels) ?? 'proposing',
       latestHumanReview: latestHumanReviewEvent,
       lastTurnAt: lastOwnCommentAt(comments, botLogin),
-      reviseRounds: Math.max(0, ownTurns - 1),
+      reviseRounds: Math.max(0, ownProposeTurns(comments, botLogin) - 1),
       maxReviseRounds: this.maxReviseRounds,
     });
 
@@ -552,7 +567,7 @@ export class WorkflowEngine {
     usage: TurnUsage,
   ): Promise<void> {
     const lines = [
-      `**OpenSpec ${result.skill} turn**`,
+      turnHeading(result.skill),
       '',
       result.summary === '' ? '(no summary)' : result.summary,
     ];

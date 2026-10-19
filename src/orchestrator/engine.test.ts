@@ -1293,4 +1293,36 @@ describe('WorkflowEngine answered review feedback', () => {
     expect(second.kind).toBe('fail');
     expect(await labelsOf(h.provider, number)).toContain(DEFAULT_LABELS.failed);
   });
+
+  it('gives a change that is ready on every turn the full revise budget', async () => {
+    // Every propose turn that reaches READY also posts a readiness prompt;
+    // only the turn itself counts toward the limit.
+    const h = harness({ ready: true, maxReviseRounds: 2 });
+    const number = await startedWith(h);
+
+    for (const body of ['first', 'second']) {
+      h.provider.seedReview(number, { state: 'changes_requested', body });
+      h.runtime.enqueue(proposeResult({ summary: `revised after ${body}` }));
+      const action = await h.engine.drive(await current(h, number));
+      expect(action.kind).toBe('revise');
+      expect(await labelsOf(h.provider, number)).toContain(DEFAULT_LABELS.ready);
+    }
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'third' });
+    const limited = await h.engine.drive(await current(h, number));
+    expect(limited.kind).toBe('fail');
+    expect(h.runtime.requests.filter((r) => r.context.skill === 'propose')).toHaveLength(3);
+  });
+
+  it('does not count notices that are not propose turns toward the revise limit', async () => {
+    const h = harness({ maxReviseRounds: 1 });
+    const number = await startedWith(h);
+    const target = { kind: 'pull_request' as const, ref: { repo: h.provider.repo, number } };
+    await h.provider.comment(target, 'Could not update the pull request title: boom');
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'fix X' });
+    h.runtime.enqueue(proposeResult({ summary: 'revised' }));
+    const action = await h.engine.drive(await current(h, number));
+    expect(action.kind).toBe('revise');
+  });
 });
