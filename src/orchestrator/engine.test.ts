@@ -198,6 +198,42 @@ describe('WorkflowEngine.start', () => {
     expect(runtime.requests).toHaveLength(1);
   });
 
+  it('does not start a workflow resolved by a merged pull request', async () => {
+    const { provider, runtime, engine } = harness();
+    const issue = await seedIssue(provider);
+    provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      linkedIssue: 1,
+      state: 'merged',
+    });
+
+    const result = await engine.start(issue);
+
+    expect(result.started).toBe(false);
+    expect(result.resolvedBy?.ref.number).toBe(100);
+    expect(await provider.listPullRequestsForIssue(issue.ref)).toHaveLength(1);
+    expect(runtime.requests).toHaveLength(0);
+  });
+
+  it('starts a workflow when the only pull request was closed without merge', async () => {
+    const { provider, runtime, engine } = harness();
+    const issue = await seedIssue(provider);
+    provider.seedPullRequest({
+      number: 50,
+      branch: 'openspec/issue-1',
+      linkedIssue: 1,
+      state: 'closed',
+    });
+    runtime.enqueue(proposeResult());
+
+    const result = await engine.start(issue);
+
+    expect(result.started).toBe(true);
+    expect(await provider.listPullRequestsForIssue(issue.ref)).toHaveLength(2);
+    expect(runtime.requests).toHaveLength(1);
+  });
+
   it('sets READY from the predicate even when the agent does not claim readiness', async () => {
     const { provider, runtime, engine } = harness({ ready: true });
     const issue = await seedIssue(provider);

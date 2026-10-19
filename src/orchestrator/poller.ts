@@ -49,6 +49,12 @@ export class Poller {
           log(
             `${repoId}: started workflow for issue #${issue.ref.number} (PR #${result.pullRequest?.ref.number ?? '?'})`,
           );
+        } else if (result.resolvedBy !== undefined) {
+          // The issue's change was already merged; the host has just not closed
+          // the issue yet. Report it so verbose diagnostics explain the skip.
+          log(
+            `${repoId}: issue #${issue.ref.number} was resolved by merged pull request #${result.resolvedBy.ref.number}; not starting a workflow`,
+          );
         }
         continue;
       }

@@ -56,6 +56,11 @@ export interface WorkflowEngineOptions {
 export interface StartResult {
   started: boolean;
   pullRequest?: ProviderPullRequest;
+  /**
+   * The merged pull request that already resolved the issue, set when it
+   * prevented the start. The host may not have closed the issue yet.
+   */
+  resolvedBy?: ProviderPullRequest;
 }
 
 /** A limit or permission failure is permanent; anything else is retried once. */
@@ -210,6 +215,13 @@ export class WorkflowEngine {
     const existing = await this.provider.listPullRequestsForIssue(issue.ref);
     const active = existing.find((pullRequest) => pullRequest.state === 'open');
     if (active !== undefined) return { started: false, pullRequest: active };
+
+    // A merged pull request already implemented this issue's change. The host
+    // may not have closed the issue yet, but starting again would duplicate the
+    // merged change, so report it and do nothing. A pull request closed without
+    // merge is an inactive attempt and does not resolve the issue.
+    const merged = existing.find((pullRequest) => pullRequest.state === 'merged');
+    if (merged !== undefined) return { started: false, resolvedBy: merged };
 
     const pullRequest = await this.provider.createDraftPullRequest({
       issue: issue.ref,
