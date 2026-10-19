@@ -49,6 +49,12 @@ export class Poller {
           log(
             `${repoId}: started workflow for issue #${issue.ref.number} (PR #${result.pullRequest?.ref.number ?? '?'})`,
           );
+        } else if (result.cancelled !== undefined) {
+          // The issue's pull request was closed without merge; the cancellation
+          // removed the trigger label instead of starting a replacement.
+          log(
+            `${repoId}: issue #${issue.ref.number}: pull request #${result.cancelled.ref.number} was closed without merge; cancelled the workflow`,
+          );
         } else if (result.resolvedBy !== undefined) {
           // The issue's change was already merged; the host has just not closed
           // the issue yet. Report it so verbose diagnostics explain the skip.

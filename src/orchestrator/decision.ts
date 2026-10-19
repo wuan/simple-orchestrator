@@ -46,18 +46,22 @@ export function decide(input: DecisionInput): WorkflowAction {
   const fresh = review !== null && isNewer(review.at, input.lastTurnAt);
 
   if (review !== null && review.kind === 'approval') {
-    if (input.phase === 'ready') return { kind: 'apply', trigger: review };
-    if (fresh) {
-      if (input.reviseRounds >= input.maxReviseRounds) {
-        return { kind: 'fail', reason: 'revise limit reached before the change was ready' };
-      }
-      return {
-        kind: 'revise',
-        trigger: review,
-        reason: 'approval arrived before the change was ready',
-      };
+    // An answered approval never opens the gate: one given before the change
+    // was ready approved a different proposal than the one that is now READY.
+    if (!fresh) {
+      return input.phase === 'ready'
+        ? { kind: 'idle', reason: 'approval predates the ready change; awaiting a new approval' }
+        : { kind: 'idle', reason: 'approved but not ready' };
     }
-    return { kind: 'idle', reason: 'approved but not ready' };
+    if (input.phase === 'ready') return { kind: 'apply', trigger: review };
+    if (input.reviseRounds >= input.maxReviseRounds) {
+      return { kind: 'fail', reason: 'revise limit reached before the change was ready' };
+    }
+    return {
+      kind: 'revise',
+      trigger: review,
+      reason: 'approval arrived before the change was ready',
+    };
   }
 
   if (review !== null && fresh && triggersTurn(review)) {

@@ -234,6 +234,27 @@ describe('WorkflowEngine.start', () => {
     expect(runtime.requests).toHaveLength(1);
   });
 
+  it('cancels instead of starting when a closed pull request is still in flight', async () => {
+    const { provider, runtime, engine } = harness();
+    const issue = await seedIssue(provider);
+    provider.seedPullRequest({
+      number: 50,
+      branch: 'openspec/issue-1',
+      linkedIssue: 1,
+      state: 'closed',
+      labels: [DEFAULT_LABELS.ready],
+    });
+
+    const result = await engine.start(issue);
+
+    expect(result.started).toBe(false);
+    expect(result.cancelled?.ref.number).toBe(50);
+    expect(await labelsOf(provider, 50)).toEqual([]);
+    expect((await provider.getIssue(issue.ref))?.labels).not.toContain('openspec');
+    expect(await provider.listPullRequestsForIssue(issue.ref)).toHaveLength(1);
+    expect(runtime.requests).toHaveLength(0);
+  });
+
   it('sets READY from the predicate even when the agent does not claim readiness', async () => {
     const { provider, runtime, engine } = harness({ ready: true });
     const issue = await seedIssue(provider);
@@ -337,6 +358,54 @@ describe('WorkflowEngine.drive', () => {
       (await h.provider.getPullRequest({ repo: h.provider.repo, number: pullRequestNumber }))!,
     );
     expect(action.kind).toBe('revise');
+  });
+
+  it('requires a new approval when an early approval made the change ready', async () => {
+    const { harness: h, pullRequestNumber } = await started({ ready: false });
+    const current = async (): Promise<ProviderPullRequest> =>
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number: pullRequestNumber }))!;
+
+    // Approved while still proposing: answered by a propose turn that makes it ready.
+    h.provider.seedReview(pullRequestNumber, { state: 'approved', body: 'early' });
+    h.openspec.markReady('add-x');
+    h.runtime.enqueue(proposeResult());
+    expect((await h.engine.drive(await current())).kind).toBe('revise');
+    expect(await labelsOf(h.provider, pullRequestNumber)).toContain(DEFAULT_LABELS.ready);
+
+    // The early approval does not carry over to the ready change.
+    expect((await h.engine.drive(await current())).kind).toBe('idle');
+    expect(h.runtime.requests.filter((r) => r.context.skill === 'apply')).toHaveLength(0);
+
+    h.provider.seedReview(pullRequestNumber, { state: 'approved', body: 'lgtm' });
+    h.runtime.enqueue(applyResult());
+    expect((await h.engine.drive(await current())).kind).toBe('apply');
+  });
+
+  it('removes the trigger label when the pull request is closed without merge', async () => {
+    const { harness: h, issue, pullRequestNumber } = await started();
+    h.provider.setPullRequestState(pullRequestNumber, 'closed');
+
+    const action = await h.engine.drive(
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number: pullRequestNumber }))!,
+    );
+
+    expect(action.kind).toBe('cancel');
+    expect(await labelsOf(h.provider, pullRequestNumber)).toEqual([]);
+    expect((await h.provider.getIssue(issue.ref))?.labels).not.toContain('openspec');
+  });
+
+  it('keeps the issue labels when the trigger label was removed', async () => {
+    const { harness: h, issue, pullRequestNumber } = await started();
+    await h.provider.removeLabel({ kind: 'issue', ref: issue.ref }, 'openspec');
+
+    const action = await h.engine.drive(
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number: pullRequestNumber }))!,
+    );
+
+    expect(action.kind).toBe('cancel');
+    const comment = h.provider.commentLog.at(-1)?.body ?? '';
+    expect(comment).toContain('Workflow cancelled: trigger label removed from the issue.');
+    expect(comment).not.toContain('add it again');
   });
 
   it('finishes a merged pull request', async () => {
@@ -1254,29 +1323,66 @@ describe('WorkflowEngine answered review feedback', () => {
   it('leaves an answered review idle and acts on a newer one', async () => {
     const h = harness();
     const number = await startedWith(h);
-    const target = { kind: 'pull_request' as const, ref: { repo: h.provider.repo, number } };
 
-    // The orchestrator's turn comment is the watermark that marks the newest
-    // review answered once it is not newer than that comment.
-    const comments = await h.provider.listComments(target);
-    const watermark = comments.reduce(
-      (latest, comment) => (comment.at > latest ? comment.at : latest),
-      '',
-    );
-    h.provider.seedReview(number, {
-      state: 'changes_requested',
-      body: 'already answered',
-      at: watermark,
-    });
+    // The revise turn reads the review, and its comment records that review as
+    // answered, so the next poll leaves it alone.
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'first' });
+    h.runtime.enqueue(proposeResult({ summary: 'revised' }));
+    expect((await h.engine.drive(await current(h, number))).kind).toBe('revise');
 
     const answered = await h.engine.drive(await current(h, number));
     expect(answered.kind).toBe('idle');
 
     h.provider.seedReview(number, { state: 'changes_requested', body: 'new feedback' });
-    h.runtime.enqueue(proposeResult({ summary: 'revised' }));
+    h.runtime.enqueue(proposeResult({ summary: 'revised again' }));
     const acted = await h.engine.drive(await current(h, number));
     expect(acted.kind).toBe('revise');
-    expect(h.runtime.requests.filter((r) => r.context.skill === 'propose')).toHaveLength(2);
+    expect(h.runtime.requests.filter((r) => r.context.skill === 'propose')).toHaveLength(3);
+  });
+
+  it('answers a review submitted while a turn is running on the next poll', async () => {
+    const provider = new FakeProvider();
+    let number = -1;
+    let turns = 0;
+    // The second turn (the revise) sees a review submitted while it runs: after
+    // the engine read the reviews and before the turn's comment is posted.
+    const runtime = new FakeRuntime(() => {
+      turns += 1;
+      if (turns === 2) provider.seedReview(number, { state: 'changes_requested', body: 'late' });
+      return proposeResult({ summary: `turn ${turns}` });
+    });
+    const h = harness({ provider, runtime });
+    number = await startedWith(h);
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'first' });
+    expect((await h.engine.drive(await current(h, number))).kind).toBe('revise');
+
+    // The late review is older than the revise turn's comment but was never read.
+    const late = await h.engine.drive(await current(h, number));
+    expect(late.kind).toBe('revise');
+    expect(late.kind === 'revise' ? late.trigger.body : undefined).toBe('late');
+
+    expect((await h.engine.drive(await current(h, number))).kind).toBe('idle');
+    expect(turns).toBe(3);
+  });
+
+  it('keeps the watermark of comments posted before the answered marker', async () => {
+    const h = harness();
+    await seedIssue(h.provider, 1);
+    h.provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      labels: [DEFAULT_LABELS.proposing],
+    });
+    const target = { kind: 'pull_request' as const, ref: { repo: h.provider.repo, number: 100 } };
+    h.provider.seedReview(100, { state: 'changes_requested', body: 'answered before markers' });
+    // A turn comment from before the marker existed: it dates by its own time.
+    h.provider.seedComment(target, {
+      author: { login: 'openspec-bot', isBot: true },
+      body: '**OpenSpec propose turn**',
+    });
+
+    expect((await h.engine.drive(await current(h, 100))).kind).toBe('idle');
   });
 
   it("counts a non-host-flagged bot's turns toward the revise limit", async () => {
@@ -1292,5 +1398,37 @@ describe('WorkflowEngine answered review feedback', () => {
     const second = await h.engine.drive(await current(h, number));
     expect(second.kind).toBe('fail');
     expect(await labelsOf(h.provider, number)).toContain(DEFAULT_LABELS.failed);
+  });
+
+  it('gives a change that is ready on every turn the full revise budget', async () => {
+    // Every propose turn that reaches READY also posts a readiness prompt;
+    // only the turn itself counts toward the limit.
+    const h = harness({ ready: true, maxReviseRounds: 2 });
+    const number = await startedWith(h);
+
+    for (const body of ['first', 'second']) {
+      h.provider.seedReview(number, { state: 'changes_requested', body });
+      h.runtime.enqueue(proposeResult({ summary: `revised after ${body}` }));
+      const action = await h.engine.drive(await current(h, number));
+      expect(action.kind).toBe('revise');
+      expect(await labelsOf(h.provider, number)).toContain(DEFAULT_LABELS.ready);
+    }
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'third' });
+    const limited = await h.engine.drive(await current(h, number));
+    expect(limited.kind).toBe('fail');
+    expect(h.runtime.requests.filter((r) => r.context.skill === 'propose')).toHaveLength(3);
+  });
+
+  it('does not count notices that are not propose turns toward the revise limit', async () => {
+    const h = harness({ maxReviseRounds: 1 });
+    const number = await startedWith(h);
+    const target = { kind: 'pull_request' as const, ref: { repo: h.provider.repo, number } };
+    await h.provider.comment(target, 'Could not update the pull request title: boom');
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'fix X' });
+    h.runtime.enqueue(proposeResult({ summary: 'revised' }));
+    const action = await h.engine.drive(await current(h, number));
+    expect(action.kind).toBe('revise');
   });
 });
