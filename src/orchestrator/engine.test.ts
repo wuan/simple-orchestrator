@@ -1254,29 +1254,66 @@ describe('WorkflowEngine answered review feedback', () => {
   it('leaves an answered review idle and acts on a newer one', async () => {
     const h = harness();
     const number = await startedWith(h);
-    const target = { kind: 'pull_request' as const, ref: { repo: h.provider.repo, number } };
 
-    // The orchestrator's turn comment is the watermark that marks the newest
-    // review answered once it is not newer than that comment.
-    const comments = await h.provider.listComments(target);
-    const watermark = comments.reduce(
-      (latest, comment) => (comment.at > latest ? comment.at : latest),
-      '',
-    );
-    h.provider.seedReview(number, {
-      state: 'changes_requested',
-      body: 'already answered',
-      at: watermark,
-    });
+    // The revise turn reads the review, and its comment records that review as
+    // answered, so the next poll leaves it alone.
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'first' });
+    h.runtime.enqueue(proposeResult({ summary: 'revised' }));
+    expect((await h.engine.drive(await current(h, number))).kind).toBe('revise');
 
     const answered = await h.engine.drive(await current(h, number));
     expect(answered.kind).toBe('idle');
 
     h.provider.seedReview(number, { state: 'changes_requested', body: 'new feedback' });
-    h.runtime.enqueue(proposeResult({ summary: 'revised' }));
+    h.runtime.enqueue(proposeResult({ summary: 'revised again' }));
     const acted = await h.engine.drive(await current(h, number));
     expect(acted.kind).toBe('revise');
-    expect(h.runtime.requests.filter((r) => r.context.skill === 'propose')).toHaveLength(2);
+    expect(h.runtime.requests.filter((r) => r.context.skill === 'propose')).toHaveLength(3);
+  });
+
+  it('answers a review submitted while a turn is running on the next poll', async () => {
+    const provider = new FakeProvider();
+    let number = -1;
+    let turns = 0;
+    // The second turn (the revise) sees a review submitted while it runs: after
+    // the engine read the reviews and before the turn's comment is posted.
+    const runtime = new FakeRuntime(() => {
+      turns += 1;
+      if (turns === 2) provider.seedReview(number, { state: 'changes_requested', body: 'late' });
+      return proposeResult({ summary: `turn ${turns}` });
+    });
+    const h = harness({ provider, runtime });
+    number = await startedWith(h);
+
+    h.provider.seedReview(number, { state: 'changes_requested', body: 'first' });
+    expect((await h.engine.drive(await current(h, number))).kind).toBe('revise');
+
+    // The late review is older than the revise turn's comment but was never read.
+    const late = await h.engine.drive(await current(h, number));
+    expect(late.kind).toBe('revise');
+    expect(late.kind === 'revise' ? late.trigger.body : undefined).toBe('late');
+
+    expect((await h.engine.drive(await current(h, number))).kind).toBe('idle');
+    expect(turns).toBe(3);
+  });
+
+  it('keeps the watermark of comments posted before the answered marker', async () => {
+    const h = harness();
+    await seedIssue(h.provider, 1);
+    h.provider.seedPullRequest({
+      number: 100,
+      branch: 'openspec/issue-1',
+      labels: [DEFAULT_LABELS.proposing],
+    });
+    const target = { kind: 'pull_request' as const, ref: { repo: h.provider.repo, number: 100 } };
+    h.provider.seedReview(100, { state: 'changes_requested', body: 'answered before markers' });
+    // A turn comment from before the marker existed: it dates by its own time.
+    h.provider.seedComment(target, {
+      author: { login: 'openspec-bot', isBot: true },
+      body: '**OpenSpec propose turn**',
+    });
+
+    expect((await h.engine.drive(await current(h, 100))).kind).toBe('idle');
   });
 
   it("counts a non-host-flagged bot's turns toward the revise limit", async () => {
