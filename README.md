@@ -1,3 +1,11 @@
+[![Quality gate status](https://sonarcloud.io/api/project_badges/measure?project=wuan_simple-orchestrator&metric=alert_status)](https://sonarcloud.io/summary/new_code?id=wuan_simple-orchestrator)
+[![Lines of Code](https://sonarcloud.io/api/project_badges/measure?project=wuan_simple-orchestrator&metric=ncloc)](https://sonarcloud.io/summary/new_code?id=wuan_simple-orchestrator)
+[![Coverage](https://sonarcloud.io/api/project_badges/measure?project=wuan_simple-orchestrator&metric=coverage)](https://sonarcloud.io/summary/new_code?id=wuan_simple-orchestrator)
+[![Duplicated Lines (%)](https://sonarcloud.io/api/project_badges/measure?project=wuan_simple-orchestrator&metric=duplicated_lines_density)](https://sonarcloud.io/summary/new_code?id=wuan_simple-orchestrator)
+[![Maintainability Rating](https://sonarcloud.io/api/project_badges/measure?project=wuan_simple-orchestrator&metric=sqale_rating)](https://sonarcloud.io/summary/new_code?id=wuan_simple-orchestrator)
+[![Reliability Rating](https://sonarcloud.io/api/project_badges/measure?project=wuan_simple-orchestrator&metric=reliability_rating)](https://sonarcloud.io/summary/new_code?id=wuan_simple-orchestrator)
+[![Security Rating](https://sonarcloud.io/api/project_badges/measure?project=wuan_simple-orchestrator&metric=security_rating)](https://sonarcloud.io/summary/new_code?id=wuan_simple-orchestrator)
+
 # openspec-workflow-orchestrator
 
 A workflow orchestrator that turns a repository issue into a reviewed,
