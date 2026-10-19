@@ -37,8 +37,9 @@ turns' own commits do. (Reported as issue #35.)
   updates the pull request title when it differs, so the subject the host
   derives on merge reflects what was actually implemented. The applied type is
   used when the implementation subjects agree on one; a scope is adopted only
-  when the subjects that carry a scope agree on a single one (superseding a
-  scope deduced from the issue title), and the summary the title already carries
+  when the implementation subjects agree on a type and the subjects that carry a
+  scope agree on a single one (superseding a scope deduced from the issue
+  title), and the summary the title already carries
   is kept - shortened further at a word boundary, replacing any ellipsis it
   already carried, only when the new type or scope would push the subject to the
   commit-subject limit - so an ambiguous outcome keeps the deduced type and
