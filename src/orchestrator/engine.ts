@@ -83,13 +83,15 @@ function describeError(error: unknown): string {
 }
 
 /**
- * A propose turn without a review trigger finished without committing anything,
- * so it did no work. It is a failed turn rather than an idle one: leaving the
- * change in `proposing` waits for a review that nothing prompts for.
+ * A turn that had to commit something finished without committing anything, so
+ * it did no work. It is a failed turn rather than an idle one: leaving a
+ * propose turn without a review trigger in `proposing` waits for a review that
+ * nothing prompts for, and leaving an apply turn in `implementing` waits for a
+ * merge that would ship no implementation.
  */
 export class NoProgressError extends Error {
-  constructor() {
-    super('the propose turn produced no change: nothing was committed to the workflow branch');
+  constructor(skill: TurnSkill) {
+    super(`the ${skill} turn produced no change: nothing was committed to the workflow branch`);
     this.name = 'NoProgressError';
   }
 }
@@ -444,12 +446,12 @@ export class WorkflowEngine {
     let attempts = 0;
     const startedAt = Date.now();
     try {
-      // The branch tip is read around every turn: a propose turn that commits
-      // nothing is detected from repository state, not from the runtime's
-      // self-report (the embedded adapter always reports an empty commit list),
-      // and an apply turn's own commits are read from `beforeTip..HEAD` to
-      // reconcile the pull request title. The base merge, if any, is committed
-      // while provisioning, before this first read.
+      // The branch tip is read around every turn: a turn that commits nothing
+      // is detected from repository state, not from the runtime's self-report
+      // (the embedded adapter always reports an empty commit list), and an
+      // apply turn's own commits are read from `beforeTip..HEAD` to reconcile
+      // the pull request title. The base merge, if any, is committed while
+      // provisioning, before this first read.
       const beforeTip = await handle.head();
       const pendingBaseIntegration = !(await handle.baseIntegrated());
       const context = this.buildContext(
@@ -474,9 +476,15 @@ export class WorkflowEngine {
       // Combine what the runtime reported with the time and attempts the
       // orchestrator measured, so the comment is complete for every runtime.
       const usage = withMeasuredUsage(mergeUsage(reported, result.usage), startedAt, attempts);
-      if (skill === 'propose' && trigger === null && (await handle.head()) === beforeTip) {
+      // A propose turn that runs without a triggering review (the initial turn
+      // or a recovery) must produce the change, and an apply turn must
+      // implement and archive it. Either one that commits nothing would leave
+      // the workflow parked where no review drives it again, so both fail. A
+      // review-driven revise turn may legitimately commit nothing.
+      const madeProgress = (await handle.head()) !== beforeTip;
+      if (!madeProgress && (skill === 'apply' || trigger === null)) {
         this.logger(`${turn}: the workflow branch tip is unchanged; treating the turn as failed`);
-        throw new NoProgressError();
+        throw new NoProgressError(skill);
       }
       // A turn's commits live only in the throwaway worktree, so publish the
       // workflow branch before anything else observes the turn. Least-privilege

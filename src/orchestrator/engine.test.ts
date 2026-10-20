@@ -630,6 +630,56 @@ describe('WorkflowEngine stalled propose turns', () => {
   });
 });
 
+describe('WorkflowEngine stalled apply turns', () => {
+  async function startedReady(): Promise<{ h: Harness; number: number }> {
+    const h = harness({ ready: true });
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    const started = await h.engine.start(issue);
+    return { h, number: started.pullRequest?.ref.number ?? -1 };
+  }
+
+  it('fails an apply turn that commits nothing', async () => {
+    const { h, number } = await startedReady();
+    const pushesBefore = h.provider.pushes.length;
+    h.provider.seedReview(number, { state: 'approved', body: 'lgtm' });
+    h.sandbox.headResults = ['same', 'same'];
+    h.runtime.enqueue(applyResult());
+
+    const action = await h.engine.drive(
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number }))!,
+    );
+
+    expect(action.kind).toBe('apply');
+    expect(await labelsOf(h.provider, number)).toContain(DEFAULT_LABELS.failed);
+    expect(await labelsOf(h.provider, number)).not.toContain(DEFAULT_LABELS.implementing);
+    expect(h.provider.pushes).toHaveLength(pushesBefore);
+    expect((await h.provider.getPullRequest({ repo: h.provider.repo, number }))?.draft).toBe(true);
+    expect(h.provider.commentLog.some((c) => c.body.includes('produced no change'))).toBe(true);
+    expect(h.messages.join('\n')).toContain(
+      'the workflow branch tip is unchanged; treating the turn as failed',
+    );
+  });
+
+  it('publishes and releases an apply turn that commits', async () => {
+    const { h, number } = await startedReady();
+    const pushesBefore = h.provider.pushes.length;
+    h.provider.seedReview(number, { state: 'approved', body: 'lgtm' });
+    h.sandbox.headResults = ['before', 'after'];
+    h.runtime.enqueue(applyResult());
+
+    const action = await h.engine.drive(
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number }))!,
+    );
+
+    expect(action.kind).toBe('apply');
+    expect(await labelsOf(h.provider, number)).toContain(DEFAULT_LABELS.implementing);
+    expect(await labelsOf(h.provider, number)).not.toContain(DEFAULT_LABELS.failed);
+    expect(h.provider.pushes).toHaveLength(pushesBefore + 1);
+    expect((await h.provider.getPullRequest({ repo: h.provider.repo, number }))?.draft).toBe(false);
+  });
+});
+
 describe('WorkflowEngine.recover', () => {
   async function failedPullRequest(h: Harness): Promise<ProviderPullRequest> {
     await seedIssue(h.provider, 1);
