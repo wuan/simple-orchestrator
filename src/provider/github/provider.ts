@@ -231,12 +231,14 @@ export class GitHubProvider implements RepoProvider {
       .filter((payload) => isPullRequestPayload(payload))
       .map((payload) => payload.number);
 
-    const pullRequests: ProviderPullRequest[] = [];
-    for (const number of numbers) {
-      const pullRequest = await this.getPullRequest({ repo: this.repo, number });
-      if (pullRequest !== null) pullRequests.push(pullRequest);
-    }
-    return pullRequests;
+    // The per-number reads are independent, so resolve them concurrently while
+    // keeping the host's order in the result.
+    const pullRequests = await Promise.all(
+      numbers.map((number) => this.getPullRequest({ repo: this.repo, number })),
+    );
+    return pullRequests.filter(
+      (pullRequest): pullRequest is ProviderPullRequest => pullRequest !== null,
+    );
   }
 
   async addLabels(target: ThreadTarget, labels: string[]): Promise<void> {
@@ -255,13 +257,16 @@ export class GitHubProvider implements RepoProvider {
     if (labels.length === 0) return;
     const existing = await this.transport.paginate<{ name: string }>(`${this.repoPath()}/labels`);
     const known = new Set(existing.map((label) => label.name));
-    for (const name of labels) {
-      if (known.has(name)) continue;
-      await this.transport.json('POST', `${this.repoPath()}/labels`, {
-        body: { name, color: 'ededed' },
-      });
-      known.add(name);
-    }
+    const missing = [...new Set(labels)].filter((name) => !known.has(name));
+    // Creating the missing labels is independent and idempotent, so do it
+    // concurrently rather than one request at a time.
+    await Promise.all(
+      missing.map((name) =>
+        this.transport.json('POST', `${this.repoPath()}/labels`, {
+          body: { name, color: 'ededed' },
+        }),
+      ),
+    );
   }
 
   async removeLabel(target: ThreadTarget, label: string): Promise<void> {

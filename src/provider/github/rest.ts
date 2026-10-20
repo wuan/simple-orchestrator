@@ -12,11 +12,14 @@ import {
 export { GitHubApiError };
 export type { JsonOptions, JsonResult, QueryValue };
 
+/** One `Link` header entry, bounded by its own angle brackets and quotes. */
+const LINK_ENTRY = /^<([^>]+)>;\s*rel="([^"]+)"$/;
+
 /** Extract the `rel="next"` URL from a `Link` header, if present. */
 export function nextLink(header: string | undefined): string | null {
   if (header === undefined) return null;
   for (const part of header.split(',')) {
-    const match = /<([^>]+)>;\s*rel="([^"]+)"/.exec(part.trim());
+    const match = LINK_ENTRY.exec(part.trim());
     if (match !== null && match[2] === 'next') return match[1] ?? null;
   }
   return null;
@@ -146,10 +149,14 @@ export class GitHubRest implements GitHubTransport {
   /** GET every page of a paginated endpoint, following `Link` rel="next". */
   async paginate<T>(path: string, query?: Record<string, QueryValue>): Promise<T[]> {
     const results: T[] = [];
+    // The request headers do not change between pages, so build them once.
+    const headers = this.headers();
     let url: string | null = this.buildUrl(path, query);
     while (url !== null) {
       this.limiter.assertAllowed();
-      const response = await this.http.request({ method: 'GET', url, headers: this.headers() });
+      // Pagination is rate-limited and order-dependent: each page's Link header
+      // points at the next, so the requests must stay sequential.
+      const response = await this.http.request({ method: 'GET', url, headers }); // NOSONAR
       this.limiter.observe(response.headers);
       this.checkRateLimitResponse(response.status, response.headers);
       if (response.status >= 400) {

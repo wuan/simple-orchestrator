@@ -20,7 +20,7 @@ const NUMERIC_KEYS = [
   'steps',
 ] as const;
 
-const MARKER = /<!--\s*openspec-usage:\s*([\s\S]*?)\s*-->/;
+const MARKER = /<!--\s*openspec-usage:([\s\S]*?)-->/;
 
 /** The parts of a comment the usage recovery needs. */
 export interface MetricSource {
@@ -114,10 +114,11 @@ export function usageMarker(usage: TurnUsage): string {
 /** Parse the usage marker from a comment body, if it carries one. */
 export function parseUsageMarker(body: string): TurnUsage | undefined {
   const match = MARKER.exec(body);
-  if (match === null || match[1] === undefined) return undefined;
+  const value = match?.[1];
+  if (value === undefined) return undefined;
   let parsed: unknown;
   try {
-    parsed = JSON.parse(match[1]);
+    parsed = JSON.parse(value);
   } catch {
     return undefined;
   }

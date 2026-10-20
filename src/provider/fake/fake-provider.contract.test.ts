@@ -1,8 +1,10 @@
+import { describe, expect, it } from 'vitest';
+
 import type { ReviewState } from '../../domain/types.js';
-import { runProviderContractTests } from '../contract.js';
+import { runProviderContractTests, type ProviderFixture } from '../contract.js';
 import { FakeProvider } from './fake-provider.js';
 
-runProviderContractTests('FakeProvider', () => {
+function makeFixture(): ProviderFixture {
   const provider = new FakeProvider();
   let nextIssue = 1000;
   return {
@@ -16,4 +18,14 @@ runProviderContractTests('FakeProvider', () => {
       provider.seedReview(pullRequest, { state });
     },
   };
+}
+
+describe('FakeProvider contract', () => {
+  // The shared battery stays the single source of contract cases; this file
+  // additionally declares a test the analyser can see.
+  runProviderContractTests('FakeProvider', makeFixture);
+
+  it('exposes the provider the shared contract battery exercises', () => {
+    expect(makeFixture().provider.id).toBe('fake');
+  });
 });

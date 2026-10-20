@@ -29,10 +29,10 @@ export function answeredMarker(reviewAt: string | null): string {
  * the comment carries no (valid) marker.
  */
 export function parseAnsweredMarker(body: string): string | null | undefined {
-  const match = MARKER.exec(body);
-  if (match === null || match[1] === undefined) return undefined;
-  if (match[1] === NONE) return null;
-  return Number.isNaN(Date.parse(match[1])) ? undefined : match[1];
+  const value = MARKER.exec(body)?.[1];
+  if (value === undefined) return undefined;
+  if (value === NONE) return null;
+  return Number.isNaN(Date.parse(value)) ? undefined : value;
 }
 
 /**

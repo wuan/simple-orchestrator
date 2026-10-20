@@ -127,8 +127,9 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<number>
   }
 
   if (options.once) {
+    // Repositories are polled in configured order and one at a time.
     for (const repository of service.repositories) {
-      const report = await repository.poller.pollOnce();
+      const report = await repository.poller.pollOnce(); // NOSONAR
       out(
         `${repository.key}: started ${report.started.length}, recovered ${report.recovered.length}, actions ${report.actions.length}\n`,
       );
@@ -168,11 +169,13 @@ export async function runLoop(service: Service, deps: MainDeps = {}): Promise<vo
 
   try {
     while (!controller.signal.aborted) {
+      // Each repository is polled in turn within a sweep; the loop is the
+      // scheduler and must stay sequential.
       for (const repository of service.repositories) {
         if (Date.now() < (due.get(repository.key) ?? 0)) continue;
         due.set(repository.key, Date.now() + repository.intervalSeconds * 1000);
         try {
-          const report = await repository.poller.pollOnce();
+          const report = await repository.poller.pollOnce(); // NOSONAR
           if (
             report.started.length > 0 ||
             report.recovered.length > 0 ||
@@ -186,7 +189,8 @@ export async function runLoop(service: Service, deps: MainDeps = {}): Promise<vo
           err(`${repository.key}: poll failed: ${message(error)}\n`);
         }
       }
-      await delay(TICK_MS, controller.signal);
+      // Wait a tick between full sweeps, waking early on a stop signal.
+      await delay(TICK_MS, controller.signal); // NOSONAR
     }
   } finally {
     process.off('SIGINT', stop);
@@ -205,12 +209,10 @@ const invokedDirectly = (() => {
 })();
 
 if (invokedDirectly) {
-  main(process.argv.slice(2))
-    .then((code) => {
-      process.exitCode = code;
-    })
-    .catch((error: unknown) => {
-      process.stderr.write(`${message(error)}\n`);
-      process.exitCode = 1;
-    });
+  try {
+    process.exitCode = await main(process.argv.slice(2));
+  } catch (error: unknown) {
+    process.stderr.write(`${message(error)}\n`);
+    process.exitCode = 1;
+  }
 }

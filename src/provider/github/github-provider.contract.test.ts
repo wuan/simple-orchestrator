@@ -1,12 +1,14 @@
+import { describe, expect, it } from 'vitest';
+
 import type { ReviewState } from '../../domain/types.js';
-import { runProviderContractTests } from '../contract.js';
+import { runProviderContractTests, type ProviderFixture } from '../contract.js';
 import { TokenCloner } from './clone.js';
 import { GitHubProvider } from './provider.js';
 import { GitHubRest } from './rest.js';
 import { InMemoryGitHub } from './testing/in-memory-github.js';
 import { RecordingCommands } from './testing/recording-commands.js';
 
-runProviderContractTests('GitHubProvider', () => {
+function makeFixture(): ProviderFixture {
   const github = new InMemoryGitHub();
   const provider = new GitHubProvider({
     repo: { owner: github.owner, name: github.repo },
@@ -35,4 +37,14 @@ runProviderContractTests('GitHubProvider', () => {
       github.seedReview({ pull: pullRequest, state, login: 'reviewer' });
     },
   };
+}
+
+describe('GitHubProvider contract', () => {
+  // The shared battery stays the single source of contract cases; this file
+  // additionally declares a test the analyser can see.
+  runProviderContractTests('GitHubProvider', makeFixture);
+
+  it('exposes the provider the shared contract battery exercises', () => {
+    expect(makeFixture().provider.id).toBe('github');
+  });
 });

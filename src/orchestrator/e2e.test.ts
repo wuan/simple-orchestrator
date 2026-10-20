@@ -164,7 +164,7 @@ describe('end-to-end workflow', () => {
 
     // Restart: a fresh poller with no local memory.
     await makePoller(provider, runtime, openspec).pollOnce();
-    expect(runtime.requests.length).toBe(turnsAfterPropose);
+    expect(runtime.requests).toHaveLength(turnsAfterPropose);
   });
 
   it('produces poll-cycle and turn diagnostics when verbose is enabled', async () => {

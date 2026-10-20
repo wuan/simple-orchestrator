@@ -65,7 +65,7 @@ export interface ParsedSubject {
 }
 
 /** `<type>(<scope>): <summary>`, where the type is a letter-led word. */
-const SUBJECT_PATTERN = /^([A-Za-z][A-Za-z0-9-]*)(?:\(([^()]*)\))?:\s+(.*)$/;
+const SUBJECT_PATTERN = /^([A-Za-z][A-Za-z0-9-]*)(?:\(([^()]*)\))?:\s+(\S.*)$/;
 
 /**
  * Parse a recognized Conventional Commit subject, or `null` when it is not one.

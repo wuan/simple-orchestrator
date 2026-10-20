@@ -1,6 +1,14 @@
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import type { Sandbox, SandboxHandle } from '../../runtime/sandbox.js';
 
-/** A `Sandbox` that hands out dummy workspaces without touching the disk. */
+/**
+ * A `Sandbox` that hands out dummy workspaces under a private per-instance
+ * temporary directory, so the store and workspace paths are unique and
+ * owner-only instead of fixed paths under a world-writable location.
+ */
 export class FakeSandbox implements Sandbox {
   readonly created: string[] = [];
   readonly disposed: string[] = [];
@@ -29,23 +37,38 @@ export class FakeSandbox implements Sandbox {
   commitSubjectsResults: string[][] = [];
   /** The `from` value each `commitSubjects()` call was made with, in order. */
   readonly commitSubjectRanges: string[] = [];
+  /** The private store path every handle reports; set when the root is created. */
+  store = '';
   private headCalls = 0;
+  /** The private per-instance root the store and workspaces live under. */
+  private root: Promise<string> | undefined;
+
+  private rootDir(): Promise<string> {
+    this.root ??= mkdtemp(join(tmpdir(), 'orchestrator-fake-sandbox-'));
+    return this.root;
+  }
 
   async create(input: { branch: string }): Promise<SandboxHandle> {
-    const workspace = `/tmp/fake-workspace-${this.created.length}-${input.branch.replace(/\W/g, '-')}`;
+    const root = await this.rootDir();
+    const workspace = join(
+      root,
+      `workspace-${this.created.length}-${input.branch.replace(/\W/g, '-')}`,
+    );
     this.created.push(workspace);
+    this.store = join(root, 'store');
     return {
       workspace,
-      store: '/tmp/fake-store',
-      head: async () => this.headResults.shift() ?? `fake-head-${++this.headCalls}`,
-      baseIntegrated: async () => this.baseIntegrationResults.shift() ?? true,
-      hasChanges: async () => this.hasChangesResults.shift() ?? true,
-      commitSubjects: async (from: string) => {
+      store: this.store,
+      head: () => Promise.resolve(this.headResults.shift() ?? `fake-head-${++this.headCalls}`),
+      baseIntegrated: () => Promise.resolve(this.baseIntegrationResults.shift() ?? true),
+      hasChanges: () => Promise.resolve(this.hasChangesResults.shift() ?? true),
+      commitSubjects: (from: string) => {
         this.commitSubjectRanges.push(from);
-        return this.commitSubjectsResults.shift() ?? [];
+        return Promise.resolve(this.commitSubjectsResults.shift() ?? []);
       },
-      dispose: async () => {
+      dispose: () => {
         this.disposed.push(workspace);
+        return Promise.resolve();
       },
     };
   }

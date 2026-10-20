@@ -631,11 +631,7 @@ export class WorkflowEngine {
   ): Promise<void> {
     await this.clearPhase(pullRequest);
     let body = `Workflow cancelled: ${reason}.`;
-    if (
-      pullRequest.state === 'closed' &&
-      issue !== null &&
-      issue.labels.includes(this.labels.trigger)
-    ) {
+    if (pullRequest.state === 'closed' && issue?.labels.includes(this.labels.trigger)) {
       await this.provider.removeLabel({ kind: 'issue', ref: issue.ref }, this.labels.trigger);
       body +=
         ` Removed the \`${this.labels.trigger}\` label from #${issue.ref.number};` +
@@ -647,15 +643,19 @@ export class WorkflowEngine {
   private async setPhase(pullRequest: ProviderPullRequest, phase: WorkflowPhase): Promise<void> {
     const target = this.target(pullRequest);
     const targetLabel = labelForPhase(this.labels, phase);
+    // Remove every other phase label first so the target ends up the only one.
     for (const label of allPhaseLabels(this.labels)) {
-      if (label !== targetLabel) await this.provider.removeLabel(target, label);
+      if (label !== targetLabel) await this.provider.removeLabel(target, label); // NOSONAR
     }
     await this.provider.addLabels(target, [targetLabel]);
   }
 
   private async clearPhase(pullRequest: ProviderPullRequest): Promise<void> {
     const target = this.target(pullRequest);
-    for (const label of allPhaseLabels(this.labels)) await this.provider.removeLabel(target, label);
+    // The removals stay sequential to respect the host's rate limits.
+    for (const label of allPhaseLabels(this.labels)) {
+      await this.provider.removeLabel(target, label); // NOSONAR
+    }
   }
 
   /**

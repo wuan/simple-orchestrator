@@ -9,9 +9,11 @@ import type { AgentRuntime, TurnRequest } from './types.js';
 export class UnconfiguredRuntime implements AgentRuntime {
   readonly id = 'unconfigured';
 
-  async run(_request: TurnRequest): Promise<TurnResult> {
-    throw new Error(
-      'No agent runtime is configured. Provide an AgentRuntime (for example the OpenCode adapter) in the service wiring. See README > Agent runtime.',
+  run(_request: TurnRequest): Promise<TurnResult> {
+    return Promise.reject(
+      new Error(
+        'No agent runtime is configured. Provide an AgentRuntime (for example the OpenCode adapter) in the service wiring. See README > Agent runtime.',
+      ),
     );
   }
 }

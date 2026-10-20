@@ -26,11 +26,12 @@ function makePoller(
   openspec: FakeOpenspecCli,
   logger?: (message: string) => void,
   environment?: EnvironmentSpec,
+  sandbox: FakeSandbox = new FakeSandbox(),
 ): Poller {
   return new Poller({
     provider,
     runtime,
-    sandbox: new FakeSandbox(),
+    sandbox,
     openspec,
     labels: DEFAULT_LABELS,
     baseBranch: 'main',
@@ -446,14 +447,15 @@ describe('Poller container environment', () => {
     const openspec = new FakeOpenspecCli();
     openspec.markInProgress('add-x');
     const environment: EnvironmentSpec = { image: 'ghcr.io/acme/agent-java:latest' };
+    const sandbox = new FakeSandbox();
     provider.seedIssue({ number: 1, labels: ['openspec'] });
     runtime.enqueue(proposeResult());
 
-    await makePoller(provider, runtime, openspec, undefined, environment).pollOnce();
+    await makePoller(provider, runtime, openspec, undefined, environment, sandbox).pollOnce();
 
     expect(runtime.requests).toHaveLength(1);
     expect(runtime.requests[0]?.environment).toEqual(environment);
-    expect(runtime.requests[0]?.store).toBe('/tmp/fake-store');
+    expect(runtime.requests[0]?.store).toBe(sandbox.store);
   });
 
   it('leaves the environment undefined when the repository configures none', async () => {

@@ -13,19 +13,21 @@ export class FakeOpenspecCli implements OpenspecCli {
   readonly validations = new Map<string, OpenspecValidation>();
   readonly calls: string[] = [];
 
-  async listChanges(): Promise<OpenspecChange[]> {
+  listChanges(): Promise<OpenspecChange[]> {
     this.calls.push('list');
-    return this.changes;
+    return Promise.resolve(this.changes);
   }
 
-  async status(change: string): Promise<OpenspecStatus> {
+  status(change: string): Promise<OpenspecStatus> {
     this.calls.push(`status:${change}`);
-    return this.statuses.get(change) ?? { artifacts: [], isComplete: false };
+    return Promise.resolve(this.statuses.get(change) ?? { artifacts: [], isComplete: false });
   }
 
-  async validate(change: string): Promise<OpenspecValidation> {
+  validate(change: string): Promise<OpenspecValidation> {
     this.calls.push(`validate:${change}`);
-    return this.validations.get(change) ?? { valid: false, output: 'unknown change' };
+    return Promise.resolve(
+      this.validations.get(change) ?? { valid: false, output: 'unknown change' },
+    );
   }
 
   /** Configure a single complete, valid change. */

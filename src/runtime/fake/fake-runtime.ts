@@ -17,12 +17,12 @@ export class FakeRuntime implements AgentRuntime {
     this.queue.push(result);
   }
 
-  async run(request: TurnRequest): Promise<TurnResult> {
+  run(request: TurnRequest): Promise<TurnResult> {
     this.requests.push(request);
     const queued = this.queue.shift();
     const result = queued ?? this.factory?.(request);
     if (result === undefined) {
-      throw new Error('FakeRuntime: no result queued and no factory configured');
+      return Promise.reject(new Error('FakeRuntime: no result queued and no factory configured'));
     }
     request.onUsage?.(
       result.usage ?? {
@@ -36,6 +36,6 @@ export class FakeRuntime implements AgentRuntime {
         steps: 1,
       },
     );
-    return result;
+    return Promise.resolve(result);
   }
 }

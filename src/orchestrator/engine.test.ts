@@ -892,7 +892,7 @@ describe('WorkflowEngine container environment', () => {
     await h.engine.start(issue);
 
     expect(h.runtime.requests[0]?.environment).toEqual(environment);
-    expect(h.runtime.requests[0]?.store).toBe('/tmp/fake-store');
+    expect(h.runtime.requests[0]?.store).toBe(h.sandbox.store);
   });
 
   it('leaves the environment undefined when the repository configures none', async () => {

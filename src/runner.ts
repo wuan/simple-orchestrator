@@ -188,12 +188,10 @@ const invokedDirectly = (() => {
 })();
 
 if (invokedDirectly) {
-  main()
-    .then((code) => {
-      process.exitCode = code;
-    })
-    .catch((error: unknown) => {
-      process.stderr.write(`${message(error)}\n`);
-      process.exitCode = 1;
-    });
+  try {
+    process.exitCode = await main();
+  } catch (error: unknown) {
+    process.stderr.write(`${message(error)}\n`);
+    process.exitCode = 1;
+  }
 }
