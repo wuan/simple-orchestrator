@@ -149,22 +149,28 @@ export class FakeProvider implements RepoProvider {
   }
 
   // --- RepoProvider --------------------------------------------------------
+  //
+  // The methods below are synchronous in this in-memory double but must return
+  // promises to satisfy the `RepoProvider` contract, so each wraps its result
+  // in `Promise.resolve` rather than being declared `async` without an `await`.
 
-  async botIdentity(): Promise<Actor> {
-    return this.bot;
+  botIdentity(): Promise<Actor> {
+    return Promise.resolve(this.bot);
   }
 
-  async getIssue(issue: IssueRef): Promise<ProviderIssue | null> {
-    return this.issues.get(issue.number) ?? null;
+  getIssue(issue: IssueRef): Promise<ProviderIssue | null> {
+    return Promise.resolve(this.issues.get(issue.number) ?? null);
   }
 
-  async listTriggerIssues(triggerLabel: string): Promise<ProviderIssue[]> {
-    return [...this.issues.values()].filter(
-      (issue) => issue.state === 'open' && issue.labels.includes(triggerLabel),
+  listTriggerIssues(triggerLabel: string): Promise<ProviderIssue[]> {
+    return Promise.resolve(
+      [...this.issues.values()].filter(
+        (issue) => issue.state === 'open' && issue.labels.includes(triggerLabel),
+      ),
     );
   }
 
-  async createDraftPullRequest(input: CreatePullRequestInput): Promise<ProviderPullRequest> {
+  createDraftPullRequest(input: CreatePullRequestInput): Promise<ProviderPullRequest> {
     const number = this.nextPullNumber++;
     const pr: ProviderPullRequest = {
       ref: { repo: this.repo, number },
@@ -178,33 +184,34 @@ export class FakeProvider implements RepoProvider {
       linkedIssue: input.issue,
     };
     this.pulls.set(number, pr);
-    return { ...pr, labels: [...pr.labels] };
+    return Promise.resolve({ ...pr, labels: [...pr.labels] });
   }
 
-  async getPullRequest(pullRequest: PullRequestRef): Promise<ProviderPullRequest | null> {
-    return this.pulls.get(pullRequest.number) ?? null;
+  getPullRequest(pullRequest: PullRequestRef): Promise<ProviderPullRequest | null> {
+    return Promise.resolve(this.pulls.get(pullRequest.number) ?? null);
   }
 
-  async markPullRequestReady(pullRequest: PullRequestRef): Promise<void> {
+  markPullRequestReady(pullRequest: PullRequestRef): Promise<void> {
     const stored = this.pulls.get(pullRequest.number);
     if (stored !== undefined) stored.draft = false;
+    return Promise.resolve();
   }
 
-  async updatePullRequest(
-    pullRequest: PullRequestRef,
-    input: UpdatePullRequestInput,
-  ): Promise<void> {
+  updatePullRequest(pullRequest: PullRequestRef, input: UpdatePullRequestInput): Promise<void> {
     const stored = this.pulls.get(pullRequest.number);
     if (stored !== undefined) stored.title = input.title;
     this.pullRequestUpdates.push({ ref: pullRequest, input: { ...input } });
+    return Promise.resolve();
   }
 
-  async listPullRequestsForIssue(issue: IssueRef): Promise<ProviderPullRequest[]> {
-    return [...this.pulls.values()].filter((pr) => pr.linkedIssue?.number === issue.number);
+  listPullRequestsForIssue(issue: IssueRef): Promise<ProviderPullRequest[]> {
+    return Promise.resolve(
+      [...this.pulls.values()].filter((pr) => pr.linkedIssue?.number === issue.number),
+    );
   }
 
-  async listPullRequestsWithLabel(label: string): Promise<ProviderPullRequest[]> {
-    return [...this.pulls.values()].filter((pr) => pr.labels.includes(label));
+  listPullRequestsWithLabel(label: string): Promise<ProviderPullRequest[]> {
+    return Promise.resolve([...this.pulls.values()].filter((pr) => pr.labels.includes(label)));
   }
 
   private labelList(target: ThreadTarget): string[] | undefined {
@@ -213,43 +220,49 @@ export class FakeProvider implements RepoProvider {
       : this.pulls.get(target.ref.number)?.labels;
   }
 
-  async addLabels(target: ThreadTarget, labels: string[]): Promise<void> {
+  addLabels(target: ThreadTarget, labels: string[]): Promise<void> {
     const list = this.labelList(target);
-    if (list === undefined) return;
+    if (list === undefined) return Promise.resolve();
     for (const label of labels) {
       if (!list.includes(label)) list.push(label);
     }
+    return Promise.resolve();
   }
 
-  async removeLabel(target: ThreadTarget, label: string): Promise<void> {
+  removeLabel(target: ThreadTarget, label: string): Promise<void> {
     const list = this.labelList(target);
-    if (list === undefined) return;
+    if (list === undefined) return Promise.resolve();
     const index = list.indexOf(label);
     if (index >= 0) list.splice(index, 1);
+    return Promise.resolve();
   }
 
-  async comment(target: ThreadTarget, body: string): Promise<void> {
+  comment(target: ThreadTarget, body: string): Promise<void> {
     this.commentLog.push({ target, body });
     this.seedComment(target, { author: this.bot, body });
+    return Promise.resolve();
   }
 
-  async listComments(target: ThreadTarget): Promise<ProviderComment[]> {
-    return [...(this.comments.get(targetKey(target)) ?? [])];
+  listComments(target: ThreadTarget): Promise<ProviderComment[]> {
+    return Promise.resolve([...(this.comments.get(targetKey(target)) ?? [])]);
   }
 
-  async listReviews(pullRequest: PullRequestRef): Promise<ProviderReview[]> {
-    return [...(this.reviews.get(pullRequest.number) ?? [])];
+  listReviews(pullRequest: PullRequestRef): Promise<ProviderReview[]> {
+    return Promise.resolve([...(this.reviews.get(pullRequest.number) ?? [])]);
   }
 
-  async clone(input: CloneInput): Promise<void> {
+  clone(input: CloneInput): Promise<void> {
     this.clones.push({ ...input });
+    return Promise.resolve();
   }
 
-  async fetch(input: FetchInput): Promise<void> {
+  fetch(input: FetchInput): Promise<void> {
     this.fetches.push({ ...input });
+    return Promise.resolve();
   }
 
-  async push(input: PushInput): Promise<void> {
+  push(input: PushInput): Promise<void> {
     this.pushes.push({ ...input });
+    return Promise.resolve();
   }
 }

@@ -1,3 +1,7 @@
+import { mkdtemp, rm } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
 import { describe, expect, it } from 'vitest';
 
 import type { ReviewState } from '../domain/types.js';
@@ -23,6 +27,20 @@ async function startWorkflow(fixture: ProviderFixture): Promise<ProviderPullRequ
     body: 'body',
     draft: true,
   });
+}
+
+/**
+ * Run `body` against a private, owner-only clone destination created with
+ * `fs.mkdtemp`, removed afterwards so no fixed path under a world-writable
+ * location is ever used.
+ */
+async function withPrivateDestination(body: (destination: string) => Promise<void>): Promise<void> {
+  const destination = await mkdtemp(join(tmpdir(), 'orchestrator-contract-'));
+  try {
+    await body(destination);
+  } finally {
+    await rm(destination, { recursive: true, force: true });
+  }
 }
 
 /**
@@ -131,22 +149,26 @@ export function runProviderContractTests(name: string, makeFixture: () => Provid
       const fixture = makeFixture();
       const { provider } = fixture;
       const pr = await startWorkflow(fixture);
-      await expect(
-        provider.clone({ branch: pr.branch, destination: '/tmp/contract-work' }),
-      ).resolves.toBeUndefined();
+      await withPrivateDestination(async (destination) => {
+        await expect(provider.clone({ branch: pr.branch, destination })).resolves.toBeUndefined();
+      });
     });
 
     it('fetches into an existing clone', async () => {
       const { provider } = makeFixture();
-      await expect(provider.fetch({ destination: '/tmp/contract-work' })).resolves.toBeUndefined();
+      await withPrivateDestination(async (destination) => {
+        await expect(provider.fetch({ destination })).resolves.toBeUndefined();
+      });
     });
 
     it('pushes the workflow branch', async () => {
       const fixture = makeFixture();
       const pr = await startWorkflow(fixture);
-      await expect(
-        fixture.provider.push({ branch: pr.branch, destination: '/tmp/contract-work' }),
-      ).resolves.toBeUndefined();
+      await withPrivateDestination(async (destination) => {
+        await expect(
+          fixture.provider.push({ branch: pr.branch, destination }),
+        ).resolves.toBeUndefined();
+      });
     });
   });
 }

@@ -26,8 +26,9 @@ export function latestHumanReview(
   botLogin?: string,
 ): ProviderReview | null {
   const humans = reviews.filter((review) => !isOrchestratorActor(review.author, botLogin));
-  if (humans.length === 0) return null;
-  return humans.reduce((latest, review) =>
-    Date.parse(review.at) >= Date.parse(latest.at) ? review : latest,
+  return humans.reduce<ProviderReview | null>(
+    (latest, review) =>
+      latest === null || Date.parse(review.at) >= Date.parse(latest.at) ? review : latest,
+    null,
   );
 }

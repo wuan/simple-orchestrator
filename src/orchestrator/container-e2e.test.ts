@@ -78,10 +78,11 @@ describe('containerized end-to-end workflow', () => {
       image: 'openspec-environment-node:latest',
       gitIdentity: { name: 'OpenSpec Agent', email: 'agent@example.com' },
     };
+    const sandbox = new FakeSandbox();
     const poller = new Poller({
       provider,
       runtime: new OpenCodeRuntime(client),
-      sandbox: new FakeSandbox(),
+      sandbox,
       openspec,
       labels: DEFAULT_LABELS,
       baseBranch: 'main',
@@ -120,7 +121,7 @@ describe('containerized end-to-end workflow', () => {
       'apply',
     ]);
     const args = runner.calls[0]?.args ?? [];
-    expect(args).toContain('/tmp/fake-store:/tmp/fake-store');
+    expect(args).toContain(`${sandbox.store}:${sandbox.store}`);
     expect(args).toContain('/app/dist:/opt/runner/dist:ro');
     expect(args).toContain('GIT_AUTHOR_NAME=OpenSpec Agent');
     expect(args).toContain('openspec-environment-node:latest');

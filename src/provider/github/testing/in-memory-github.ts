@@ -40,6 +40,23 @@ function json(status: number, data: unknown, headers: Record<string, string> = {
   return { status, headers, text: JSON.stringify(data) };
 }
 
+/** A field read as a string, or `fallback` when absent or not a string. */
+function stringField(
+  source: Record<string, unknown> | undefined,
+  key: string,
+  fallback = '',
+): string {
+  const value = source?.[key];
+  return typeof value === 'string' ? value : fallback;
+}
+
+/** A field read as a string array, rejecting absent or non-array values. */
+function stringArrayField(source: Record<string, unknown> | undefined, key: string): string[] {
+  const value = source?.[key];
+  if (!Array.isArray(value)) return [];
+  return value.filter((item): item is string => typeof item === 'string');
+}
+
 /**
  * A minimal in-memory GitHub REST emulator covering exactly the endpoints the
  * `GitHubProvider` uses. Lets the adapter be tested (and contract-tested)
@@ -198,245 +215,314 @@ export class InMemoryGitHub implements HttpClient {
     return `PR_node_${number}`;
   }
 
-  async request(input: HttpRequest): Promise<HttpResponse> {
+  request(input: HttpRequest): Promise<HttpResponse> {
     const url = new URL(input.url);
-    const path = url.pathname;
-    this.calls.push({ method: input.method, path });
-
+    this.calls.push({ method: input.method, path: url.pathname });
     const body =
       input.body === undefined ? undefined : (JSON.parse(input.body) as Record<string, unknown>);
+    return Promise.resolve(this.route(input.method, url, body));
+  }
 
-    // /user
-    if (input.method === 'GET' && path === '/user') {
+  /** Dispatch one request to the first handler that recognises it. */
+  private route(method: string, url: URL, body: Record<string, unknown> | undefined): HttpResponse {
+    const path = url.pathname;
+    const user = this.handleUser(method, path);
+    if (user !== null) return user;
+    const graphql = this.handleGraphql(method, path, body);
+    if (graphql !== null) return graphql;
+    const repoLabels = this.handleRepoLabels(method, path, body);
+    if (repoLabels !== null) return repoLabels;
+    const issues = this.handleIssues(method, url, body);
+    if (issues !== null) return issues;
+    const comments = this.handleComments(method, path, body);
+    if (comments !== null) return comments;
+    const gitCommits = this.handleGitCommits(method, path, body);
+    if (gitCommits !== null) return gitCommits;
+    const gitRefs = this.handleGitRefs(method, path, body);
+    if (gitRefs !== null) return gitRefs;
+    const pulls = this.handlePulls(method, url, body);
+    if (pulls !== null) return pulls;
+    return json(404, { message: `no route for ${method} ${path}` });
+  }
+
+  private handleUser(method: string, path: string): HttpResponse | null {
+    if (method === 'GET' && path === '/user') {
       return json(200, { login: this.botLogin, type: 'Bot' });
     }
+    return null;
+  }
 
-    // /graphql
-    if (input.method === 'POST' && path === '/graphql') {
-      const query = String(body?.['query'] ?? '');
-      const variables = (body?.['variables'] as Record<string, unknown> | undefined) ?? {};
-      if (!query.includes('markPullRequestReadyForReview')) {
-        return json(200, { errors: [{ message: 'unsupported GraphQL operation' }] });
-      }
-      const pullRequestId = String(variables['pullRequestId'] ?? '');
-      const record = [...this.pulls.values()].find(
-        (pull) => this.nodeId(pull.number) === pullRequestId,
-      );
-      if (record === undefined) {
-        return json(200, {
-          errors: [
-            { message: `Could not resolve to a node with the global id of '${pullRequestId}'` },
-          ],
-        });
-      }
-      // The mutation is idempotent: an already-ready pull request is unchanged.
-      record.draft = false;
+  private handleGraphql(
+    method: string,
+    path: string,
+    body: Record<string, unknown> | undefined,
+  ): HttpResponse | null {
+    if (method !== 'POST' || path !== '/graphql') return null;
+    const query = stringField(body, 'query');
+    if (!query.includes('markPullRequestReadyForReview')) {
+      return json(200, { errors: [{ message: 'unsupported GraphQL operation' }] });
+    }
+    const variables =
+      (body?.['variables'] as Record<string, unknown> | undefined) ??
+      ({} as Record<string, unknown>);
+    const pullRequestId = stringField(variables, 'pullRequestId');
+    const record = [...this.pulls.values()].find(
+      (pull) => this.nodeId(pull.number) === pullRequestId,
+    );
+    if (record === undefined) {
       return json(200, {
-        data: {
-          markPullRequestReadyForReview: {
-            pullRequest: { id: pullRequestId, isDraft: false },
-          },
-        },
+        errors: [
+          { message: `Could not resolve to a node with the global id of '${pullRequestId}'` },
+        ],
       });
     }
+    // The mutation is idempotent: an already-ready pull request is unchanged.
+    record.draft = false;
+    return json(200, {
+      data: {
+        markPullRequestReadyForReview: {
+          pullRequest: { id: pullRequestId, isDraft: false },
+        },
+      },
+    });
+  }
 
-    const repoLabelsMatch = /^\/repos\/[^/]+\/[^/]+\/labels$/.exec(path);
-    if (repoLabelsMatch !== null) {
-      if (input.method === 'GET') {
-        return json(
-          200,
-          [...this.repoLabels].map((name) => ({ name })),
-        );
-      }
-      if (input.method === 'POST') {
-        const name = String(body?.['name'] ?? '');
-        this.repoLabels.add(name);
-        return json(201, { name });
-      }
-    }
-
-    const issuesMatch = /^\/repos\/[^/]+\/[^/]+\/issues$/.exec(path);
-    if (issuesMatch !== null && input.method === 'GET') {
-      const labelFilter = url.searchParams.get('labels');
-      const stateFilter = url.searchParams.get('state');
-      const stateAllows = (state: string): boolean =>
-        stateFilter === null || stateFilter === 'all' || stateFilter === state;
-      const issueList = [...this.issues.values()].filter(
-        (issue) =>
-          stateAllows(issue.state) && (labelFilter === null || issue.labels.includes(labelFilter)),
+  private handleRepoLabels(
+    method: string,
+    path: string,
+    body: Record<string, unknown> | undefined,
+  ): HttpResponse | null {
+    if (!/^\/repos\/[^/]+\/[^/]+\/labels$/.test(path)) return null;
+    if (method === 'GET')
+      return json(
+        200,
+        [...this.repoLabels].map((name) => ({ name })),
       );
-      const pullAsIssues = [...this.pulls.values()]
-        .filter(
-          (pull) =>
-            stateAllows(pull.state) && (labelFilter === null || pull.labels.includes(labelFilter)),
-        )
-        .map((pull) => ({
-          number: pull.number,
-          title: pull.title,
-          body: pull.body,
-          state: pull.state,
-          labels: pull.labels.map((name) => ({ name })),
-          pull_request: {},
-        }));
-      return json(200, [...issueList.map((issue) => this.issuePayload(issue)), ...pullAsIssues]);
-    }
+    if (method !== 'POST') return null;
+    const name = stringField(body, 'name');
+    this.repoLabels.add(name);
+    return json(201, { name });
+  }
 
-    const issueMatch = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)$/.exec(path);
-    if (issueMatch !== null && input.method === 'GET') {
-      const number = Number(issueMatch[1]);
-      const record = this.issues.get(number);
+  private handleIssues(
+    method: string,
+    url: URL,
+    body: Record<string, unknown> | undefined,
+  ): HttpResponse | null {
+    const path = url.pathname;
+    if (/^\/repos\/[^/]+\/[^/]+\/issues$/.test(path) && method === 'GET') {
+      return json(200, this.listIssues(url));
+    }
+    const issue = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)$/.exec(path);
+    if (issue !== null && method === 'GET') {
+      const record = this.issues.get(Number(issue[1]));
       if (record === undefined) return json(404, { message: 'Not Found' });
       return json(200, this.issuePayload(record));
     }
-
-    const labelsMatch = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)\/labels$/.exec(path);
-    if (labelsMatch !== null && input.method === 'POST') {
-      const number = Number(labelsMatch[1]);
-      const target = this.resolveLabels(number);
-      const incoming = (body?.['labels'] as string[] | undefined) ?? [];
-      // GitHub refuses to apply a label that is not defined on the repository.
-      if (incoming.some((label) => !this.repoLabels.has(label))) {
-        return json(422, { message: 'Validation Failed' });
-      }
-      if (target !== undefined) {
-        for (const label of incoming) if (!target.includes(label)) target.push(label);
-      }
-      return json(
-        200,
-        incoming.map((name) => ({ name })),
-      );
+    const add = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)\/labels$/.exec(path);
+    if (add !== null && method === 'POST') return this.addLabels(Number(add[1]), body);
+    const remove = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)\/labels\/(.+)$/.exec(path);
+    if (remove !== null && method === 'DELETE') {
+      return this.removeLabel(Number(remove[1]), decodeURIComponent(remove[2] ?? ''));
     }
+    return null;
+  }
 
-    const labelMatch = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)\/labels\/(.+)$/.exec(path);
-    if (labelMatch !== null && input.method === 'DELETE') {
-      const number = Number(labelMatch[1]);
-      const label = decodeURIComponent(labelMatch[2] ?? '');
-      const target = this.resolveLabels(number);
-      const index = target?.indexOf(label) ?? -1;
-      if (target === undefined || index < 0) {
-        return json(404, { message: 'Label does not exist' });
-      }
-      target.splice(index, 1);
-      return { status: 200, headers: {}, text: '' };
+  private listIssues(url: URL): unknown[] {
+    const labelFilter = url.searchParams.get('labels');
+    const stateFilter = url.searchParams.get('state');
+    const stateAllows = (state: string): boolean =>
+      stateFilter === null || stateFilter === 'all' || stateFilter === state;
+    const issueList = [...this.issues.values()]
+      .filter(
+        (issue) =>
+          stateAllows(issue.state) && (labelFilter === null || issue.labels.includes(labelFilter)),
+      )
+      .map((issue) => this.issuePayload(issue));
+    const pullAsIssues = [...this.pulls.values()]
+      .filter(
+        (pull) =>
+          stateAllows(pull.state) && (labelFilter === null || pull.labels.includes(labelFilter)),
+      )
+      .map((pull) => ({
+        number: pull.number,
+        title: pull.title,
+        body: pull.body,
+        state: pull.state,
+        labels: pull.labels.map((name) => ({ name })),
+        pull_request: {},
+      }));
+    return [...issueList, ...pullAsIssues];
+  }
+
+  private addLabels(number: number, body: Record<string, unknown> | undefined): HttpResponse {
+    const target = this.resolveLabels(number);
+    const incoming = stringArrayField(body, 'labels');
+    // GitHub refuses to apply a label that is not defined on the repository.
+    if (incoming.some((label) => !this.repoLabels.has(label))) {
+      return json(422, { message: 'Validation Failed' });
     }
-
-    const commentsMatch = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)\/comments$/.exec(path);
-    if (commentsMatch !== null) {
-      const number = Number(commentsMatch[1]);
-      if (input.method === 'GET') return json(200, [...(this.comments.get(number) ?? [])]);
-      if (input.method === 'POST') {
-        const list = this.comments.get(number) ?? [];
-        const record: CommentRecord = {
-          id: this.nextId++,
-          user: { login: this.botLogin, type: 'Bot' },
-          body: String(body?.['body'] ?? ''),
-          created_at: this.tick(),
-        };
-        list.push(record);
-        this.comments.set(number, list);
-        return json(201, record);
-      }
+    if (target !== undefined) {
+      for (const label of incoming) if (!target.includes(label)) target.push(label);
     }
+    return json(
+      200,
+      incoming.map((name) => ({ name })),
+    );
+  }
 
-    const refMatch = /^\/repos\/[^/]+\/[^/]+\/git\/ref\/heads\/(.+)$/.exec(path);
-    if (refMatch !== null && input.method === 'GET') {
-      const branch = refMatch[1] ?? '';
-      const sha = this.refs.get(branch);
-      if (sha === undefined) return json(404, { message: 'Reference does not exist' });
-      return json(200, { ref: `refs/heads/${branch}`, object: { sha } });
+  private removeLabel(number: number, label: string): HttpResponse {
+    const target = this.resolveLabels(number);
+    const index = target?.indexOf(label) ?? -1;
+    if (target === undefined || index < 0) {
+      return json(404, { message: 'Label does not exist' });
     }
+    target.splice(index, 1);
+    return { status: 200, headers: {}, text: '' };
+  }
 
-    const commitMatch = /^\/repos\/[^/]+\/[^/]+\/git\/commits\/(.+)$/.exec(path);
-    if (commitMatch !== null && input.method === 'GET') {
-      const sha = commitMatch[1] ?? '';
-      const commit = this.commits.get(sha);
-      if (commit === undefined) return json(404, { message: 'Not Found' });
-      return json(200, { sha, tree: { sha: commit.tree }, parents: commit.parents });
+  private handleComments(
+    method: string,
+    path: string,
+    body: Record<string, unknown> | undefined,
+  ): HttpResponse | null {
+    const match = /^\/repos\/[^/]+\/[^/]+\/issues\/(\d+)\/comments$/.exec(path);
+    if (match === null) return null;
+    const number = Number(match[1]);
+    if (method === 'GET') return json(200, [...(this.comments.get(number) ?? [])]);
+    if (method !== 'POST') return null;
+    const list = this.comments.get(number) ?? [];
+    const record: CommentRecord = {
+      id: this.nextId++,
+      user: { login: this.botLogin, type: 'Bot' },
+      body: stringField(body, 'body'),
+      created_at: this.tick(),
+    };
+    list.push(record);
+    this.comments.set(number, list);
+    return json(201, record);
+  }
+
+  private handleGitCommits(
+    method: string,
+    path: string,
+    body: Record<string, unknown> | undefined,
+  ): HttpResponse | null {
+    const commit = /^\/repos\/[^/]+\/[^/]+\/git\/commits\/(.+)$/.exec(path);
+    if (commit !== null && method === 'GET') {
+      const sha = commit[1] ?? '';
+      const record = this.commits.get(sha);
+      if (record === undefined) return json(404, { message: 'Not Found' });
+      return json(200, { sha, tree: { sha: record.tree }, parents: record.parents });
     }
-
-    const commitsMatch = /^\/repos\/[^/]+\/[^/]+\/git\/commits$/.exec(path);
-    if (commitsMatch !== null && input.method === 'POST') {
-      const tree = String(body?.['tree'] ?? '');
-      const parents = (body?.['parents'] as string[] | undefined) ?? [];
+    if (/^\/repos\/[^/]+\/[^/]+\/git\/commits$/.test(path) && method === 'POST') {
+      const tree = stringField(body, 'tree');
+      const parents = stringArrayField(body, 'parents');
       const sha = `commit-${this.nextCommit++}`;
       this.commits.set(sha, { tree, parents });
       return json(201, { sha, tree: { sha: tree }, parents });
     }
+    return null;
+  }
 
-    const refsMatch = /^\/repos\/[^/]+\/[^/]+\/git\/refs$/.exec(path);
-    if (refsMatch !== null && input.method === 'POST') {
-      const ref = String(body?.['ref'] ?? '');
-      const branch = ref.replace('refs/heads/', '');
-      if (this.refs.has(branch)) {
-        return json(422, { message: 'Reference already exists' });
-      }
-      this.refs.set(branch, String(body?.['sha'] ?? ''));
-      return json(201, { ref, object: { sha: body?.['sha'] } });
-    }
-
-    const refBranchMatch = /^\/repos\/[^/]+\/[^/]+\/git\/refs\/heads\/(.+)$/.exec(path);
-    if (refBranchMatch !== null && input.method === 'PATCH') {
-      const branch = refBranchMatch[1] ?? '';
-      if (!this.refs.has(branch)) return json(404, { message: 'Not Found' });
-      const sha = String(body?.['sha'] ?? '');
-      this.refs.set(branch, sha);
+  private handleGitRefs(
+    method: string,
+    path: string,
+    body: Record<string, unknown> | undefined,
+  ): HttpResponse | null {
+    const ref = /^\/repos\/[^/]+\/[^/]+\/git\/ref\/heads\/(.+)$/.exec(path);
+    if (ref !== null && method === 'GET') {
+      const branch = ref[1] ?? '';
+      const sha = this.refs.get(branch);
+      if (sha === undefined) return json(404, { message: 'Reference does not exist' });
       return json(200, { ref: `refs/heads/${branch}`, object: { sha } });
     }
-
-    const pullsMatch = /^\/repos\/[^/]+\/[^/]+\/pulls$/.exec(path);
-    if (pullsMatch !== null && input.method === 'POST') {
-      const head = String(body?.['head'] ?? '');
-      const base = String(body?.['base'] ?? 'main');
-      const headSha = this.refs.get(head);
-      if (headSha === undefined || headSha === this.refs.get(base)) {
-        // GitHub refuses a pull request whose head has no commits ahead of base.
-        return json(422, { message: `No commits between ${base} and ${head}` });
-      }
-      const record: PullRecord = {
-        number: this.nextNumber++,
-        title: String(body?.['title'] ?? ''),
-        body: String(body?.['body'] ?? ''),
-        state: 'open',
-        merged: false,
-        draft: Boolean(body?.['draft']),
-        head,
-        base,
-        labels: [],
-      };
-      this.pulls.set(record.number, record);
-      return json(201, this.pullPayload(record));
+    if (/^\/repos\/[^/]+\/[^/]+\/git\/refs$/.test(path) && method === 'POST') {
+      const name = stringField(body, 'ref');
+      const branch = name.replace('refs/heads/', '');
+      if (this.refs.has(branch)) return json(422, { message: 'Reference already exists' });
+      this.refs.set(branch, stringField(body, 'sha'));
+      return json(201, { ref: name, object: { sha: body?.['sha'] } });
     }
-
-    if (pullsMatch !== null && input.method === 'GET') {
-      const head = url.searchParams.get('head');
-      const list = [...this.pulls.values()].filter(
-        (pull) => head === null || `${this.owner}:${pull.head}` === head || pull.head === head,
-      );
-      return json(
-        200,
-        list.map((pull) => this.pullPayload(pull)),
-      );
+    const branch = /^\/repos\/[^/]+\/[^/]+\/git\/refs\/heads\/(.+)$/.exec(path);
+    if (branch !== null && method === 'PATCH') {
+      const name = branch[1] ?? '';
+      if (!this.refs.has(name)) return json(404, { message: 'Not Found' });
+      const sha = stringField(body, 'sha');
+      this.refs.set(name, sha);
+      return json(200, { ref: `refs/heads/${name}`, object: { sha } });
     }
+    return null;
+  }
 
-    const pullMatch = /^\/repos\/[^/]+\/[^/]+\/pulls\/(\d+)$/.exec(path);
-    if (pullMatch !== null && input.method === 'GET') {
-      const record = this.pulls.get(Number(pullMatch[1]));
+  private handlePulls(
+    method: string,
+    url: URL,
+    body: Record<string, unknown> | undefined,
+  ): HttpResponse | null {
+    const path = url.pathname;
+    if (/^\/repos\/[^/]+\/[^/]+\/pulls$/.test(path)) {
+      if (method === 'POST') return this.createPull(body);
+      if (method === 'GET') return this.listPulls(url);
+      return null;
+    }
+    const pull = /^\/repos\/[^/]+\/[^/]+\/pulls\/(\d+)$/.exec(path);
+    if (pull !== null) return this.handlePullItem(method, Number(pull[1]), body);
+    const reviews = /^\/repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/reviews$/.exec(path);
+    if (reviews !== null && method === 'GET') {
+      return json(200, [...(this.reviews.get(Number(reviews[1])) ?? [])]);
+    }
+    return null;
+  }
+
+  private handlePullItem(
+    method: string,
+    number: number,
+    body: Record<string, unknown> | undefined,
+  ): HttpResponse | null {
+    if (method === 'GET') {
+      const record = this.pulls.get(number);
       if (record === undefined) return json(404, { message: 'Not Found' });
       return json(200, this.pullPayload(record));
     }
+    if (method !== 'PATCH') return null;
+    const record = this.pulls.get(number);
+    if (record === undefined) return json(404, { message: 'Not Found' });
+    if (typeof body?.['title'] === 'string') record.title = body['title'];
+    return json(200, this.pullPayload(record));
+  }
 
-    if (pullMatch !== null && input.method === 'PATCH') {
-      const record = this.pulls.get(Number(pullMatch[1]));
-      if (record === undefined) return json(404, { message: 'Not Found' });
-      if (typeof body?.['title'] === 'string') record.title = body['title'];
-      return json(200, this.pullPayload(record));
+  private createPull(body: Record<string, unknown> | undefined): HttpResponse {
+    const head = stringField(body, 'head');
+    const base = stringField(body, 'base', 'main');
+    const headSha = this.refs.get(head);
+    if (headSha === undefined || headSha === this.refs.get(base)) {
+      // GitHub refuses a pull request whose head has no commits ahead of base.
+      return json(422, { message: `No commits between ${base} and ${head}` });
     }
+    const record: PullRecord = {
+      number: this.nextNumber++,
+      title: stringField(body, 'title'),
+      body: stringField(body, 'body'),
+      state: 'open',
+      merged: false,
+      draft: Boolean(body?.['draft']),
+      head,
+      base,
+      labels: [],
+    };
+    this.pulls.set(record.number, record);
+    return json(201, this.pullPayload(record));
+  }
 
-    const reviewsMatch = /^\/repos\/[^/]+\/[^/]+\/pulls\/(\d+)\/reviews$/.exec(path);
-    if (reviewsMatch !== null && input.method === 'GET') {
-      return json(200, [...(this.reviews.get(Number(reviewsMatch[1])) ?? [])]);
-    }
-
-    return json(404, { message: `no route for ${input.method} ${path}` });
+  private listPulls(url: URL): HttpResponse {
+    const head = url.searchParams.get('head');
+    const list = [...this.pulls.values()].filter(
+      (pull) => head === null || `${this.owner}:${pull.head}` === head || pull.head === head,
+    );
+    return json(
+      200,
+      list.map((pull) => this.pullPayload(pull)),
+    );
   }
 }

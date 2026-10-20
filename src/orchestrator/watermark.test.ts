@@ -31,7 +31,7 @@ describe('answeredWatermark', () => {
   it('ignores comments that record no review', () => {
     expect(
       answeredWatermark([{ body: answeredMarker(null), at: '2026-01-01T00:01:00.000Z' }]),
-    ).toBe(null);
+    ).toBeNull();
   });
 
   it('dates a comment without a marker by its own timestamp', () => {

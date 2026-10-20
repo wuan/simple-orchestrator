@@ -132,7 +132,9 @@ export class WorktreeSandbox implements Sandbox {
         line.startsWith('branch ') &&
         line.slice('branch '.length).trim() === ref
       ) {
-        await this.git(['-C', store, 'worktree', 'remove', '--force', path]);
+        // The branch registration must be reclaimed in listing order before the
+        // next one is considered.
+        await this.git(['-C', store, 'worktree', 'remove', '--force', path]); // NOSONAR
         path = undefined;
       }
     }
@@ -331,10 +333,16 @@ export function buildDockerRunArgs(options: DockerRunOptions): string[] {
       `GIT_COMMITTER_EMAIL=${email}`,
     );
   }
-  args.push('--workdir', options.workspace);
-  args.push('--volume', `${options.store}:${options.store}`);
-  args.push('--volume', `${options.workspace}:${options.workspace}`);
-  args.push('--volume', `${options.runner}:${options.runnerMount}:ro`);
+  args.push(
+    '--workdir',
+    options.workspace,
+    '--volume',
+    `${options.store}:${options.store}`,
+    '--volume',
+    `${options.workspace}:${options.workspace}`,
+    '--volume',
+    `${options.runner}:${options.runnerMount}:ro`,
+  );
   for (const cache of options.caches ?? []) {
     args.push('--volume', `${cache.volume}:${cache.path}`);
   }

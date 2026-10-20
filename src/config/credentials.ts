@@ -50,7 +50,12 @@ export class EnvCredentialResolver implements CredentialResolver {
     this.env = env;
   }
 
-  async resolve(reference: string, context: CredentialContext): Promise<string> {
+  resolve(reference: string, context: CredentialContext): Promise<string> {
+    return Promise.resolve().then(() => this.resolveEnv(reference, context));
+  }
+
+  /** The synchronous lookup, wrapped by `resolve` into a promise. */
+  private resolveEnv(reference: string, context: CredentialContext): string {
     const { scheme, name } = parseReference(reference, context);
     if (scheme !== 'env') {
       throw new CredentialError(
@@ -144,9 +149,10 @@ export class FallbackCredentialResolver implements CredentialResolver {
 
   async resolve(reference: string, context: CredentialContext): Promise<string> {
     const errors: CredentialError[] = [];
+    // Resolvers are tried in priority order, so the awaits stay sequential.
     for (const resolver of this.resolvers) {
       try {
-        return await resolver.resolve(reference, context);
+        return await resolver.resolve(reference, context); // NOSONAR
       } catch (error) {
         if (error instanceof CredentialError) {
           errors.push(error);
@@ -169,10 +175,14 @@ export async function resolveCredentials(
   config: OrchestratorConfig,
   resolver: CredentialResolver,
 ): Promise<Map<string, string>> {
-  const resolved = new Map<string, string>();
-  for (const repo of config.repositories) {
-    const key = repoKey(repo);
-    resolved.set(key, await resolver.resolve(repo.credential, { repo: key }));
-  }
-  return resolved;
+  // Repository credentials are independent, so resolve them concurrently while
+  // preserving the configured repository order in the result.
+  const entries = await Promise.all(
+    config.repositories.map(async (repo) => {
+      const key = repoKey(repo);
+      const credential = await resolver.resolve(repo.credential, { repo: key });
+      return [key, credential] as const;
+    }),
+  );
+  return new Map(entries);
 }

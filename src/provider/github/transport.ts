@@ -49,7 +49,7 @@ export function unwrapGraphql<T>(text: string, status: number): T {
     const message = envelope.errors.map((error) => error.message ?? 'unknown error').join('; ');
     throw new GitHubApiError(`GraphQL request failed: ${message}`, status);
   }
-  if (envelope === null || envelope.data === undefined) {
+  if (envelope?.data === undefined) {
     throw new GitHubApiError('GraphQL response contained no data', status);
   }
   return envelope.data;

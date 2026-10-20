@@ -11,12 +11,8 @@ export class RecordingCommands implements CommandRunner {
 
   constructor(private readonly result: CommandResult = { code: 0, stdout: '', stderr: '' }) {}
 
-  async run(
-    command: string,
-    args: string[],
-    options: CommandRunOptions = {},
-  ): Promise<CommandResult> {
+  run(command: string, args: string[], options: CommandRunOptions = {}): Promise<CommandResult> {
     this.runs.push({ command, args, env: options.env, stdin: options.stdin });
-    return this.result;
+    return Promise.resolve(this.result);
   }
 }

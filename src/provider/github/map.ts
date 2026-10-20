@@ -80,8 +80,13 @@ export function mapIssue(repo: RepoRef, payload: GithubIssuePayload): ProviderIs
   };
 }
 
+function pullRequestState(payload: GithubPullPayload): 'open' | 'closed' | 'merged' {
+  if (payload.merged_at) return 'merged';
+  return payload.state === 'closed' ? 'closed' : 'open';
+}
+
 export function mapPullRequest(repo: RepoRef, payload: GithubPullPayload): ProviderPullRequest {
-  const state = payload.merged_at ? 'merged' : payload.state === 'closed' ? 'closed' : 'open';
+  const state = pullRequestState(payload);
   const pullRequest: ProviderPullRequest = {
     ref: { repo, number: payload.number },
     title: payload.title,

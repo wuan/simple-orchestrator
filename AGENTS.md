@@ -35,6 +35,19 @@ npm test           # unit + integration (fakes; no network)
 npm run verify     # the full gate; run this before pushing
 ```
 
+## Code quality
+
+The SonarCloud analysis of this repository (`wuan_simple-orchestrator` on
+SonarCloud) must stay clean: the quality gate passing and no unresolved
+findings. The project is public, so its state can be read without a token:
+
+```bash
+# Open findings (expect 0).
+curl -s 'https://sonarcloud.io/api/issues/search?componentKeys=wuan_simple-orchestrator&resolved=false' | jq '.total'
+# Quality gate status (expect "OK").
+curl -s 'https://sonarcloud.io/api/qualitygates/project_status?projectKey=wuan_simple-orchestrator' | jq '.projectStatus.status'
+```
+
 ## OpenSpec
 
 Behavior changes are specified with OpenSpec under `openspec/`. When a change
