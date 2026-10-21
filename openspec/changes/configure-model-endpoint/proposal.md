@@ -15,15 +15,15 @@ compatible endpoint and no part of the configuration is tied to GreenPT.
 ## What Changes
 
 - Add two optional fields to the `agent` configuration block:
-  - `endpoint` - the API base URL for the provider named by `agent.model`.
+  - `apiEndpoint` - the API base URL for the provider named by `agent.model`.
   - `apiKeyEnv` - the name of the environment variable the provider reads its
-    API key from; defaults to the provider-neutral `OPENCODE_API_KEY`.
+    API key from; defaults to the provider-neutral `LLM_API_KEY`.
 - The orchestrator composes an OpenCode provider override from those fields and
   applies it to the provider in `agent.model`, in the in-process host and in
   containerized turns, so the configured endpoint and token variable are used
   even when the provider's registry definition hardcodes different ones.
 - **BREAKING**: the default provider API-key variable changes from
-  `GREENPT_API_KEY` to `OPENCODE_API_KEY`. A deployment that keeps the old name
+  `GREENPT_API_KEY` to `LLM_API_KEY`. A deployment that keeps the old name
   sets `agent.apiKeyEnv: GREENPT_API_KEY`, or renames the variable.
 - A containerized turn receives the configured API-key variable in addition to
   the names its `environment.env` declares, so a configured token reaches the
@@ -42,9 +42,9 @@ None.
 
 ### Modified Capabilities
 
-- `orchestrator-configuration`: the `agent` block gains the endpoint and
-  API-key-variable fields, validated at startup, with the documented generic
-  default token variable.
+- `orchestrator-configuration`: the `agent` block gains the `apiEndpoint` and
+  `apiKeyEnv` fields, validated at startup, with the documented generic default
+  token variable.
 - `agent-runtime`: the embedded host (and the containerized runner) apply the
   configured endpoint and provider API-key variable to the configured model's
   provider, and the orchestrator passes the configured provider variable into a
@@ -65,5 +65,5 @@ None.
   `examples/config.yaml`, `deploy/orchestrator.env.example`,
   `deploy/orchestrator.service`, `deploy/README.md`, `environments/README.md`.
 - **Operational**: a deployment that set `GREENPT_API_KEY` must rename it to
-  `OPENCODE_API_KEY` or pin `agent.apiKeyEnv`.
+  `LLM_API_KEY` or pin `agent.apiKeyEnv`.
 - **Dependencies**: none new.

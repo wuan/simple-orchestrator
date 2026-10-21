@@ -6,8 +6,9 @@
 
 The orchestrator SHALL let the operator configure the OpenCode model, agent,
 database, provider API endpoint, and provider API-key environment variable the
-embedded runtime uses, and SHALL apply a documented default model and a
-documented default API-key variable when they are omitted.
+embedded runtime uses - naming the last two `agent.apiEndpoint` and
+`agent.apiKeyEnv` - and SHALL apply a documented default model and a documented
+default API-key variable when they are omitted.
 
 #### Scenario: Default model applies
 
@@ -21,7 +22,7 @@ documented default API-key variable when they are omitted.
 
 #### Scenario: Configured endpoint applies
 
-- **WHEN** a configuration sets the agent endpoint
+- **WHEN** a configuration sets `agent.apiEndpoint`
 - **THEN** the embedded runtime targets that API base URL for the provider the model names
 
 #### Scenario: Default API-key variable is generic
@@ -36,5 +37,5 @@ documented default API-key variable when they are omitted.
 
 #### Scenario: Invalid agent fields fail startup
 
-- **WHEN** the agent endpoint or API-key variable is not a non-empty string
+- **WHEN** `agent.apiEndpoint` or `agent.apiKeyEnv` is not a non-empty string
 - **THEN** startup stops with a clear error instead of running with a partially applied agent configuration

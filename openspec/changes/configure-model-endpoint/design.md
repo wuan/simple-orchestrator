@@ -43,12 +43,12 @@ See `proposal.md` - Why. The current shape matters for the approach:
 
 ## Decisions
 
-### Decision: flat `agent.endpoint` and `agent.apiKeyEnv` fields
+### Decision: flat `agent.apiEndpoint` and `agent.apiKeyEnv` fields
 
-Add `endpoint?: string` and `apiKeyEnv?: string` to `AgentConfig` and parse them
-in `parseAgent`, rejecting empty or non-string values with a `ConfigError` as
-the existing `agent`/`database` fields do. `apiKeyEnv` defaults to
-`OPENCODE_API_KEY`.
+Add `apiEndpoint?: string` and `apiKeyEnv?: string` to `AgentConfig` and parse
+them in `parseAgent`, rejecting empty or non-string values with a `ConfigError`
+as the existing `agent`/`database` fields do. `apiKeyEnv` defaults to
+`LLM_API_KEY`.
 
 Alternative considered: a nested `agent.provider` mirroring OpenCode's provider
 document. Rejected for now - there is exactly one model and one provider, so the
@@ -68,7 +68,7 @@ The host composes
 {
   "provider": {
     "<provider from agent.model>": {
-      "options": { "baseURL": "<agent.endpoint>" },
+      "options": { "baseURL": "<agent.apiEndpoint>" },
       "env": ["<agent.apiKeyEnv>"]
     }
   }
@@ -86,7 +86,7 @@ export `GREENPT_API_KEY` from `agent.apiKeyEnv`) before creating the host.
 Rejected: it cannot change the endpoint, and it keeps a vendor-named variable in
 the code, which is the coupling this change removes.
 
-### Decision: `apiKeyEnv` defaults to `OPENCODE_API_KEY` (**BREAKING**)
+### Decision: `apiKeyEnv` defaults to `LLM_API_KEY` (**BREAKING**)
 
 The variable name is provider-neutral and documented; the overlay is always
 applied, so the default is the generic name rather than the registry's. A
@@ -104,7 +104,7 @@ removes and makes which credential was used depend on the environment.
 ### Decision: carry the overlay to the container and pass the token variable
 
 `RunnerRequest` and `RunnerClientOptions` gain the same provider overlay (or the
-`endpoint`/`apiKeyEnv` pair it is built from), and `defaultCreateClient` in
+`apiEndpoint`/`apiKeyEnv` pair it is built from), and `defaultCreateClient` in
 `src/runner.ts` passes it to the in-container host, so both hosts are configured
 identically. The orchestrator appends the configured `apiKeyEnv` to the
 container's `--env` names in addition to `environment.env`, so the token reaches
@@ -136,17 +136,16 @@ crosses.
 
 ## Migration Plan
 
-1. Rename the host's `GREENPT_API_KEY` to `OPENCODE_API_KEY` (or set
+1. Rename the host's `GREENPT_API_KEY` to `LLM_API_KEY` (or set
    `agent.apiKeyEnv: GREENPT_API_KEY` to keep the old name).
-2. To target a non-default endpoint, set `agent.endpoint` to its base URL.
+2. To target a non-default endpoint, set `agent.apiEndpoint` to its base URL.
 3. Remove the now-redundant provider variable from `environment.env`; the
    configured variable crosses automatically.
 4. Rollback is a revert; no persistent state or schema changes.
 
 ## Open Questions
 
-- Field names (`endpoint`/`apiKeyEnv`) can still be renamed cheaply before
-  implementation; they are the only user-visible names this change introduces.
-- Whether to expose the full provider document (a different `npm` package and
-  model catalog) is deferred to a follow-up if operators need a provider that
-  is not in the OpenCode registry.
+None. The field names (`apiEndpoint`/`apiKeyEnv`), the generic default
+(`LLM_API_KEY`), and the scope (an OpenAI-compatible endpoint override of the
+model's existing provider, no custom provider definition) were settled in
+review; see Decisions above.
