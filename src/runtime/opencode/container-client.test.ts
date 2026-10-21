@@ -86,7 +86,7 @@ describe('ContainerOpenCodeClient', () => {
     const result = await client(runner).runSkill(skillRequest());
 
     expect(result).toEqual(RESULT);
-    const call = runner.calls[0];
+    const call = runner.calls.at(-1);
     expect(call?.command).toBe('docker');
     const args = call?.args ?? [];
     expect(args.slice(0, 3)).toEqual(['run', '--rm', '-i']);
@@ -107,6 +107,53 @@ describe('ContainerOpenCodeClient', () => {
     expect(call?.input).toContain('"expectedSdkVersion":"2.0.31"');
   });
 
+  it('prepares each cache volume as root before the turn runs', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+
+    await client(runner).runSkill(skillRequest());
+
+    expect(runner.calls).toHaveLength(2);
+    const prepare = runner.calls[0];
+    expect(prepare?.args.slice(0, 2)).toEqual(['run', '--rm']);
+    expect(prepare?.args).toContain('0:0');
+    expect(prepare?.args).toContain('--entrypoint');
+    expect(prepare?.args).toContain('chown');
+    expect(prepare?.args).toContain('orchestrator-acme-widget-gradle:/home/agent/.gradle');
+    expect(prepare?.args.at(-1)).toBe('/home/agent/.gradle');
+    // The turn follows preparation and mounts the runner read-only.
+    expect(runner.calls.at(-1)?.args).toContain('/app/dist:/opt/runner/dist:ro');
+  });
+
+  it('prepares a cache volume once per process', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+    const instance = client(runner);
+
+    await instance.runSkill(skillRequest());
+    await instance.runSkill(skillRequest());
+
+    const prepares = runner.calls.filter((call) => call.args.includes('--entrypoint'));
+    expect(prepares).toHaveLength(1);
+  });
+
+  it('runs the turn when a cache volume cannot be prepared', async () => {
+    const runner = new FakeContainerRunner(async (options) => {
+      if (options.args.includes('--entrypoint')) {
+        return { code: 1, stdout: '', stderr: 'chown: not found' };
+      }
+      options.onStdout?.(`${JSON.stringify({ type: 'ready', sdkVersion: '2.0.31' })}\n`);
+      options.onStdout?.(`${JSON.stringify({ type: 'result', result: RESULT })}\n`);
+      return { code: 0, stdout: '', stderr: '' };
+    });
+
+    await expect(client(runner).runSkill(skillRequest())).resolves.toEqual(RESULT);
+  });
+
   it('passes the configured endpoint and provider variable into the turn', async () => {
     const runner = eventsRunner([
       { type: 'ready', sdkVersion: '2.0.31' },
@@ -123,7 +170,7 @@ describe('ContainerOpenCodeClient', () => {
 
     await configured.runSkill(skillRequest());
 
-    const call = runner.calls[0];
+    const call = runner.calls.at(-1);
     expect(call?.args).toContain('ACME_API_KEY');
     // The environment still names its own variable, so both are forwarded.
     expect(call?.args).toContain('LLM_API_KEY');
@@ -146,7 +193,7 @@ describe('ContainerOpenCodeClient', () => {
 
     await configured.runSkill(skillRequest());
 
-    const args = runner.calls[0]?.args ?? [];
+    const args = runner.calls.at(-1)?.args ?? [];
     expect(args.filter((arg) => arg === 'LLM_API_KEY')).toHaveLength(1);
   });
 

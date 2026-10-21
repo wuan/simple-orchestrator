@@ -40,7 +40,8 @@ export class TurnLimiter {
 
   addUsage(usage: Partial<TurnUsage>): void {
     if (usage.steps !== undefined) this.steps += usage.steps;
-    if (usage.tokens !== undefined) this.tokens += usage.tokens;
+    const tokens = countedTokens(usage);
+    if (tokens !== undefined) this.tokens += tokens;
     if (this.steps > this.limits.maxSteps) this.abort('steps');
     if (this.tokens > this.limits.maxTokens) this.abort('tokens');
   }
@@ -54,6 +55,21 @@ export class TurnLimiter {
     this.exceeded = limit;
     this.controller.abort(new LimitExceededError(limit));
   }
+}
+
+/**
+ * The tokens a turn is billed for new work: input, output, reasoning, and cache
+ * write. Cache reads re-consume unchanged context and are excluded, so the
+ * configured budget bounds what a turn does rather than the context it re-reads
+ * (a real turn reports most of its tokens as cache reads). Falls back to the
+ * reported total when a runtime reports only a total.
+ */
+export function countedTokens(usage: Partial<TurnUsage>): number | undefined {
+  const kinds = [usage.input, usage.output, usage.reasoning, usage.cacheWrite];
+  if (kinds.every((value) => value === undefined)) return usage.tokens;
+  return (
+    (usage.input ?? 0) + (usage.output ?? 0) + (usage.reasoning ?? 0) + (usage.cacheWrite ?? 0)
+  );
 }
 
 /**

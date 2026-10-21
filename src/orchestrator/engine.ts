@@ -90,10 +90,32 @@ function describeError(error: unknown): string {
  * merge that would ship no implementation.
  */
 export class NoProgressError extends Error {
-  constructor(skill: TurnSkill) {
+  /** The failed turn's own summary, if it reported one. */
+  readonly summary: string;
+  /** Questions the failed turn asked the human, if any. */
+  readonly questions: string[];
+
+  constructor(skill: TurnSkill, summary = '', questions: string[] = []) {
     super(`the ${skill} turn produced no change: nothing was committed to the workflow branch`);
     this.name = 'NoProgressError';
+    this.summary = summary;
+    this.questions = questions;
   }
+}
+
+/**
+ * The failed turn's own account, for the failure comment. A turn that produced
+ * no change still knows what it did and why it stopped, and that is the only
+ * place the reason is recorded, so it is surfaced rather than discarded.
+ */
+function noProgressDetail(error: unknown): string | undefined {
+  if (!(error instanceof NoProgressError)) return undefined;
+  const parts: string[] = [];
+  if (error.summary.trim() !== '') parts.push(error.summary.trim());
+  if (error.questions.length > 0) {
+    parts.push('', '**Questions the turn raised:**', ...error.questions.map((q) => `- ${q}`));
+  }
+  return parts.length === 0 ? undefined : parts.join('\n');
 }
 
 function buildTranscript(
@@ -484,7 +506,7 @@ export class WorkflowEngine {
       const madeProgress = (await handle.head()) !== beforeTip;
       if (!madeProgress && (skill === 'apply' || trigger === null)) {
         this.logger(`${turn}: the workflow branch tip is unchanged; treating the turn as failed`);
-        throw new NoProgressError(skill);
+        throw new NoProgressError(skill, result.summary, result.questions);
       }
       // A turn's commits live only in the throwaway worktree, so publish the
       // workflow branch before anything else observes the turn. Least-privilege
@@ -527,10 +549,13 @@ export class WorkflowEngine {
     } catch (error) {
       this.logger(`${turn} failed: ${describeError(error)}`);
       // The failure comment reports the partial usage, elapsed time, and
-      // attempts of the turn that just failed.
+      // attempts of the turn that just failed, and the turn's own account when
+      // it produced no change so the reason is not lost.
+      const detail = noProgressDetail(error);
       await this.signalFailure(pullRequest, error, {
         usage: withMeasuredUsage(reported, startedAt, attempts),
         reviews,
+        ...(detail === undefined ? {} : { detail }),
       });
     } finally {
       await handle.dispose();
@@ -668,16 +693,27 @@ export class WorkflowEngine {
 
   /**
    * Fail the workflow and post the failure on the pull request. A failure with
-   * a turn behind it reports that turn's metrics; a transition failure such as
+   * a turn behind it reports that turn's metrics and, when the turn produced no
+   * change, the turn's own summary and questions; a transition failure such as
    * the revise limit repeats the last turn's metrics instead.
    */
   private async signalFailure(
     pullRequest: ProviderPullRequest,
     error: unknown,
-    context: { usage?: TurnUsage; comments?: ProviderComment[]; reviews: ProviderReview[] },
+    context: {
+      usage?: TurnUsage;
+      comments?: ProviderComment[];
+      reviews: ProviderReview[];
+      /** The failed turn's own account, appended to the failure comment. */
+      detail?: string;
+    },
   ): Promise<void> {
     await this.setPhase(pullRequest, 'failed');
-    const body = `Workflow failed: ${describeError(error)}`;
+    const reason = `Workflow failed: ${describeError(error)}`;
+    const body =
+      context.detail === undefined || context.detail === ''
+        ? reason
+        : `${reason}\n\n${context.detail}`;
     const comment =
       context.usage === undefined
         ? withLastTurnMetrics(body, latestUsage(context.comments ?? []))

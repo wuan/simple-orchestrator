@@ -661,6 +661,24 @@ describe('WorkflowEngine stalled apply turns', () => {
     );
   });
 
+  it("includes the turn's summary and questions in the failure comment", async () => {
+    const { h, number } = await startedReady();
+    h.provider.seedReview(number, { state: 'approved', body: 'lgtm' });
+    h.sandbox.headResults = ['same', 'same'];
+    h.runtime.enqueue(
+      applyResult({
+        summary: 'could not finish the Gradle build before stopping',
+        questions: ['Should the environment image pre-seed the Gradle cache?'],
+      }),
+    );
+
+    await h.engine.drive((await h.provider.getPullRequest({ repo: h.provider.repo, number }))!);
+
+    const comment = h.provider.commentLog.find((c) => c.body.includes('produced no change'));
+    expect(comment?.body).toContain('could not finish the Gradle build before stopping');
+    expect(comment?.body).toContain('Should the environment image pre-seed the Gradle cache?');
+  });
+
   it('publishes and releases an apply turn that commits', async () => {
     const { h, number } = await startedReady();
     const pushesBefore = h.provider.pushes.length;

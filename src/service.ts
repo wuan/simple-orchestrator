@@ -8,6 +8,7 @@ import { GhCliCloner } from './provider/github/clone.js';
 import { GhCliTransport } from './provider/github/gh-cli.js';
 import { GitHubProvider } from './provider/github/provider.js';
 import type { RepoProvider } from './provider/types.js';
+import { LimitedRuntime } from './runtime/limits.js';
 import { RepositoryStore } from './runtime/repository-store.js';
 import { WorktreeSandbox, type Sandbox } from './runtime/sandbox.js';
 import type { AgentRuntime } from './runtime/types.js';
@@ -81,7 +82,12 @@ export async function createService(
 ): Promise<Service> {
   const credentials = await resolveCredentials(config, options.credentials);
   const providerFactory = options.providerFactory ?? defaultProviderFactory;
-  const runtime = options.runtime ?? options.runtimeFactory?.(config) ?? new UnconfiguredRuntime();
+  // Bound every turn by the configured limits, regardless of which runtime is
+  // configured, so a turn that exceeds its step, token, or wall-clock budget
+  // fails instead of running unbounded.
+  const runtime = new LimitedRuntime(
+    options.runtime ?? options.runtimeFactory?.(config) ?? new UnconfiguredRuntime(),
+  );
   const openspec = options.openspec ?? new NodeOpenspecCli(new NodeCommandRunner());
   const store = new RepositoryStore({ root: config.workspace.root });
   const logger = options.logger ?? options.loggerFactory?.(credentials);
