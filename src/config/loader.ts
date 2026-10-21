@@ -3,6 +3,7 @@ import { readFileSync } from 'node:fs';
 import { parse as parseYaml } from 'yaml';
 
 import {
+  DEFAULT_AGENT_API_KEY_ENV,
   DEFAULT_AGENT_MODEL,
   DEFAULT_BASE_BRANCH,
   DEFAULT_LABELS,
@@ -341,11 +342,13 @@ function parseLimits(raw: unknown): Limits {
 }
 
 function parseAgent(raw: unknown): AgentConfig {
-  if (raw === undefined) return { model: DEFAULT_AGENT_MODEL };
-  const record = asRecord(raw, 'agent');
+  const record = raw === undefined ? {} : asRecord(raw, 'agent');
   const agent: AgentConfig = {
     model: optionalNonEmptyString(record, 'model', 'agent', DEFAULT_AGENT_MODEL),
+    apiKeyEnv: optionalNonEmptyString(record, 'apiKeyEnv', 'agent', DEFAULT_AGENT_API_KEY_ENV),
   };
+  const apiEndpoint = optionalNonEmptyStringValue(record, 'apiEndpoint', 'agent');
+  if (apiEndpoint !== undefined) agent.apiEndpoint = apiEndpoint;
   for (const key of ['agent', 'database'] as const) {
     const value = record[key];
     if (value === undefined) continue;

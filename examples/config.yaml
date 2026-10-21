@@ -34,6 +34,12 @@ logging:
 agent:
   # OpenCode model the embedded host runs. The default is greenpt/deepseek-v4.1-flash.
   model: greenpt/deepseek-v4.1-flash
+  # API base URL for the model's provider. Omit to use the provider's registry
+  # default, or set it to point at a different or self-hosted OpenAI-compatible
+  # endpoint.
+  # apiEndpoint: https://api.example.com/v1
+  # Environment variable the provider reads its API key from (default LLM_API_KEY).
+  # apiKeyEnv: LLM_API_KEY
   # Point at the OpenCode database that holds provider auth and models when it is
   # not the SDK default (or set OPENCODE_DB instead).
   # database: ~/.local/share/opencode/opencode.db

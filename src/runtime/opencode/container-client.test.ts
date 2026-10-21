@@ -18,7 +18,7 @@ import {
 const ENVIRONMENT: EnvironmentSpec = {
   image: 'ghcr.io/acme/agent-java:latest',
   network: 'host',
-  env: ['GREENPT_API_KEY'],
+  env: ['LLM_API_KEY'],
   gitIdentity: { name: 'OpenSpec Agent', email: 'agent@example.com' },
   caches: [{ name: 'gradle', path: '/home/agent/.gradle' }],
 };
@@ -96,7 +96,7 @@ describe('ContainerOpenCodeClient', () => {
     expect(args).toContain('orchestrator-acme-widget-gradle:/home/agent/.gradle');
     expect(args).toContain('--network');
     expect(args).toContain('host');
-    expect(args).toContain('GREENPT_API_KEY');
+    expect(args).toContain('LLM_API_KEY');
     expect(args).toContain('GIT_AUTHOR_NAME=OpenSpec Agent');
     expect(args.slice(-3)).toEqual([
       'ghcr.io/acme/agent-java:latest',
@@ -105,6 +105,49 @@ describe('ContainerOpenCodeClient', () => {
     ]);
     expect(call?.input).toContain('"skill":"propose"');
     expect(call?.input).toContain('"expectedSdkVersion":"2.0.31"');
+  });
+
+  it('passes the configured endpoint and provider variable into the turn', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+    const configured = new ContainerOpenCodeClient({
+      runnerDir: '/app/dist',
+      model: 'greenpt/deepseek#flash',
+      apiEndpoint: 'https://llm.example.com/v1',
+      apiKeyEnv: 'ACME_API_KEY',
+      runner,
+      sdkVersion: '2.0.31',
+    });
+
+    await configured.runSkill(skillRequest());
+
+    const call = runner.calls[0];
+    expect(call?.args).toContain('ACME_API_KEY');
+    // The environment still names its own variable, so both are forwarded.
+    expect(call?.args).toContain('LLM_API_KEY');
+    expect(call?.input).toContain('"apiEndpoint":"https://llm.example.com/v1"');
+    expect(call?.input).toContain('"apiKeyEnv":"ACME_API_KEY"');
+  });
+
+  it('deduplicates a provider variable the environment already names', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+    const configured = new ContainerOpenCodeClient({
+      runnerDir: '/app/dist',
+      model: 'greenpt/deepseek#flash',
+      apiKeyEnv: 'LLM_API_KEY',
+      runner,
+      sdkVersion: '2.0.31',
+    });
+
+    await configured.runSkill(skillRequest());
+
+    const args = runner.calls[0]?.args ?? [];
+    expect(args.filter((arg) => arg === 'LLM_API_KEY')).toHaveLength(1);
   });
 
   it('forwards usage events before resolving', async () => {

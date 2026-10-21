@@ -101,6 +101,13 @@ export interface AgentConfig {
   agent?: string;
   /** OpenCode database holding provider auth and model definitions; the SDK default when omitted. */
   database?: string;
+  /** API base URL for the model's provider; the provider's registry default when omitted. */
+  apiEndpoint?: string;
+  /**
+   * Environment variable the model's provider reads its API key from; defaults
+   * to {@link DEFAULT_AGENT_API_KEY_ENV} so no vendor-named variable is baked in.
+   */
+  apiKeyEnv?: string;
 }
 
 export interface OrchestratorConfig {
@@ -140,6 +147,13 @@ export const DEFAULT_WORKSPACE_ROOT = '~/workspace';
  * model explicitly and lets operators override it.
  */
 export const DEFAULT_AGENT_MODEL = 'greenpt/deepseek-v4.1-flash';
+
+/**
+ * Provider-neutral environment variable the embedded host reads the provider
+ * API key from when `agent.apiKeyEnv` is omitted. Naming it generically keeps
+ * the configuration free of any single vendor.
+ */
+export const DEFAULT_AGENT_API_KEY_ENV = 'LLM_API_KEY';
 
 export const DEFAULT_LIMITS: Limits = {
   maxSteps: 200,

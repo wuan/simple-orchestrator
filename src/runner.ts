@@ -16,6 +16,10 @@ export interface RunnerRequest {
   model?: string;
   agent?: string;
   database?: string;
+  /** API base URL for the model's provider; the provider default when omitted. */
+  apiEndpoint?: string;
+  /** Environment variable the provider reads its API key from. */
+  apiKeyEnv?: string;
   /** The orchestrator's `@opencode/sdk` version the image must match. */
   expectedSdkVersion?: string;
 }
@@ -32,6 +36,8 @@ export interface RunnerClientOptions {
   model?: string;
   agent?: string;
   database?: string;
+  apiEndpoint?: string;
+  apiKeyEnv?: string;
 }
 
 /** The client the runner drives, narrowed to what the entry point needs. */
@@ -85,6 +91,8 @@ export function parseRunnerRequest(input: string): RunnerRequest {
   const model = optional('model');
   const agent = optional('agent');
   const database = optional('database');
+  const apiEndpoint = optional('apiEndpoint');
+  const apiKeyEnv = optional('apiKeyEnv');
   const expectedSdkVersion = optional('expectedSdkVersion');
   return {
     skill,
@@ -93,6 +101,8 @@ export function parseRunnerRequest(input: string): RunnerRequest {
     ...(model === undefined ? {} : { model }),
     ...(agent === undefined ? {} : { agent }),
     ...(database === undefined ? {} : { database }),
+    ...(apiEndpoint === undefined ? {} : { apiEndpoint }),
+    ...(apiKeyEnv === undefined ? {} : { apiKeyEnv }),
     ...(expectedSdkVersion === undefined ? {} : { expectedSdkVersion }),
   };
 }
@@ -132,6 +142,8 @@ export async function runRunner(input: string, deps: RunnerDeps): Promise<number
     ...(request.model === undefined ? {} : { model: request.model }),
     ...(request.agent === undefined ? {} : { agent: request.agent }),
     ...(request.database === undefined ? {} : { database: request.database }),
+    ...(request.apiEndpoint === undefined ? {} : { apiEndpoint: request.apiEndpoint }),
+    ...(request.apiKeyEnv === undefined ? {} : { apiKeyEnv: request.apiKeyEnv }),
   });
   try {
     const result = await client.runSkill({
@@ -153,7 +165,12 @@ export async function runRunner(input: string, deps: RunnerDeps): Promise<number
 function defaultCreateClient(options: RunnerClientOptions): RunnerClient {
   const model = options.model === undefined ? undefined : parseModelRef(options.model);
   return new EmbeddedOpenCodeClient(
-    createEmbeddedHostFactory(options.database === undefined ? {} : { database: options.database }),
+    createEmbeddedHostFactory({
+      ...(options.database === undefined ? {} : { database: options.database }),
+      ...(model === undefined ? {} : { provider: model.providerID }),
+      ...(options.apiEndpoint === undefined ? {} : { apiEndpoint: options.apiEndpoint }),
+      ...(options.apiKeyEnv === undefined ? {} : { apiKeyEnv: options.apiKeyEnv }),
+    }),
     {
       ...(model === undefined ? {} : { model }),
       ...(options.agent === undefined ? {} : { agent: options.agent }),

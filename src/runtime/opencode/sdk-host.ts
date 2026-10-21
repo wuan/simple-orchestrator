@@ -72,6 +72,36 @@ export interface EmbedOpenCodeOptions {
    * so point this at the operator's OpenCode data database to reuse its auth.
    */
   database?: string;
+  /** Provider id whose endpoint and credential variable the overlay targets. */
+  provider?: string;
+  /** API base URL for the provider; the provider's registry default when omitted. */
+  apiEndpoint?: string;
+  /** Environment variable the provider reads its API key from. */
+  apiKeyEnv?: string;
+}
+
+/** The endpoint and credential-variable values a provider overlay carries. */
+export interface ProviderOverlay {
+  apiEndpoint?: string;
+  apiKeyEnv?: string;
+}
+
+/**
+ * Build the OpenCode provider-override document for one provider, as the JSON
+ * the SDK's inline config carries. `options.baseURL` sets the endpoint and
+ * `env` names the credential variable, so a registry entry that hardcodes
+ * different values is overridden without editing the registry. Returns
+ * `undefined` when neither value is set, leaving the provider's own defaults.
+ */
+export function providerConfig(
+  provider: string,
+  overlay: ProviderOverlay = {},
+): string | undefined {
+  const entry: { options?: { baseURL: string }; env?: string[] } = {};
+  if (overlay.apiEndpoint !== undefined) entry.options = { baseURL: overlay.apiEndpoint };
+  if (overlay.apiKeyEnv !== undefined) entry.env = [overlay.apiKeyEnv];
+  if (entry.options === undefined && entry.env === undefined) return undefined;
+  return JSON.stringify({ provider: { [provider]: entry } });
 }
 
 /** Parse `provider/model` or `provider/model#variant` into a session model ref. */
@@ -197,8 +227,20 @@ export function createEmbeddedHostFactory(
 ): OpenCodeHostFactory {
   return async (): Promise<OpenCodeHost> => {
     const sdk = await load();
+    const content =
+      options.provider === undefined
+        ? undefined
+        : providerConfig(options.provider, {
+            ...(options.apiEndpoint === undefined ? {} : { apiEndpoint: options.apiEndpoint }),
+            ...(options.apiKeyEnv === undefined ? {} : { apiKeyEnv: options.apiKeyEnv }),
+          });
+    const createOptions: { database?: { path: string }; config?: { content: string } } = {};
+    if (options.database !== undefined) createOptions.database = { path: options.database };
+    if (content !== undefined) createOptions.config = { content };
     const host = await sdk.OpenCode.create(
-      options.database === undefined ? undefined : { database: { path: options.database } },
+      createOptions.database === undefined && createOptions.config === undefined
+        ? undefined
+        : createOptions,
     );
     return {
       createSession: ({ directory, title, model, agent }) =>

@@ -392,9 +392,11 @@ container runtime selects the matching image), and
 
 The host runs each turn on the model in the `agent` configuration block
 (`agent.model`, default `greenpt/deepseek-v4.1-flash`) and authenticates with the
-provider's API-key environment variable (for example `GREENPT_API_KEY`); set
-`agent.database` (or `OPENCODE_DB`) only to reuse the `opencode` CLI's stored
-auth, and never point it at a database a running OpenCode service is using.
+provider's API-key environment variable, named by `agent.apiKeyEnv` (default
+`LLM_API_KEY`); `agent.apiEndpoint` points the model's provider at a different or
+self-hosted OpenAI-compatible endpoint. Set `agent.database` (or `OPENCODE_DB`)
+only to reuse the `opencode` CLI's stored auth, and never point it at a database
+a running OpenCode service is using.
 After a turn succeeds the orchestrator pushes the workflow branch itself, so the
 turn's commits appear on the pull request; a turn that errors, a propose turn
 that commits nothing, or a push that fails, marks the workflow failed instead of

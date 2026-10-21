@@ -368,13 +368,13 @@ describe('buildDockerRunArgs', () => {
   });
 
   it('gives the container a writable home and forwards named variables', () => {
-    const args = buildDockerRunArgs({ ...base, env: ['GREENPT_API_KEY'] });
+    const args = buildDockerRunArgs({ ...base, env: ['LLM_API_KEY'] });
     expect(args).toContain('HOME=/tmp');
     expect(valueAfter(args, '--env')).toBe('HOME=/tmp');
     expect(args.filter((arg) => arg === '--env').length).toBeGreaterThanOrEqual(2);
-    expect(args).toContain('GREENPT_API_KEY');
+    expect(args).toContain('LLM_API_KEY');
     // The variable is referenced by name, never by value.
-    expect(args).not.toContain('GREENPT_API_KEY=');
+    expect(args).not.toContain('LLM_API_KEY=');
   });
 
   it('honours an alternate home directory', () => {

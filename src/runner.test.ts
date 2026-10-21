@@ -72,12 +72,25 @@ function run(h: Harness, input: string, sdkVersion = '2.0.31'): Promise<number> 
 describe('runRunner', () => {
   it('runs a turn and reports ready, then the result', async () => {
     const h = harness(async () => RESULT);
-    const code = await run(h, request({ model: 'greenpt/deepseek#flash', agent: 'build' }));
+    const code = await run(
+      h,
+      request({
+        model: 'greenpt/deepseek#flash',
+        agent: 'build',
+        apiEndpoint: 'https://llm.example.com/v1',
+        apiKeyEnv: 'LLM_API_KEY',
+      }),
+    );
 
     expect(code).toBe(0);
     expect(h.events[0]).toEqual({ type: 'ready', sdkVersion: '2.0.31' });
     expect(h.events.at(-1)).toEqual({ type: 'result', result: RESULT });
-    expect(h.options[0]).toEqual({ model: 'greenpt/deepseek#flash', agent: 'build' });
+    expect(h.options[0]).toEqual({
+      model: 'greenpt/deepseek#flash',
+      agent: 'build',
+      apiEndpoint: 'https://llm.example.com/v1',
+      apiKeyEnv: 'LLM_API_KEY',
+    });
     expect(h.client.requests[0]?.skill).toBe('propose');
     expect(h.client.disposed).toBe(true);
   });
@@ -86,6 +99,16 @@ describe('runRunner', () => {
     const h = harness(async () => RESULT);
     await run(h, request());
     expect(h.options[0]).toEqual({});
+  });
+
+  it('rejects a request whose endpoint or API-key variable is not a string', async () => {
+    for (const bad of [{ apiEndpoint: 5 }, { apiKeyEnv: false }]) {
+      const h = harness(async () => RESULT);
+      const code = await run(h, request(bad));
+      expect(code).toBe(1);
+      expect(h.events.at(-1)).toMatchObject({ type: 'error' });
+      expect(h.options).toHaveLength(0);
+    }
   });
 
   it('forwards usage reported before a later failure', async () => {
