@@ -26,7 +26,26 @@ code smells do not accumulate in the codebase.
 #### Scenario: CI keeps analysing
 
 - **WHEN** the CI `verify` job runs on a push or a same-repository pull request
+  that is not opened by Dependabot
 - **THEN** it still runs the SonarCloud scan step
+
+### Requirement: The scan step is skipped where no token is available
+
+The CI `verify` job SHALL skip the SonarCloud scan step on a run that cannot read
+the `SONAR_TOKEN` secret, so the run does not fail on a missing token.
+
+#### Scenario: A Dependabot pull request skips the scan
+
+- **WHEN** the CI `verify` job runs for a pull request opened by Dependabot
+- **THEN** the scan step is skipped and the job's other steps still run to a
+  successful conclusion
+
+#### Scenario: A trusted run still scans
+
+- **WHEN** the CI `verify` job runs on a push or for a pull request opened by a
+  person in this repository
+- **THEN** the SonarCloud scan step runs and a real analysis failure still fails
+  the job
 
 ### Requirement: Security-sensitive temporary workspaces are private
 

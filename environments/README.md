@@ -71,15 +71,17 @@ The image is the only field that must name a flavour; the rest is the shared
 
 ## Flavours
 
-| Flavour | Toolchain                                                                               | Used for                                                                   |
-| ------- | --------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `node`  | Node.js 24 and `git` - the image contract itself                                        | Repositories needing no toolchain beyond the contract                      |
-| `rust`  | `rustc`/`cargo` (stable, `clippy`, `rustfmt`), `build-essential`, `cmake`, `pkg-config` | [bo-srv-rs](https://github.com/wuan/bo-srv-rs) and other Rust repositories |
+| Flavour | Toolchain                                                                                             | Used for                                                                   |
+| ------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
+| `node`  | Node.js 24 and `git` - the image contract itself                                                      | Repositories needing no toolchain beyond the contract                      |
+| `rust`  | `rustc`/`cargo` (stable, `clippy`, `rustfmt`), `build-essential`, `cmake`, `pkg-config`, `libssl-dev` | [bo-srv-rs](https://github.com/wuan/bo-srv-rs) and other Rust repositories |
 
-The Rust flavour matches the toolchain and native build dependencies bo-srv-rs's
-own CI installs. Its database integration tests need a Docker daemon
-(`testcontainers`), which is not available inside a turn container; the default
-`cargo test` suite runs without Docker.
+The Rust flavour matches the toolchain and native build dependencies a Rust
+repository's CI installs, including `libssl-dev` so a dependency tree that links
+the system OpenSSL (for example `wuan/mqtt-gateway`'s `native-tls` and
+`postgres-native-tls`) compiles inside a turn. Its database integration tests
+need a Docker daemon (`testcontainers`), which is not available inside a turn
+container; the default `cargo test` suite runs without Docker.
 
 ## Add a flavour
 

@@ -50,6 +50,17 @@ The system SHALL include a GitHub provider supporting trigger-label discovery, d
 - **WHEN** the provider is given no usable credential
 - **THEN** it relies on the operator's authenticated GitHub CLI session rather than failing
 
+### Requirement: A refused GitHub write reports the credential's permissions
+When the host refuses a write to a repository as not found or forbidden, the provider SHALL report what the credential is permitted to do on that repository alongside the original error.
+
+#### Scenario: A refused write reports the credential's permissions
+- **WHEN** a write to a repository fails with 404 or 403 because the credential may only read it
+- **THEN** the error keeps the host's response and adds the credential's permissions on that repository and the likely missing grant
+
+#### Scenario: Reads are not checked
+- **WHEN** a read fails with 404
+- **THEN** the provider reports the error without an additional permission request
+
 ### Requirement: GitLab extension point
 The provider interface SHALL accommodate a GitLab provider whose review state is read through GraphQL, without requiring changes to core orchestration.
 

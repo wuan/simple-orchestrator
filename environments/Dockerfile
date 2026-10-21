@@ -68,9 +68,11 @@ FROM base AS node
 
 # Rust flavour, for https://github.com/wuan/bo-srv-rs and other Rust
 # repositories: rustc/cargo (stable, with clippy and rustfmt) plus the native
-# build dependencies bo-srv-rs's CI installs (build-essential, cmake,
-# pkg-config). Its HTTP client uses rustls-tls, so no OpenSSL development package
-# is needed.
+# build dependencies a Rust dependency tree needs (build-essential, cmake,
+# pkg-config, libssl-dev). libssl-dev supplies the OpenSSL headers and library
+# for crates that link the system OpenSSL through native-tls (for example
+# wuan/mqtt-gateway's postgres-native-tls); bo-srv-rs's rustls-tls does not use
+# it.
 FROM base AS rust
 
 # Install the toolchain into /usr/local (not the build user's $HOME) so a
@@ -81,7 +83,7 @@ ENV RUSTUP_HOME=/usr/local/rustup \
     PATH=/usr/local/cargo/bin:$PATH
 
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends build-essential cmake pkg-config curl \
+  && apt-get install -y --no-install-recommends build-essential cmake pkg-config curl libssl-dev \
   && rm -rf /var/lib/apt/lists/* \
   && curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup.sh \
   && sh /tmp/rustup.sh -y --profile minimal --default-toolchain stable \
