@@ -25,6 +25,11 @@
       (`docker buildx build --platform linux/amd64,linux/arm64
       --build-arg OPENCODE_SDK_VERSION=... --target rust environments`) and
       confirm the multi-platform build succeeds with the added package.
+- [ ] 2.3 Reproduce the reported failure against the image: run the affected
+      crate's dependency build in the local `rust` image (clone
+      `wuan/mqtt-gateway` and run `cargo build` inside the container, or the
+      same build against a crate that depends on `openssl-sys`) and confirm it
+      compiles now and failed before the package was added.
 
 ## Workflow follow-up
 

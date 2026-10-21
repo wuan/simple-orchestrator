@@ -4,13 +4,14 @@
 
 The `rust` turn environment is built from `node:24-bookworm-slim`, which ships
 no OpenSSL development package, and the flavour deliberately omitted one on the
-assumption that the project's HTTP client uses `rustls`. A Rust repository's
-dependency tree can still link the system OpenSSL, directly or transitively, and
-the CI runners it is developed on (for example GitHub's `ubuntu-latest`) already
-ship `libssl-dev`. A crate that needs it therefore builds in CI but fails inside
-a turn with a missing `openssl`/`libssl` header, and a turn cannot install
-packages to recover. The turn image should be at least as capable as the CI
-environment it stands in for.
+assumption that the project's HTTP client uses `rustls`. That assumption fails
+for `wuan/mqtt-gateway`: its dependency tree pulls `native-tls` and
+`postgres-native-tls`, which build `openssl-sys` against the system OpenSSL, and
+turns for that repository have failed to build for want of the `openssl`/`libssl`
+headers. The CI runner it is developed on (GitHub's `ubuntu-latest`) already
+ships `libssl-dev`, so the crate builds in CI but fails inside a turn, and a turn
+cannot install packages to recover. The turn image should be at least as capable
+as the CI environment it stands in for.
 
 ## What Changes
 

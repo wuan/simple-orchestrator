@@ -15,6 +15,11 @@ See `proposal.md` - Why. The constraints that shape the approach:
 - Both the Dockerfile comment and `environments/README.md` currently state that
   no OpenSSL development package is needed, so the documentation has to change
   with the image.
+- `wuan/mqtt-gateway` builds in CI, whose `ubuntu-latest` runner ships
+  `libssl-dev`, but its dependency tree links the system OpenSSL through
+  `native-tls` and `postgres-native-tls` -> `openssl-sys`, so its turns fail on
+  a missing header. That is the concrete failure this change removes and the
+  thing to reproduce against the built image.
 - `src/runtime/opencode/environments.test.ts` asserts the flavour set, the
   shared base, and the multi-platform build from the Dockerfile text, and is the
   natural place to pin the package.
@@ -71,9 +76,13 @@ network or container build.
   published architectures and the multi-platform build fails loudly if not.
 - [Documentation drifts from the image again] -> the README names the package
   and the invariant test asserts it in the Dockerfile.
-- [The package is added for a dependency that later moves to rustls] -> the
-  package is harmless and removes a whole failure mode; drop it in its own
-  change if it becomes provably unnecessary.
+- [The package is added for a dependency that later moves to rustls] ->
+  `wuan/mqtt-gateway` currently links the system OpenSSL, the package is
+  harmless, and it removes a whole failure mode; drop it in its own change if it
+  becomes provably unnecessary.
+- [The fix is assumed rather than reproduced] -> a verification task builds the
+  affected crate's dependency tree inside the built `rust:local` image so the
+  header failure is exercised, not just the package installation.
 
 ## Migration Plan
 
