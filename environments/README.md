@@ -56,7 +56,7 @@ repositories:
     environment:
       image: ghcr.io/wuan/simple-orchestrator/rust:latest
       env:
-        - GREENPT_API_KEY
+        - LLM_API_KEY
       gitIdentity:
         name: OpenSpec Agent
         email: agent@example.com

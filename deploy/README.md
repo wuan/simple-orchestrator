@@ -61,7 +61,7 @@ systemctl --user stop orchestrator.service
 ```
 
 Every poll cycle with activity, and every turn with `logging.verbose: true` (or
-`--verbose`), is written to the journal. `GREENPT_API_KEY` and other secrets are
+`--verbose`), is written to the journal. `LLM_API_KEY` and other secrets are
 redacted, so they never appear there.
 
 A restart is safe: on start the orchestrator re-discovers in-flight workflows

@@ -11,7 +11,7 @@ Type=exec
 # keeps its persistent clones under the workspace root (default ~/workspace).
 WorkingDirectory=%h/orchestrator
 
-# Secrets (GREENPT_API_KEY, GITHUB_TOKEN, OPENCODE_DB, ...) live here, never in
+# Secrets (LLM_API_KEY, GITHUB_TOKEN, OPENCODE_DB, ...) live here, never in
 # the unit. The leading '-' keeps the unit valid when the file is absent.
 EnvironmentFile=-%h/.config/orchestrator/orchestrator.env
 
@@ -35,7 +35,7 @@ KillSignal=SIGTERM
 TimeoutStopSec=1860
 
 # Diagnostics go to standard error, which journald captures. Nothing is echoed
-# back, so the secret in GREENPT_API_KEY never lands in the journal.
+# back, so the secret in LLM_API_KEY never lands in the journal.
 StandardOutput=journal
 StandardError=journal
 SyslogIdentifier=orchestrator

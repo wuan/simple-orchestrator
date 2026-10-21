@@ -19,6 +19,10 @@ export interface ContainerOpenCodeClientOptions {
   model?: string;
   agent?: string;
   database?: string;
+  /** API base URL for the model's provider; the provider default when omitted. */
+  apiEndpoint?: string;
+  /** Provider API-key variable to pass into the container; no default. */
+  apiKeyEnv?: string;
   /** Runs the container; defaults to the Docker CLI. */
   runner?: ContainerRunner;
   /** Container executable; defaults to `docker`. */
@@ -98,6 +102,8 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
   private readonly model: string | undefined;
   private readonly agent: string | undefined;
   private readonly database: string | undefined;
+  private readonly apiEndpoint: string | undefined;
+  private readonly apiKeyEnv: string | undefined;
   private readonly runner: ContainerRunner;
   private readonly docker: string;
   private readonly sdkVersion: string;
@@ -111,6 +117,8 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
     this.model = options.model;
     this.agent = options.agent;
     this.database = options.database;
+    this.apiEndpoint = options.apiEndpoint;
+    this.apiKeyEnv = options.apiKeyEnv;
     this.runner = options.runner ?? new NodeContainerRunner();
     this.docker = options.docker ?? 'docker';
     this.sdkVersion = options.sdkVersion ?? resolveSdkVersion();
@@ -127,6 +135,12 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
     if (request.store === undefined) {
       return Promise.reject(new Error('a container turn requires the repository store path'));
     }
+    // The configured provider variable crosses with the container even when the
+    // environment does not name it, without repeating it when it already does.
+    const envNames = [...(environment.env ?? [])];
+    if (this.apiKeyEnv !== undefined && !envNames.includes(this.apiKeyEnv)) {
+      envNames.push(this.apiKeyEnv);
+    }
     const args = buildDockerRunArgs({
       image: environment.image,
       workspace: request.workspace,
@@ -137,7 +151,7 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
       ...(environment.network === undefined ? {} : { network: environment.network }),
       ...(this.user === undefined ? {} : { user: this.user }),
       ...(this.home === undefined ? {} : { home: this.home }),
-      ...(environment.env === undefined ? {} : { env: environment.env }),
+      ...(envNames.length === 0 ? {} : { env: envNames }),
       ...(environment.gitIdentity === undefined ? {} : { gitIdentity: environment.gitIdentity }),
       ...(environment.caches === undefined || request.repo === undefined
         ? {}
@@ -150,6 +164,8 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
       ...(this.model === undefined ? {} : { model: this.model }),
       ...(this.agent === undefined ? {} : { agent: this.agent }),
       ...(this.database === undefined ? {} : { database: this.database }),
+      ...(this.apiEndpoint === undefined ? {} : { apiEndpoint: this.apiEndpoint }),
+      ...(this.apiKeyEnv === undefined ? {} : { apiKeyEnv: this.apiKeyEnv }),
       expectedSdkVersion: this.sdkVersion,
     });
 

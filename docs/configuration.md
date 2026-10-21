@@ -18,7 +18,7 @@ the `gh` CLI.
 | `limits`       | no       | see below | Per-turn cost caps.                                       |
 | `workspace`    | no       | see below | Where repository clones and per-turn worktrees live.      |
 | `logging`      | no       | see below | Diagnostic verbosity.                                     |
-| `agent`        | no       | see below | Embedded OpenCode host model and database.                |
+| `agent`        | no       | see below | Embedded OpenCode host model, endpoint, and database.     |
 
 ### `repositories[]`
 
@@ -117,20 +117,28 @@ to output, at any verbosity.
 
 ### `agent`
 
-| Field      | Required | Default                       | Description                                                                           |
-| ---------- | -------- | ----------------------------- | ------------------------------------------------------------------------------------- |
-| `model`    | no       | `greenpt/deepseek-v4.1-flash` | OpenCode model (`provider/model` or `provider/model#variant`) the host runs turns on. |
-| `agent`    | no       | host default                  | OpenCode agent to run for a turn.                                                     |
-| `database` | no       | SDK default (in-memory)       | Path to the OpenCode database holding provider auth and model definitions.            |
+| Field         | Required | Default                       | Description                                                                           |
+| ------------- | -------- | ----------------------------- | ------------------------------------------------------------------------------------- |
+| `model`       | no       | `greenpt/deepseek-v4.1-flash` | OpenCode model (`provider/model` or `provider/model#variant`) the host runs turns on. |
+| `agent`       | no       | host default                  | OpenCode agent to run for a turn.                                                     |
+| `database`    | no       | SDK default (in-memory)       | Path to the OpenCode database holding provider auth and model definitions.            |
+| `apiEndpoint` | no       | provider's registry default   | API base URL for the model's provider, so an OpenAI-compatible endpoint can be used.  |
+| `apiKeyEnv`   | no       | `LLM_API_KEY`                 | Environment variable the model's provider reads its API key from.                     |
 
 The embedded OpenCode host runs in-process, so it needs provider authentication.
-The simplest source is the provider's API-key environment variable (for example
-`GREENPT_API_KEY`; `opencode auth export` prints stored credentials), which lets
-the host use its own private database. Alternatively, `database` (or
+The simplest source is the provider's API-key environment variable, named by
+`apiKeyEnv` and defaulting to the provider-neutral `LLM_API_KEY`
+(`opencode auth export` prints stored credentials), which lets the host use its
+own private database. Set `apiEndpoint` to point the model's provider at a
+different or self-hosted OpenAI-compatible endpoint; both `apiEndpoint` and
+`apiKeyEnv` are applied as an override to the provider named by `model`, so a
+provider whose registry entry hardcodes a different endpoint or variable can
+still be redirected without editing OpenCode. Alternatively, `database` (or
 `OPENCODE_DB`) points the host at the `opencode` CLI's database to reuse stored
 auth (find it with `opencode debug paths db`) - but do **not** point it at a
 database a running OpenCode service is using: two hosts on one database disrupt
-each other.
+each other. When the configured variable is unset, stored auth remains the
+fallback.
 
 ### `environment`
 
@@ -174,7 +182,7 @@ repositories:
     environment:
       image: ghcr.io/acme/agent-java:latest
       env:
-        - GREENPT_API_KEY
+        - LLM_API_KEY
       caches:
         - name: gradle
           path: /home/agent/.gradle
@@ -184,6 +192,11 @@ An entry inherits the shared environment field by field, so `gadget` above uses
 its own image and caches while keeping the shared `gitIdentity`; `widget` uses
 the shared image unchanged. An `environment` block that names no image (after
 the merge) fails startup naming the repository.
+
+The configured `agent.apiKeyEnv` is passed into every containerized turn
+automatically, so a repository does not have to repeat it in `environment.env`
+(an `env` entry of the same name is deduplicated). `env` remains for any other
+orchestrator variable a turn needs.
 
 ## Credential schemes
 

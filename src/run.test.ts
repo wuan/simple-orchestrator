@@ -12,8 +12,11 @@ import type {
   OpenCodeSkillRequest,
   OpenCodeSkillResult,
 } from './runtime/opencode/client.js';
+import type { ContainerOpenCodeClientOptions } from './runtime/opencode/container-client.js';
+import type { OpenCodeHost } from './runtime/opencode/sdk-client.js';
+import { createEmbeddedHostFactory } from './runtime/opencode/sdk-host.js';
 import type { TurnRequest } from './runtime/types.js';
-import { createRuntime } from './run.js';
+import { createRuntime, defaultContainer, defaultEmbedded } from './run.js';
 
 const REPO = { owner: 'acme', name: 'widget' };
 
@@ -35,6 +38,18 @@ function config(): OrchestratorConfig {
     workspace: { root: '/tmp/orchestrator-run-test' },
     logging: { verbose: false },
     agent: { model: 'fake/model' },
+  };
+}
+
+/** The same configuration with a provider endpoint and API-key variable pinned. */
+function configuredConfig(): OrchestratorConfig {
+  return {
+    ...config(),
+    agent: {
+      model: 'greenpt/deepseek-v4.1-flash',
+      apiEndpoint: 'https://llm.example.com/v1',
+      apiKeyEnv: 'LLM_API_KEY',
+    },
   };
 }
 
@@ -123,5 +138,36 @@ describe('createRuntime', () => {
     await handle.dispose();
 
     expect(disposed).toBe(true);
+  });
+
+  it('passes the configured endpoint and variable to the embedded host', () => {
+    const seen: unknown[] = [];
+    const createHost: typeof createEmbeddedHostFactory = (options) => {
+      seen.push(options);
+      return async () => ({}) as OpenCodeHost;
+    };
+
+    defaultEmbedded(configuredConfig(), createHost);
+
+    expect(seen[0]).toMatchObject({
+      provider: 'greenpt',
+      apiEndpoint: 'https://llm.example.com/v1',
+      apiKeyEnv: 'LLM_API_KEY',
+    });
+  });
+
+  it('passes the configured endpoint and variable to the container client', () => {
+    const seen: ContainerOpenCodeClientOptions[] = [];
+
+    defaultContainer(configuredConfig(), (options) => {
+      seen.push(options);
+      return new RecordingClient('container');
+    });
+
+    expect(seen[0]).toMatchObject({
+      model: 'greenpt/deepseek-v4.1-flash',
+      apiEndpoint: 'https://llm.example.com/v1',
+      apiKeyEnv: 'LLM_API_KEY',
+    });
   });
 });

@@ -8,6 +8,7 @@ import {
   extractUsage,
   finalAssistantText,
   parseModelRef,
+  providerConfig,
   type SdkLoader,
 } from './sdk-host.js';
 
@@ -91,6 +92,45 @@ function fakeSdk(transcripts: Transcript[]) {
   });
   return { loader, calls };
 }
+
+describe('providerConfig', () => {
+  it('returns undefined when neither an endpoint nor a variable is set', () => {
+    expect(providerConfig('greenpt')).toBeUndefined();
+    expect(providerConfig('greenpt', {})).toBeUndefined();
+  });
+
+  it('sets only the endpoint when no variable is configured', () => {
+    expect(providerConfig('greenpt', { apiEndpoint: 'https://llm.example.com/v1' })).toBe(
+      JSON.stringify({
+        provider: { greenpt: { options: { baseURL: 'https://llm.example.com/v1' } } },
+      }),
+    );
+  });
+
+  it('sets only the credential variable when no endpoint is configured', () => {
+    expect(providerConfig('greenpt', { apiKeyEnv: 'LLM_API_KEY' })).toBe(
+      JSON.stringify({ provider: { greenpt: { env: ['LLM_API_KEY'] } } }),
+    );
+  });
+
+  it('sets both the endpoint and the credential variable', () => {
+    expect(
+      providerConfig('greenpt', {
+        apiEndpoint: 'https://llm.example.com/v1',
+        apiKeyEnv: 'ACME_API_KEY',
+      }),
+    ).toBe(
+      JSON.stringify({
+        provider: {
+          greenpt: {
+            options: { baseURL: 'https://llm.example.com/v1' },
+            env: ['ACME_API_KEY'],
+          },
+        },
+      }),
+    );
+  });
+});
 
 describe('parseModelRef', () => {
   it('parses provider/model and provider/model#variant', () => {
@@ -231,6 +271,43 @@ describe('createEmbeddedHostFactory', () => {
     await createEmbeddedHostFactory({ database: '/data/opencode.db' }, loader)();
 
     expect(calls.createOptions).toEqual([{ database: { path: '/data/opencode.db' } }]);
+  });
+
+  it('applies the provider endpoint and credential variable as inline config', async () => {
+    const { loader, calls } = fakeSdk([[]]);
+    await createEmbeddedHostFactory(
+      {
+        database: '/data/opencode.db',
+        provider: 'greenpt',
+        apiEndpoint: 'https://llm.example.com/v1',
+        apiKeyEnv: 'LLM_API_KEY',
+      },
+      loader,
+    )();
+
+    expect(calls.createOptions).toEqual([
+      {
+        database: { path: '/data/opencode.db' },
+        config: {
+          content: JSON.stringify({
+            provider: {
+              greenpt: {
+                options: { baseURL: 'https://llm.example.com/v1' },
+                env: ['LLM_API_KEY'],
+              },
+            },
+          }),
+        },
+      },
+    ]);
+  });
+
+  it('omits the inline config when no overlay applies', async () => {
+    const { loader, calls } = fakeSdk([[]]);
+    await createEmbeddedHostFactory({}, loader)();
+    await createEmbeddedHostFactory({ provider: 'greenpt' }, loader)();
+
+    expect(calls.createOptions).toEqual([undefined, undefined]);
   });
 
   it('maps a turn to create, prompt, wait, and context with the session model', async () => {

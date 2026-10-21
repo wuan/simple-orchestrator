@@ -8,6 +8,7 @@ import type { OpenCodeClient } from './runtime/opencode/client.js';
 import {
   ContainerOpenCodeClient,
   EnvironmentOpenCodeClient,
+  type ContainerOpenCodeClientOptions,
 } from './runtime/opencode/container-client.js';
 import { OpenCodeRuntime } from './runtime/opencode/opencode-runtime.js';
 import { EmbeddedOpenCodeClient } from './runtime/opencode/sdk-client.js';
@@ -33,16 +34,26 @@ export interface RuntimeFactoryDeps {
 /**
  * Build the in-process embedded client. The model comes from `agent.model`;
  * `agent.database` (or `OPENCODE_DB`) points the embedded host at the OpenCode
- * database that holds provider auth and model definitions.
+ * database that holds provider auth and model definitions. The endpoint and
+ * credential variable from the agent block are applied to the model's provider
+ * as an overlay. The host factory is injectable so the wiring is testable.
  */
-function defaultEmbedded(config: OrchestratorConfig): {
+export function defaultEmbedded(
+  config: OrchestratorConfig,
+  createHost: typeof createEmbeddedHostFactory = createEmbeddedHostFactory,
+): {
   client: OpenCodeClient;
   dispose: () => Promise<void>;
 } {
   const model = parseModelRef(config.agent.model);
   const database = config.agent.database ?? process.env.OPENCODE_DB;
   const client = new EmbeddedOpenCodeClient(
-    createEmbeddedHostFactory(database === undefined ? {} : { database }),
+    createHost({
+      ...(database === undefined ? {} : { database }),
+      ...(model === undefined ? {} : { provider: model.providerID }),
+      ...(config.agent.apiEndpoint === undefined ? {} : { apiEndpoint: config.agent.apiEndpoint }),
+      ...(config.agent.apiKeyEnv === undefined ? {} : { apiKeyEnv: config.agent.apiKeyEnv }),
+    }),
     {
       ...(model === undefined ? {} : { model }),
       ...(config.agent.agent === undefined ? {} : { agent: config.agent.agent }),
@@ -54,15 +65,22 @@ function defaultEmbedded(config: OrchestratorConfig): {
 /**
  * Build the container client for repositories that configure an environment.
  * The compiled runner this process is running from is mounted read-only into
- * the container, so its path is the directory of this module.
+ * the container, so its path is the directory of this module. The client
+ * constructor is injectable so the wiring is testable.
  */
-function defaultContainer(config: OrchestratorConfig): OpenCodeClient {
+export function defaultContainer(
+  config: OrchestratorConfig,
+  createClient: (options: ContainerOpenCodeClientOptions) => OpenCodeClient = (options) =>
+    new ContainerOpenCodeClient(options),
+): OpenCodeClient {
   const database = config.agent.database ?? process.env.OPENCODE_DB;
-  return new ContainerOpenCodeClient({
+  return createClient({
     runnerDir: dirname(fileURLToPath(import.meta.url)),
     model: config.agent.model,
     ...(config.agent.agent === undefined ? {} : { agent: config.agent.agent }),
     ...(database === undefined ? {} : { database }),
+    ...(config.agent.apiEndpoint === undefined ? {} : { apiEndpoint: config.agent.apiEndpoint }),
+    ...(config.agent.apiKeyEnv === undefined ? {} : { apiKeyEnv: config.agent.apiKeyEnv }),
   });
 }
 

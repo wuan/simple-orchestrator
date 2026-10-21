@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { ConfigError, parseConfig } from './loader.js';
 import {
+  DEFAULT_AGENT_API_KEY_ENV,
   DEFAULT_AGENT_MODEL,
   DEFAULT_LABELS,
   DEFAULT_MAX_REVISE_ROUNDS,
@@ -128,22 +129,42 @@ logging:
     expect(() => parseConfig(bad)).toThrowError(/verbose/);
   });
 
-  it('defaults the agent model when omitted', () => {
-    expect(parseConfig(MINIMAL).agent).toEqual({ model: DEFAULT_AGENT_MODEL });
+  it('defaults the agent model and generic API-key variable when omitted', () => {
+    expect(parseConfig(MINIMAL).agent).toEqual({
+      model: DEFAULT_AGENT_MODEL,
+      apiKeyEnv: DEFAULT_AGENT_API_KEY_ENV,
+    });
   });
 
-  it('accepts agent overrides', () => {
+  it('accepts agent overrides, including the endpoint and API-key variable', () => {
     const config = parseConfig(`
 ${MINIMAL}
 agent:
   model: acme/model#fast
   agent: build
   database: /data/opencode.db
+  apiEndpoint: https://llm.example.com/v1
+  apiKeyEnv: ACME_API_KEY
 `);
     expect(config.agent).toEqual({
       model: 'acme/model#fast',
       agent: 'build',
       database: '/data/opencode.db',
+      apiEndpoint: 'https://llm.example.com/v1',
+      apiKeyEnv: 'ACME_API_KEY',
+    });
+  });
+
+  it('defaults the API-key variable while keeping an explicit endpoint', () => {
+    const config = parseConfig(`
+${MINIMAL}
+agent:
+  apiEndpoint: https://llm.example.com/v1
+`);
+    expect(config.agent).toEqual({
+      model: DEFAULT_AGENT_MODEL,
+      apiEndpoint: 'https://llm.example.com/v1',
+      apiKeyEnv: DEFAULT_AGENT_API_KEY_ENV,
     });
   });
 
@@ -154,6 +175,40 @@ agent:
   model: ''
 `;
     expect(() => parseConfig(bad)).toThrowError(/model/);
+  });
+
+  it('rejects an empty or non-string agent endpoint', () => {
+    expect(() =>
+      parseConfig(`
+${MINIMAL}
+agent:
+  apiEndpoint: ''
+`),
+    ).toThrowError(/apiEndpoint/);
+    expect(() =>
+      parseConfig(`
+${MINIMAL}
+agent:
+  apiEndpoint: 42
+`),
+    ).toThrowError(/apiEndpoint/);
+  });
+
+  it('rejects an empty or non-string agent API-key variable', () => {
+    expect(() =>
+      parseConfig(`
+${MINIMAL}
+agent:
+  apiKeyEnv: ''
+`),
+    ).toThrowError(/apiKeyEnv/);
+    expect(() =>
+      parseConfig(`
+${MINIMAL}
+agent:
+  apiKeyEnv: false
+`),
+    ).toThrowError(/apiKeyEnv/);
   });
 
   describe('turn environments', () => {
@@ -172,7 +227,7 @@ repositories:
       image: ghcr.io/acme/agent-android:latest
       network: bridge
       env:
-        - GREENPT_API_KEY
+        - LLM_API_KEY
       gitIdentity:
         name: Orchestrator Agent
         email: agent@example.com
@@ -183,7 +238,7 @@ repositories:
       expect(config.repositories[0]?.environment).toEqual({
         image: 'ghcr.io/acme/agent-android:latest',
         network: 'bridge',
-        env: ['GREENPT_API_KEY'],
+        env: ['LLM_API_KEY'],
         gitIdentity: { name: 'Orchestrator Agent', email: 'agent@example.com' },
         caches: [{ name: 'gradle', path: '/home/agent/.gradle' }],
       });
@@ -220,7 +275,7 @@ ${MINIMAL}    environment:
       const bad = `
 ${MINIMAL}    environment:
       image: node:24
-      env: GREENPT_API_KEY
+      env: LLM_API_KEY
 `;
       expect(() => parseConfig(bad)).toThrowError(/env.*list/);
     });
