@@ -56,6 +56,10 @@ jobs:
     permissions:
       contents: read
       packages: write
+      # Keyless signing needs an OIDC token and the attestation API needs a
+      # write scope; both are only exercised on non-pull-request publishes.
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -76,6 +80,19 @@ jobs:
             exit 1
           fi
           echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      # A pull request only validates the image, so it builds the runner's
+      # native platform and skips the emulated arm64 leg; publishes cover both
+      # supported platforms.
+      - name: Select build platforms
+        id: platforms
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = 'pull_request' ]; then
+            echo 'platforms=linux/amd64' >> "$GITHUB_OUTPUT"
+          else
+            echo 'platforms=linux/amd64,linux/arm64' >> "$GITHUB_OUTPUT"
+          fi
 
       # The runner is amd64, so QEMU supplies the arm64 emulation the
       # multi-platform build needs; buildx then emits one image index per tag
@@ -108,17 +125,53 @@ jobs:
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push ${{ matrix.flavour }}
+        id: build
         uses: docker/build-push-action@v7
         with:
           context: environments
           target: ${{ matrix.flavour }}
           # Every flavour is one image index covering both supported platforms,
-          # so the pulling host's Docker selects the matching image.
-          platforms: linux/amd64,linux/arm64
+          # so the pulling host's Docker selects the matching image. A pull
+          # request selects the native platform only.
+          platforms: ${{ steps.platforms.outputs.platforms }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           build-args: |
             OPENCODE_SDK_VERSION=${{ steps.sdk.outputs.version }}
+          # buildx attaches attestations as manifests inside the image index,
+          # which would add `unknown/unknown` entries to every published tag.
+          # Publish them out-of-band instead, via the steps below.
+          provenance: false
+          sbom: false
           cache-from: type=gha,scope=${{ matrix.flavour }}
           cache-to: type=gha,mode=max,scope=${{ matrix.flavour }}
+
+      # Attach the supply-chain metadata to the published digest rather than to
+      # the index: generate an SPDX SBOM from the pushed image, then sign both
+      # the SBOM and the SLSA provenance with the workflow's OIDC identity and
+      # push them to the registry's attestation storage.
+      - name: Generate SPDX SBOM for the published image
+        if: github.event_name != 'pull_request'
+        uses: anchore/sbom-action@v0
+        with:
+          image: ghcr.io/${{ github.repository }}/${{ matrix.flavour }}@${{ steps.build.outputs.digest }}
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Attest the published SBOM
+        if: github.event_name != 'pull_request'
+        uses: actions/attest@v4
+        with:
+          subject-name: ghcr.io/${{ github.repository }}/${{ matrix.flavour }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          sbom-path: sbom.spdx.json
+          push-to-registry: true
+
+      - name: Attest the published image's build provenance
+        if: github.event_name != 'pull_request'
+        uses: actions/attest-build-provenance@v3
+        with:
+          subject-name: ghcr.io/${{ github.repository }}/${{ matrix.flavour }}
+          subject-digest: ${{ steps.build.outputs.digest }}
+          push-to-registry: true

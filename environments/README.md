@@ -44,11 +44,24 @@ ghcr.io/wuan/simple-orchestrator/<flavour>
 Every flavour is published as a **multi-platform** image covering `linux/amd64`
 and `linux/arm64`. The tags name an image index rather than a single
 architecture, so the host's container runtime selects the image matching its own
-platform and the flavour runs natively on either architecture.
+platform and the flavour runs natively on either architecture. A pull-request
+build validates only the runner's native `linux/amd64` platform and does not
+emulate `linux/arm64`; publications still cover both platforms.
 
 Pushes to `main` publish `latest` and the branch name; version tags publish the
 semantic versions; pull requests build the image without pushing, so an image
-change is validated before it lands. Point a repository at a published flavour:
+change is validated before it lands.
+
+The build's provenance and SBOM are published as signed attestations attached to
+the published image digest rather than as entries in the image index, so a
+published tag's index contains exactly the two supported platform manifests and
+no `unknown/unknown` entry. Verify them with the GitHub CLI:
+
+```bash
+gh attestation verify ghcr.io/wuan/simple-orchestrator/<flavour> --owner wuan
+```
+
+Point a repository at a published flavour:
 
 ```yaml
 repositories:
