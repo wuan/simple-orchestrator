@@ -25,7 +25,13 @@ jobs:
         env:
           COVERAGE: 'true'
       - name: SonarCloud scan
-        if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+        # Only where the run can read SONAR_TOKEN: pushes and same-repository
+        # pull requests. Dependabot branches live in this repository but their
+        # runs take secrets from the Dependabot secret source, so skip them.
+        if: >-
+          github.event_name == 'push' ||
+          (github.event.pull_request.head.repo.full_name == github.repository &&
+          github.event.pull_request.user.login != 'dependabot[bot]')
         uses: SonarSource/sonarqube-scan-action@v8
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
