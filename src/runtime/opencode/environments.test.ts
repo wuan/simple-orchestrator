@@ -27,8 +27,15 @@ interface Workflow {
     {
       needs?: string[];
       outputs?: Record<string, string>;
+      permissions?: Record<string, string>;
       strategy?: { matrix?: Record<string, unknown> };
-      steps?: { id?: string; uses?: string; run?: string; with?: Record<string, unknown> }[];
+      steps?: {
+        id?: string;
+        if?: string;
+        uses?: string;
+        run?: string;
+        with?: Record<string, unknown>;
+      }[];
     }
   >;
 }
@@ -85,18 +92,73 @@ describe('environment image flavours', () => {
     // buildx emits a single index covering both supported platforms.
     expect(steps.some((step) => step.uses?.startsWith('docker/setup-qemu-action'))).toBe(true);
 
-    const buildStep = steps.find((step) => step.with?.target === '${{ matrix.flavour }}');
-    const platforms = String(buildStep?.with?.platforms ?? '')
-      .split(',')
-      .map((platform) => platform.trim());
-    expect(platforms).toContain('linux/amd64');
-    expect(platforms).toContain('linux/arm64');
+    // The selection step keeps both platforms on a publish and only the native
+    // platform on a pull request, and the build reads its platform set from it.
+    const selection = steps.find((step) => step.id === 'platforms');
+    expect(selection?.run).toContain('linux/amd64');
+    expect(selection?.run).toContain('linux/arm64');
+    expect(selection?.run).toContain('pull_request');
 
-    // The platform set lives only on the build step; the flavour matrix still
-    // comes from the Dockerfile stages rather than a second, driftable list.
+    const buildStep = steps.find((step) => step.id === 'build');
+    expect(buildStep?.with?.platforms).toBe('${{ steps.platforms.outputs.platforms }}');
+
+    // The flavour matrix still comes from the Dockerfile stages rather than a
+    // second, driftable list.
     expect(workflow.jobs?.build?.strategy?.matrix?.flavour).toBe(
       '${{ fromJSON(needs.flavours.outputs.list) }}',
     );
+  });
+
+  it('keeps the attestation manifests out of the published image index', () => {
+    const workflow = parse(readFileSync(WORKFLOW, 'utf8')) as Workflow;
+    const buildStep = workflow.jobs?.build?.steps?.find((step) => step.id === 'build');
+
+    // buildx wraps provenance and SBOM in `unknown/unknown` index manifests by
+    // default; disabling both keeps a published index to the two platforms.
+    expect(buildStep?.with?.provenance).toBe(false);
+    expect(buildStep?.with?.sbom).toBe(false);
+  });
+
+  it('attests the published digest outside the index on non-pull-request runs', () => {
+    const workflow = parse(readFileSync(WORKFLOW, 'utf8')) as Workflow;
+    const job = workflow.jobs?.build;
+    const steps = job?.steps ?? [];
+
+    // Keyless signing needs an OIDC token and the attestation API a write scope.
+    expect(job?.permissions?.['id-token']).toBe('write');
+    expect(job?.permissions?.['attestations']).toBe('write');
+
+    // The SBOM and the provenance are attached to the digest the build pushed,
+    // in the registry's attestation storage.
+    const sbomAttest = steps.find((step) => step.uses?.startsWith('actions/attest@'));
+    const provenanceAttest = steps.find((step) =>
+      step.uses?.startsWith('actions/attest-build-provenance'),
+    );
+    for (const step of [sbomAttest, provenanceAttest]) {
+      expect(step?.with?.['subject-name']).toBe(
+        'ghcr.io/${{ github.repository }}/${{ matrix.flavour }}',
+      );
+      expect(step?.with?.['subject-digest']).toBe('${{ steps.build.outputs.digest }}');
+      expect(step?.with?.['push-to-registry']).toBe(true);
+    }
+    expect(sbomAttest?.with?.['sbom-path']).toBeDefined();
+
+    // The SBOM is generated from the pushed image, and no attestation runs on a
+    // pull request, which publishes nothing.
+    expect(
+      steps.some(
+        (step) =>
+          step.uses?.startsWith('anchore/sbom-action') &&
+          step.with?.image ===
+            'ghcr.io/${{ github.repository }}/${{ matrix.flavour }}@${{ steps.build.outputs.digest }}',
+      ),
+    ).toBe(true);
+
+    const attestationSteps = steps.filter((step) => /(attest|sbom-action)/.test(step.uses ?? ''));
+    expect(attestationSteps.length).toBeGreaterThan(0);
+    for (const step of attestationSteps) {
+      expect(step.if).toBe("github.event_name != 'pull_request'");
+    }
   });
 
   it('gives the Rust flavour the OpenSSL development package', () => {
