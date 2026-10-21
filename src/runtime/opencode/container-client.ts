@@ -191,29 +191,31 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
     image: string,
     caches: DockerCacheMount[] | undefined,
   ): Promise<void> {
-    for (const cache of caches ?? []) {
-      if (this.preparedVolumes.has(cache.volume)) continue;
-      const args = buildCachePrepareArgs({
-        image,
-        volume: cache.volume,
-        path: cache.path,
-        ...(this.user === undefined ? {} : { user: this.user }),
-      });
-      try {
-        const result = await this.runner.run({ command: this.docker, args, input: '' });
-        if (result.code !== 0) {
-          const stderr = result.stderr.trim();
-          const suffix = stderr === '' ? '' : `: ${stderr}`;
-          this.logger(
-            `could not prepare cache volume ${cache.volume} (exit ${result.code ?? 'unknown'})${suffix}`,
-          );
-          continue;
-        }
-        this.preparedVolumes.add(cache.volume);
-      } catch (error) {
-        const detail = error instanceof Error ? error.message : String(error);
-        this.logger(`could not prepare cache volume ${cache.volume}: ${detail}`);
+    await Promise.all((caches ?? []).map((cache) => this.prepareCache(image, cache)));
+  }
+
+  private async prepareCache(image: string, cache: DockerCacheMount): Promise<void> {
+    if (this.preparedVolumes.has(cache.volume)) return;
+    const args = buildCachePrepareArgs({
+      image,
+      volume: cache.volume,
+      path: cache.path,
+      ...(this.user === undefined ? {} : { user: this.user }),
+    });
+    try {
+      const result = await this.runner.run({ command: this.docker, args, input: '' });
+      if (result.code !== 0) {
+        const stderr = result.stderr.trim();
+        const suffix = stderr === '' ? '' : `: ${stderr}`;
+        this.logger(
+          `could not prepare cache volume ${cache.volume} (exit ${result.code ?? 'unknown'})${suffix}`,
+        );
+        return;
       }
+      this.preparedVolumes.add(cache.volume);
+    } catch (error) {
+      const detail = error instanceof Error ? error.message : String(error);
+      this.logger(`could not prepare cache volume ${cache.volume}: ${detail}`);
     }
   }
 
