@@ -91,3 +91,49 @@ RUN apt-get update \
   && rm -f /tmp/rustup.sh \
   && chmod -R a+rwX "$RUSTUP_HOME" "$CARGO_HOME" \
   && rustc --version && cargo --version
+
+# Android flavour, for repositories that build an Android app with Gradle and
+# the Android Gradle Plugin: a JDK plus the Android SDK command-line tools and
+# the SDK platform, build tools, and platform tools such a build declares.
+# Gradle itself comes from the repository's wrapper, so it is not installed
+# here, and the SDK licences are accepted so a build needs no interactive step.
+#
+# platforms: linux/amd64
+# Unlike node and rust, this flavour cannot run on linux/arm64: Google publishes
+# the Linux Android SDK command-line tools and the build tools (aapt2) for
+# x86_64 only, with no linux-arm64 classifier. The `# platforms:` line above
+# names the published platform set; it defaults to linux/amd64,linux/arm64 when
+# a stage has no declaration.
+FROM base AS android
+
+# Pin the toolchain versions so the build fails loudly rather than baking a
+# moving target; raise them here without touching the workflow or the specs.
+ARG ANDROID_CMDLINE_TOOLS_VERSION=13114758
+ARG ANDROID_COMPILE_SDK=35
+ARG ANDROID_BUILD_TOOLS_VERSION=35.0.0
+
+# Install into /opt/android-sdk (not the build user's $HOME) so a non-root turn
+# can execute the SDK, and expose it through the variables a Gradle Android
+# build reads. cmdline-tools/latest/bin holds sdkmanager; platform-tools holds
+# adb.
+ENV ANDROID_HOME=/opt/android-sdk \
+    ANDROID_SDK_ROOT=/opt/android-sdk \
+    PATH=/opt/android-sdk/cmdline-tools/latest/bin:/opt/android-sdk/platform-tools:$PATH
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends openjdk-17-jdk unzip curl \
+  && rm -rf /var/lib/apt/lists/* \
+  && mkdir -p "$ANDROID_HOME/cmdline-tools" \
+  && curl -fsSL -o /tmp/cmdline-tools.zip \
+       "https://dl.google.com/android/repository/commandlinetools-linux-${ANDROID_CMDLINE_TOOLS_VERSION}_latest.zip" \
+  && unzip -q /tmp/cmdline-tools.zip -d "$ANDROID_HOME/cmdline-tools" \
+  && rm -f /tmp/cmdline-tools.zip \
+  && mv "$ANDROID_HOME/cmdline-tools/cmdline-tools" "$ANDROID_HOME/cmdline-tools/latest" \
+  && yes | sdkmanager --licenses >/dev/null \
+  && sdkmanager --install \
+       "platform-tools" \
+       "platforms;android-${ANDROID_COMPILE_SDK}" \
+       "build-tools;${ANDROID_BUILD_TOOLS_VERSION}" \
+  && chmod -R a+rwX "$ANDROID_HOME" \
+  && java -version \
+  && sdkmanager --version
