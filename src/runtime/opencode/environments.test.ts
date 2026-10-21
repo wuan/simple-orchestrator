@@ -99,6 +99,20 @@ describe('environment image flavours', () => {
     );
   });
 
+  it('gives the Rust flavour the OpenSSL development package', () => {
+    const text = dockerfile();
+    const base = text.slice(text.indexOf('FROM node:24'), text.indexOf('FROM base AS node'));
+    const node = text.slice(text.indexOf('FROM base AS node'), text.indexOf('FROM base AS rust'));
+    const rust = text.slice(text.indexOf('FROM base AS rust'));
+
+    // A Rust dependency tree that links the system OpenSSL (native-tls) needs
+    // the development headers; the package stays in the Rust stage so the
+    // shared contract and the node flavour are unchanged.
+    expect(rust).toMatch(/apt-get install[^\n]*\blibssl-dev\b/);
+    expect(base).not.toMatch(/apt-get install[^\n]*\blibssl-dev\b/);
+    expect(node).not.toMatch(/apt-get install[^\n]*\blibssl-dev\b/);
+  });
+
   it('discovers the flavours from the Dockerfile and passes the lockfile SDK', () => {
     const workflow = parse(readFileSync(WORKFLOW, 'utf8')) as Workflow;
     const discovery = workflow.jobs?.flavours?.steps?.find((step) => step.id === 'discover');
