@@ -1,0 +1,48 @@
+[Unit]
+Description=OpenSpec workflow orchestrator
+Documentation=https://github.com/wuan/simple-orchestrator#deploy
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+
+# The service is config-driven; it reads config.yaml from the checkout and
+# keeps its persistent clones under the workspace root (default ~/workspace).
+WorkingDirectory=%h/orchestrator
+
+# Secrets (GREENPT_API_KEY, GITHUB_TOKEN, OPENCODE_DB, ...) live here, never in
+# the unit. The leading '-' keeps the unit valid when the file is absent.
+EnvironmentFile=-%h/.config/orchestrator/orchestrator.env
+
+# systemd hands a user service a minimal PATH, so add the directories that hold
+# node, git, gh, docker, and the openspec CLI (installed under ~/.local/bin).
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+
+# The deployable entry point: dist/run.js wires in the embedded OpenCode runtime.
+# Run `npm run build` first so dist/ is current. Use `--verbose` for diagnostics.
+ExecStart=/usr/bin/node %h/orchestrator/dist/run.js --config %h/orchestrator/config.yaml
+
+# A stateless, outbound-only poller: restart it after a crash, but not after a
+# clean exit. It re-discovers in-flight workflows on start without duplicating.
+Restart=on-failure
+RestartSec=10
+
+# SIGTERM aborts the poll loop and lets an in-flight turn finish (turns are
+# capped by limits.maxDurationMs, 30 minutes by default), so allow longer than
+# that before systemd escalates to SIGKILL.
+KillSignal=SIGTERM
+TimeoutStopSec=1860
+
+# Diagnostics go to standard error, which journald captures. Nothing is echoed
+# back, so the secret in GREENPT_API_KEY never lands in the journal.
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=orchestrator
+
+# Hardening kept modest: the gh CLI, git, and optionally Docker must run, and
+# containerized turns bind-mount the workspace and worktree at their host paths.
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=default.target

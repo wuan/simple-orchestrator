@@ -424,7 +424,8 @@ than silently doing nothing.
 
 The service is a stateless, outbound-only poller: it needs no inbound ports,
 no webhooks, and no database, so it runs identically on a laptop, a VM, or in a
-cluster.
+cluster. [`deploy/`](deploy/README.md) ships a systemd unit and an install guide
+for running it as a user service.
 
 - Provide credentials via the environment (a secret manager is fine).
 - Run on **Node.js 24+**; OpenCode is embedded in the process, so there is no
