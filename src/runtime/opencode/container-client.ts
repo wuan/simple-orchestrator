@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import type { EnvironmentCache } from '../../config/types.js';
 import type { RepoRef, TurnUsage } from '../../domain/types.js';
 import { NodeContainerRunner, type ContainerRunner } from '../../system/commands.js';
-import { buildDockerRunArgs, type DockerCacheMount } from '../sandbox.js';
+import { buildCachePrepareArgs, buildDockerRunArgs, type DockerCacheMount } from '../sandbox.js';
 import type { OpenCodeClient, OpenCodeSkillRequest, OpenCodeSkillResult } from './client.js';
 import { resolveSdkVersion } from './sdk-version.js';
 
@@ -111,6 +111,9 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
   private readonly home: string | undefined;
   private readonly logger: (message: string) => void;
 
+  /** Cache volumes already prepared (chowned for the turn user) this process. */
+  private readonly preparedVolumes = new Set<string>();
+
   constructor(options: ContainerOpenCodeClientOptions) {
     this.runnerDir = options.runnerDir;
     this.runnerMount = options.runnerMount ?? DEFAULT_RUNNER_MOUNT;
@@ -141,34 +144,85 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
     if (this.apiKeyEnv !== undefined && !envNames.includes(this.apiKeyEnv)) {
       envNames.push(this.apiKeyEnv);
     }
-    const args = buildDockerRunArgs({
-      image: environment.image,
-      workspace: request.workspace,
-      store: request.store,
-      runner: this.runnerDir,
-      runnerMount: this.runnerMount,
-      command: ['node', join(this.runnerMount, 'runner.js')],
-      ...(environment.network === undefined ? {} : { network: environment.network }),
-      ...(this.user === undefined ? {} : { user: this.user }),
-      ...(this.home === undefined ? {} : { home: this.home }),
-      ...(envNames.length === 0 ? {} : { env: envNames }),
-      ...(environment.gitIdentity === undefined ? {} : { gitIdentity: environment.gitIdentity }),
-      ...(environment.caches === undefined || request.repo === undefined
-        ? {}
-        : { caches: scopeCacheVolumes(request.repo, environment.caches) }),
+    const store = request.store;
+    const caches =
+      environment.caches === undefined || request.repo === undefined
+        ? undefined
+        : scopeCacheVolumes(request.repo, environment.caches);
+    return this.prepareCaches(environment.image, caches).then(() => {
+      const args = buildDockerRunArgs({
+        image: environment.image,
+        workspace: request.workspace,
+        store,
+        runner: this.runnerDir,
+        runnerMount: this.runnerMount,
+        command: ['node', join(this.runnerMount, 'runner.js')],
+        ...(environment.network === undefined ? {} : { network: environment.network }),
+        ...(this.user === undefined ? {} : { user: this.user }),
+        ...(this.home === undefined ? {} : { home: this.home }),
+        ...(envNames.length === 0 ? {} : { env: envNames }),
+        ...(environment.gitIdentity === undefined ? {} : { gitIdentity: environment.gitIdentity }),
+        ...(caches === undefined ? {} : { caches }),
+      });
+      const payload = JSON.stringify({
+        skill: request.skill,
+        prompt: request.prompt,
+        workspace: request.workspace,
+        ...(this.model === undefined ? {} : { model: this.model }),
+        ...(this.agent === undefined ? {} : { agent: this.agent }),
+        ...(this.database === undefined ? {} : { database: this.database }),
+        ...(this.apiEndpoint === undefined ? {} : { apiEndpoint: this.apiEndpoint }),
+        ...(this.apiKeyEnv === undefined ? {} : { apiKeyEnv: this.apiKeyEnv }),
+        expectedSdkVersion: this.sdkVersion,
+      });
+      return this.runTurn(request, args, payload);
     });
-    const payload = JSON.stringify({
-      skill: request.skill,
-      prompt: request.prompt,
-      workspace: request.workspace,
-      ...(this.model === undefined ? {} : { model: this.model }),
-      ...(this.agent === undefined ? {} : { agent: this.agent }),
-      ...(this.database === undefined ? {} : { database: this.database }),
-      ...(this.apiEndpoint === undefined ? {} : { apiEndpoint: this.apiEndpoint }),
-      ...(this.apiKeyEnv === undefined ? {} : { apiKeyEnv: this.apiKeyEnv }),
-      expectedSdkVersion: this.sdkVersion,
-    });
+  }
 
+  /**
+   * Make each cache volume writable by the turn's user, once per process. A
+   * named volume is created root-owned and the turn runs as the orchestrator's
+   * user, so an image that does not pre-create the cache path cannot seed it
+   * with the turn user's ownership and the cache never warms. Best-effort: a
+   * volume that cannot be prepared is logged and the turn runs without a warm
+   * cache, rather than failing the turn over a caching optimisation.
+   */
+  private async prepareCaches(
+    image: string,
+    caches: DockerCacheMount[] | undefined,
+  ): Promise<void> {
+    for (const cache of caches ?? []) {
+      if (this.preparedVolumes.has(cache.volume)) continue;
+      const args = buildCachePrepareArgs({
+        image,
+        volume: cache.volume,
+        path: cache.path,
+        ...(this.user === undefined ? {} : { user: this.user }),
+      });
+      try {
+        const result = await this.runner.run({ command: this.docker, args, input: '' });
+        if (result.code !== 0) {
+          const stderr = result.stderr.trim();
+          const suffix = stderr === '' ? '' : `: ${stderr}`;
+          this.logger(
+            `could not prepare cache volume ${cache.volume} (exit ${result.code ?? 'unknown'})${suffix}`,
+          );
+          continue;
+        }
+        this.preparedVolumes.add(cache.volume);
+      } catch (error) {
+        const detail = error instanceof Error ? error.message : String(error);
+        this.logger(`could not prepare cache volume ${cache.volume}: ${detail}`);
+      }
+    }
+  }
+
+  /** Run the turn, forwarding usage events and resolving with the terminal result. */
+  private runTurn(
+    request: OpenCodeSkillRequest,
+    args: string[],
+    payload: string,
+  ): Promise<OpenCodeSkillResult> {
     return new Promise<OpenCodeSkillResult>((resolve, reject) => {
       let buffer = '';
       let result: OpenCodeSkillResult | undefined;

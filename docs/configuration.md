@@ -82,11 +82,11 @@ repositories:
 
 ### `limits`
 
-| Field           | Default   | Description                             |
-| --------------- | --------- | --------------------------------------- |
-| `maxSteps`      | `200`     | Agent steps allowed per turn.           |
-| `maxTokens`     | `200000`  | Tokens allowed per turn.                |
-| `maxDurationMs` | `1800000` | Wall-clock limit per turn (30 minutes). |
+| Field           | Default   | Description                                                                                                                             |
+| --------------- | --------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| `maxSteps`      | `200`     | Agent steps allowed per turn.                                                                                                           |
+| `maxTokens`     | `200000`  | Tokens of new work allowed per turn: input, output, reasoning, and cache write. Cache reads re-read unchanged context and are excluded. |
+| `maxDurationMs` | `1800000` | Wall-clock limit per turn (30 minutes).                                                                                                 |
 
 ### `workspace`
 
@@ -161,13 +161,13 @@ ready-made flavours CI publishes to GHCR. Those flavours are published for
 `linux/amd64` and `linux/arm64`, and Docker selects the image matching the host's
 architecture when it pulls the tag.
 
-| Field         | Required | Default  | Description                                                                                       |
-| ------------- | -------- | -------- | ------------------------------------------------------------------------------------------------- |
-| `image`       | yes      | —        | Container image providing the environment.                                                        |
-| `network`     | no       | `bridge` | Container network mode. The model loop runs inside the container, so provider egress is required. |
-| `env`         | no       | —        | Names of the orchestrator's environment variables passed into the container (for provider auth).  |
-| `gitIdentity` | no       | —        | `name` and `email` an in-container commit uses.                                                   |
-| `caches`      | no       | —        | Named volumes reused across the repository's turns, each a `name` and a container `path`.         |
+| Field         | Required | Default  | Description                                                                                                                                                                    |
+| ------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `image`       | yes      | —        | Container image providing the environment.                                                                                                                                     |
+| `network`     | no       | `bridge` | Container network mode. The model loop runs inside the container, so provider egress is required.                                                                              |
+| `env`         | no       | —        | Names of the orchestrator's environment variables passed into the container (for provider auth).                                                                               |
+| `gitIdentity` | no       | —        | `name` and `email` an in-container commit uses.                                                                                                                                |
+| `caches`      | no       | —        | Named volumes reused across the repository's turns, each a `name` and a container `path`. The orchestrator makes each volume writable by the turn's user before the turn runs. |
 
 ```yaml
 defaults:

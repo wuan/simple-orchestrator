@@ -82,3 +82,26 @@ describe('createService container environment', () => {
     expect(runtime.requests[0]?.environment).toBeUndefined();
   });
 });
+
+describe('createService turn limits', () => {
+  it('fails a turn whose new-work tokens exceed the configured limit', async () => {
+    const runtime = new FakeRuntime();
+    runtime.enqueue({
+      ...proposeResult(),
+      usage: { input: DEFAULT_LIMITS.maxTokens + 1, tokens: DEFAULT_LIMITS.maxTokens + 1 },
+    });
+    const provider = new FakeProvider();
+    provider.seedIssue({ number: 1, labels: ['openspec'] });
+
+    const service = await createService(config(), {
+      credentials: new EnvCredentialResolver({ ANY_VALUE: '1' }),
+      providerFactory: () => provider,
+      sandboxFactory: () => new FakeSandbox(),
+      runtime,
+      openspec: new FakeOpenspecCli(),
+    });
+    await service.repositories[0]?.poller.pollOnce();
+
+    expect(provider.commentLog.some((c) => c.body.includes('tokens limit'))).toBe(true);
+  });
+});

@@ -400,7 +400,8 @@ a running OpenCode service is using.
 After a turn succeeds the orchestrator pushes the workflow branch itself, so the
 turn's commits appear on the pull request; a turn that errors, a propose turn
 that commits nothing, or a push that fails, marks the workflow failed instead of
-advancing it.
+advancing it. A turn that produced no change also posts its own summary and any
+questions it raised, so the failure comment records why the turn stopped.
 
 Every comment the orchestrator posts carries a compact metrics line for the turn
 behind it: the model that ran the turn and the tokens it consumed broken down by
