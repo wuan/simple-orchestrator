@@ -21,6 +21,21 @@ function flavours(): string[] {
     .filter((name): name is string => name !== undefined);
 }
 
+/** Each flavour stage's Dockerfile text, up to the next `FROM base AS` stage. */
+function flavourStages(): Record<string, string> {
+  const text = dockerfile();
+  const starts = [...text.matchAll(/^FROM base AS (\S+)$/gm)].map((match) => ({
+    name: match[1] as string,
+    index: match.index,
+  }));
+  const stages: Record<string, string> = {};
+  starts.forEach((stage, i) => {
+    const end = i + 1 < starts.length ? (starts[i + 1]?.index ?? text.length) : text.length;
+    stages[stage.name] = text.slice(stage.index, end);
+  });
+  return stages;
+}
+
 interface Workflow {
   jobs?: Record<
     string,
@@ -51,9 +66,10 @@ describe('environment image flavours', () => {
     expect(text).toMatch(/install -y --no-install-recommends[\s\S]*\bgit\b/);
 
     // The plain Node.js flavour is the base itself; the Rust flavour adds the
-    // toolchain bo-srv-rs needs.
+    // toolchain bo-srv-rs needs; the Android flavour adds the JDK and SDK.
     expect(flavours()).toContain('node');
     expect(flavours()).toContain('rust');
+    expect(flavours()).toContain('android');
     expect(dockerfile()).toMatch(/^FROM base AS node$/m);
   });
 
@@ -77,36 +93,40 @@ describe('environment image flavours', () => {
     // The matrix is derived from the Dockerfile at run time, so there is no
     // second, drifting list to keep in sync.
     expect(job?.needs).toContain('flavours');
-    expect(job?.strategy?.matrix?.flavour).toBe('${{ fromJSON(needs.flavours.outputs.list) }}');
-    expect(workflow.jobs?.flavours?.outputs?.list).toContain('steps.discover.outputs.list');
+    expect(job?.strategy?.matrix?.include).toBe('${{ fromJSON(needs.flavours.outputs.matrix) }}');
+    expect(workflow.jobs?.flavours?.outputs?.matrix).toContain('steps.discover.outputs.matrix');
 
     const buildStep = job?.steps?.find((step) => step.with?.target === '${{ matrix.flavour }}');
     expect(buildStep?.with?.context).toBe('environments');
   });
 
-  it('publishes every flavour for both amd64 and arm64', () => {
+  it('derives each flavour platform set from the Dockerfile', () => {
+    const text = dockerfile();
     const workflow = parse(readFileSync(WORKFLOW, 'utf8')) as Workflow;
     const steps = workflow.jobs?.build?.steps ?? [];
 
-    // The runner is amd64, so the build registers QEMU to emulate arm64 and
-    // buildx emits a single index covering both supported platforms.
+    // A flavour stage declares the platforms it supports in the comment block
+    // above it; `android` declares linux/amd64 because Google publishes the
+    // Linux Android SDK tools for x86_64 only.
+    expect(text).toMatch(/^# platforms: linux\/amd64$/m);
+
+    // The discovery parses the declaration and defaults an undeclared flavour
+    // to both supported platforms.
+    const discovery = workflow.jobs?.flavours?.steps?.find((step) => step.id === 'discover');
+    expect(discovery?.run).toContain('# platforms:');
+    expect(discovery?.run).toContain('linux/amd64,linux/arm64');
+
+    // The runner is amd64, so the build registers QEMU to emulate arm64 for a
+    // multi-platform flavour.
     expect(steps.some((step) => step.uses?.startsWith('docker/setup-qemu-action'))).toBe(true);
 
-    // The selection step keeps both platforms on a publish and only the native
-    // platform on a pull request, and the build reads its platform set from it.
-    const selection = steps.find((step) => step.id === 'platforms');
-    expect(selection?.run).toContain('linux/amd64');
-    expect(selection?.run).toContain('linux/arm64');
-    expect(selection?.run).toContain('pull_request');
-
+    // The build reads the flavour's platform set from the discovery matrix and
+    // keeps a pull request on the runner's native platform only.
     const buildStep = steps.find((step) => step.id === 'build');
-    expect(buildStep?.with?.platforms).toBe('${{ steps.platforms.outputs.platforms }}');
-
-    // The flavour matrix still comes from the Dockerfile stages rather than a
-    // second, driftable list.
-    expect(workflow.jobs?.build?.strategy?.matrix?.flavour).toBe(
-      '${{ fromJSON(needs.flavours.outputs.list) }}',
-    );
+    const platforms = buildStep?.with?.platforms;
+    expect(platforms).toContain('matrix.platforms');
+    expect(platforms).toContain('linux/amd64');
+    expect(platforms).toContain('pull_request');
   });
 
   it('keeps the attestation manifests out of the published image index', () => {
@@ -173,6 +193,31 @@ describe('environment image flavours', () => {
     expect(rust).toMatch(/apt-get install[^\n]*\blibssl-dev\b/);
     expect(base).not.toMatch(/apt-get install[^\n]*\blibssl-dev\b/);
     expect(node).not.toMatch(/apt-get install[^\n]*\blibssl-dev\b/);
+  });
+
+  it('installs the JDK and Android SDK in the android flavour only', () => {
+    const text = dockerfile();
+    const stages = flavourStages();
+    const android = stages.android;
+
+    // The android stage provides the JDK and the Android SDK command-line
+    // tools a Gradle Android build needs, with the SDK exposed through the
+    // variables such a build reads and usable by an arbitrary uid.
+    expect(android).toBeDefined();
+    expect(android).toMatch(/apt-get install[^\n]*\bopenjdk-17-jdk\b/);
+    expect(android).toContain('sdkmanager');
+    expect(android).toContain('ANDROID_HOME=/opt/android-sdk');
+    expect(android).toContain('ANDROID_SDK_ROOT=/opt/android-sdk');
+    expect(android).toMatch(/chmod -R a\+rwX "\$ANDROID_HOME"/);
+    expect(android).toContain('platform-tools');
+
+    // The toolchain stays in the android flavour: the shared contract and the
+    // node and rust flavours are unchanged.
+    const base = text.slice(text.indexOf('FROM node:24'), text.indexOf('FROM base AS node'));
+    for (const stage of [base, stages.node, stages.rust]) {
+      expect(stage).not.toMatch(/apt-get install[^\n]*\bopenjdk\b/);
+      expect(stage).not.toContain('ANDROID_HOME');
+    }
   });
 
   it('discovers the flavours from the Dockerfile and passes the lockfile SDK', () => {

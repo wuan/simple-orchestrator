@@ -6,12 +6,8 @@
 
 The project SHALL publish each turn environment flavour to the GitHub Container
 Registry as an image whose entries are exactly the platforms that flavour's
-toolchain supports, so a host on a supported platform pulls an image that runs
-natively and the index carries no entry for an unsupported or unknown platform.
-A flavour whose toolchain is available for both `linux/amd64` and `linux/arm64`
-SHALL be published as a single multi-platform image index covering both; a
-flavour whose toolchain is available for only one SHALL be published for that
-one only.
+toolchain supports, so a host pulls a native image and the index carries no
+unsupported or unknown entry.
 
 #### Scenario: An amd64 host pulls a native image
 
