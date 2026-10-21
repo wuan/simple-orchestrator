@@ -3,8 +3,9 @@ name: Environment images
 # Builds the turn environment flavours in `environments/Dockerfile` and
 # publishes them to the GitHub Container Registry. Every `FROM base AS <name>`
 # stage in that Dockerfile is a flavour; adding one there is the only edit
-# needed. Pull requests build but do not push, so an image change is validated
-# before it lands on `main`.
+# needed, and a `# platforms:` line above a stage declares the platforms it is
+# built for (both supported platforms by default). Pull requests build but do
+# not push, so an image change is validated before it lands on `main`.
 #
 # Pushes to `main` and version tags always build, because the SDK version baked
 # into the image comes from `package-lock.json` and can change without
@@ -32,22 +33,41 @@ jobs:
     name: Discover flavours
     runs-on: ubuntu-latest
     outputs:
-      list: ${{ steps.discover.outputs.list }}
+      matrix: ${{ steps.discover.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
-      - name: Discover `FROM base AS <flavour>` stages
+      - name: Discover `FROM base AS <flavour>` stages and their platforms
         id: discover
         run: |
           set -euo pipefail
-          list=$(grep -oE '^FROM base AS [A-Za-z0-9._-]+' environments/Dockerfile \
-            | awk '{ print $4 }' \
+          # A flavour stage may declare the platforms it supports with a
+          # `# platforms: <comma-separated list>` line in the comment block
+          # immediately above it; a stage without one defaults to both supported
+          # platforms. Read both from the Dockerfile so the workflow and the
+          # image set cannot drift.
+          matrix=$(awk '
+            /^# platforms:/ {
+              sub(/^# platforms:[[:space:]]*/, "");
+              platforms = $0;
+              next;
+            }
+            /^FROM base AS / {
+              print $4 "\t" (platforms == "" ? "linux/amd64,linux/arm64" : platforms);
+              platforms = "";
+              next;
+            }
+            $0 !~ /^#/ { platforms = ""; }
+          ' environments/Dockerfile \
             | sort -u \
-            | jq -R -s -c 'split("\n") | map(select(length > 0))')
-          if [ "$list" = '[]' ]; then
+            | jq -R -s -c '
+                split("\n")
+                | map(select(length > 0))
+                | map(split("\t") | { flavour: .[0], platforms: .[1] })')
+          if [ "$matrix" = '[]' ]; then
             echo 'no environment flavours found in environments/Dockerfile' >&2
             exit 1
           fi
-          echo "list=$list" >> "$GITHUB_OUTPUT"
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
 
   build:
     name: ${{ matrix.flavour }}
@@ -63,7 +83,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        flavour: ${{ fromJSON(needs.flavours.outputs.list) }}
+        include: ${{ fromJSON(needs.flavours.outputs.matrix) }}
     steps:
       - uses: actions/checkout@v7
 
@@ -82,23 +102,12 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       # A pull request only validates the image, so it builds the runner's
-      # native platform and skips the emulated arm64 leg; publishes cover both
-      # supported platforms.
-      - name: Select build platforms
-        id: platforms
-        run: |
-          set -euo pipefail
-          if [ "${{ github.event_name }}" = 'pull_request' ]; then
-            echo 'platforms=linux/amd64' >> "$GITHUB_OUTPUT"
-          else
-            echo 'platforms=linux/amd64,linux/arm64' >> "$GITHUB_OUTPUT"
-          fi
-
-      # The runner is amd64, so QEMU supplies the arm64 emulation the
-      # multi-platform build needs; buildx then emits one image index per tag
-      # that a host on either architecture can pull from.
+      # native platform and skips the emulated legs.
       - uses: docker/setup-qemu-action@v4
 
+      # The runner is amd64, so QEMU supplies the arm64 emulation a
+      # multi-platform build needs; buildx then emits one image index per tag
+      # that a host on a supported architecture can pull from.
       - uses: docker/setup-buildx-action@v4
 
       # No push on pull requests, so no login is needed (and no package write
@@ -130,10 +139,12 @@ jobs:
         with:
           context: environments
           target: ${{ matrix.flavour }}
-          # Every flavour is one image index covering both supported platforms,
-          # so the pulling host's Docker selects the matching image. A pull
-          # request selects the native platform only.
-          platforms: ${{ steps.platforms.outputs.platforms }}
+          # A publish builds exactly the platforms the flavour's stage declares
+          # in the Dockerfile - both supported platforms unless the stage says
+          # otherwise - so a single-platform flavour is never built for a
+          # platform its toolchain cannot run on. A pull request selects the
+          # runner's native platform only.
+          platforms: ${{ github.event_name == 'pull_request' && 'linux/amd64' || matrix.platforms }}
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}

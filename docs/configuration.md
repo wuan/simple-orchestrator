@@ -157,9 +157,10 @@ home, and the compiled runner is mounted read-only. The image must provide
 Node.js 24+, `git`, and the toolchain, and must have `@opencode/sdk` installed at
 the orchestrator's version; the runner fails fast when the version differs. See
 [`environments`](../environments/README.md) for the image contract and the
-ready-made flavours CI publishes to GHCR. Those flavours are published for
-`linux/amd64` and `linux/arm64`, and Docker selects the image matching the host's
-architecture when it pulls the tag.
+ready-made flavours CI publishes to GHCR. Each flavour is published for the
+platforms its toolchain supports - `node` and `rust` cover `linux/amd64` and
+`linux/arm64`, `android` covers `linux/amd64` - and Docker selects the image
+matching the host's architecture when it pulls the tag.
 
 | Field         | Required | Default  | Description                                                                                       |
 | ------------- | -------- | -------- | ------------------------------------------------------------------------------------------------- |
