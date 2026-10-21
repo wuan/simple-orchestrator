@@ -181,7 +181,7 @@ jobs:
 
       - name: Attest the published image's build provenance
         if: github.event_name != 'pull_request'
-        uses: actions/attest-build-provenance@v3
+        uses: actions/attest-build-provenance@v4
         with:
           subject-name: ghcr.io/${{ github.repository }}/${{ matrix.flavour }}
           subject-digest: ${{ steps.build.outputs.digest }}
