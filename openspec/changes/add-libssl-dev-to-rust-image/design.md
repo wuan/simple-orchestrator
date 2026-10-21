@@ -12,14 +12,16 @@ See `proposal.md` - Why. The constraints that shape the approach:
 - CI discovers the `FROM base AS <name>` stages and publishes one multi-platform
   image per flavour, so any package must exist for `linux/amd64` and
   `linux/arm64` in Debian bookworm.
-- Both the Dockerfile comment and `environments/README.md` currently state that
-  no OpenSSL development package is needed, so the documentation has to change
-  with the image.
-- `wuan/mqtt-gateway` builds in CI, whose `ubuntu-latest` runner ships
-  `libssl-dev`, but its dependency tree links the system OpenSSL through
-  `native-tls` and `postgres-native-tls` -> `openssl-sys`, so its turns fail on
-  a missing header. That is the concrete failure this change removes and the
-  thing to reproduce against the built image.
+- The Dockerfile comment claims no OpenSSL development package is needed, and
+  `environments/README.md` omits one from the Rust flavour's toolchain; both have
+  to change with the image.
+- `wuan/mqtt-gateway` builds in CI inside the same Debian base the image uses
+  (`debian:bookworm-slim`) and installs `curl build-essential gcc cmake
+  pkg-config libssl-dev unzip` before `cargo build`; its dependency tree links
+  the system OpenSSL through `native-tls` and `postgres-native-tls` ->
+  `openssl-sys`, and its turns fail on the missing header while CI succeeds.
+  That is the concrete failure this change removes and the thing to reproduce
+  against the built image.
 - `src/runtime/opencode/environments.test.ts` asserts the flavour set, the
   shared base, and the multi-platform build from the Dockerfile text, and is the
   natural place to pin the package.

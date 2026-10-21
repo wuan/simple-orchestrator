@@ -8,10 +8,11 @@ assumption that the project's HTTP client uses `rustls`. That assumption fails
 for `wuan/mqtt-gateway`: its dependency tree pulls `native-tls` and
 `postgres-native-tls`, which build `openssl-sys` against the system OpenSSL, and
 turns for that repository have failed to build for want of the `openssl`/`libssl`
-headers. The CI runner it is developed on (GitHub's `ubuntu-latest`) already
-ships `libssl-dev`, so the crate builds in CI but fails inside a turn, and a turn
-cannot install packages to recover. The turn image should be at least as capable
-as the CI environment it stands in for.
+headers. Its CI builds inside the same Debian base the image uses
+(`debian:bookworm-slim`) and installs `build-essential`, `cmake`, `pkg-config`,
+and `libssl-dev` before `cargo build`, so the crate builds in CI but fails inside
+a turn, and a turn cannot install packages to recover. The turn image should be
+at least as capable as the CI environment it stands in for.
 
 ## What Changes
 
