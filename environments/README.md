@@ -42,8 +42,9 @@ ghcr.io/wuan/simple-orchestrator/<flavour>
 ```
 
 Every flavour is published for exactly the platforms its toolchain supports:
-the `node` and `rust` flavours cover `linux/amd64` and `linux/arm64`, while
-`android` covers `linux/amd64` only (see [Platforms](#platforms)). The tags name
+the `node`, `rust`, and `platformio` flavours cover `linux/amd64` and
+`linux/arm64`, while `android` covers `linux/amd64` only (see
+[Platforms](#platforms)). The tags name
 an image index rather than a single architecture, so the host's container
 runtime selects the image matching its own platform and the flavour runs
 natively wherever it is published. A pull-request build validates only the
@@ -92,11 +93,12 @@ The image is the only field that must name a flavour; the rest is the shared
 
 ## Flavours
 
-| Flavour   | Toolchain                                                                                             | Used for                                                                   |
-| --------- | ----------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------- |
-| `node`    | Node.js 24 and `git` - the image contract itself                                                      | Repositories needing no toolchain beyond the contract                      |
-| `rust`    | `rustc`/`cargo` (stable, `clippy`, `rustfmt`), `build-essential`, `cmake`, `pkg-config`, `libssl-dev` | [bo-srv-rs](https://github.com/wuan/bo-srv-rs) and other Rust repositories |
-| `android` | `openjdk-17-jdk` and the Android SDK (`platform-tools`, `platforms;android-35`, `build-tools;35.0.0`) | Android repositories that build with Gradle and the Android Gradle Plugin  |
+| Flavour      | Toolchain                                                                                             | Used for                                                                                      |
+| ------------ | ----------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| `node`       | Node.js 24 and `git` - the image contract itself                                                      | Repositories needing no toolchain beyond the contract                                         |
+| `rust`       | `rustc`/`cargo` (stable, `clippy`, `rustfmt`), `build-essential`, `cmake`, `pkg-config`, `libssl-dev` | [bo-srv-rs](https://github.com/wuan/bo-srv-rs) and other Rust repositories                    |
+| `android`    | `openjdk-17-jdk` and the Android SDK (`platform-tools`, `platforms;android-35`, `build-tools;35.0.0`) | Android repositories that build with Gradle and the Android Gradle Plugin                     |
+| `platformio` | PlatformIO Core, `lcov`, the pinned `clang-format` and `shellcheck`, and `pre-commit`                 | [klimacontrol](https://github.com/wuan/klimacontrol) and other embedded firmware repositories |
 
 The Rust flavour matches the toolchain and native build dependencies a Rust
 repository's CI installs, including `libssl-dev` so a dependency tree that links
@@ -131,11 +133,32 @@ The turn's `HOME` defaults to `/tmp`, so `~/.gradle` is `/tmp/.gradle`; the
 cache volume keeps the Gradle wrapper, dependency, and build caches between
 turns.
 
+The PlatformIO flavour installs PlatformIO Core in a virtual environment, the
+`lcov` coverage tool an embedded repository's test report runs, and the pinned
+`clang-format` and `shellcheck` its commit gate expects, alongside `pre-commit`.
+It exposes PlatformIO's core directory at `/tmp/.platformio` through
+`PLATFORMIO_CORE_DIR`, so a cache volume there keeps the platforms, toolchains,
+and libraries `pio` downloads between turns; the project's `platformio.ini`
+resolves them at turn time exactly as a local checkout would. Point an embedded
+repository at it with a PlatformIO cache volume reused across turns:
+
+```yaml
+repositories:
+  - name: klimacontrol
+    environment:
+      image: ghcr.io/wuan/simple-orchestrator/platformio:latest
+      env:
+        - LLM_API_KEY
+      caches:
+        - name: platformio
+          path: /tmp/.platformio
+```
+
 ## Platforms
 
 A flavour is published for exactly the platforms its toolchain supports. The
-`node` and `rust` flavours cover both `linux/amd64` and `linux/arm64`; a host on
-either architecture pulls a native image.
+`node`, `rust`, and `platformio` flavours cover both `linux/amd64` and
+`linux/arm64`; a host on either architecture pulls a native image.
 
 The `android` flavour is published for **`linux/amd64` only**: Google publishes
 the Linux Android SDK command-line tools and the build tools (`aapt2`) for

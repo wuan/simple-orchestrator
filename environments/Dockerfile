@@ -137,3 +137,40 @@ RUN apt-get update \
   && chmod -R a+rwX "$ANDROID_HOME" \
   && java -version \
   && sdkmanager --version
+
+# PlatformIO flavour, for https://github.com/wuan/klimacontrol and other
+# embedded firmware repositories: PlatformIO Core in a system virtual
+# environment, plus the coverage and the pinned formatting and lint tools the
+# repository's test report and commit gate use (lcov, clang-format, shellcheck,
+# pre-commit). It inherits both supported platforms because PlatformIO publishes
+# its espressif32 tool packages for linux_aarch64 as well as linux_x86_64, so an
+# arm64 host pulls a native image.
+FROM base AS platformio
+
+# Pin the tool versions so the build fails loudly rather than baking a moving
+# target; raise them here without touching the workflow or the specs.
+ARG PLATFORMIO_VERSION=6.2.0
+ARG CLANG_FORMAT_VERSION=19.1.7
+
+# Debian bookworm's Python is externally managed (PEP 668), so install
+# PlatformIO into a virtual environment in /opt (not the build user's $HOME) and
+# put its bin directory on PATH; a plain `pip install` would be refused. The
+# downloaded platforms, toolchains, and libraries live in PLATFORMIO_CORE_DIR so
+# a mounted cache volume at that path keeps them warm between turns, and the
+# environment is made readable and executable by any uid a turn runs as.
+ENV PLATFORMIO_CORE_DIR=/tmp/.platformio \
+    PATH=/opt/platformio/bin:$PATH
+
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends python3-venv lcov shellcheck \
+  && rm -rf /var/lib/apt/lists/* \
+  && python3 -m venv /opt/platformio \
+  && /opt/platformio/bin/pip install --no-cache-dir \
+       "platformio==${PLATFORMIO_VERSION}" \
+       "clang-format==${CLANG_FORMAT_VERSION}" \
+       pre-commit \
+  && chmod -R a+rwX /opt/platformio \
+  && pio --version \
+  && clang-format --version \
+  && shellcheck --version \
+  && lcov --version
