@@ -62,7 +62,7 @@ A turn MUST commit only to the workflow branch and MUST NOT push, write to the d
 - **THEN** the orchestrator pushes only the workflow branch so the commits reach the pull request
 
 ### Requirement: Bounded turn cost
-The orchestrator SHALL enforce per-turn limits on agent steps, tokens, and wall-clock time, and SHALL fail the turn when a limit is exceeded.
+The orchestrator SHALL enforce per-turn limits on agent steps, tokens, and wall-clock time by bounding each turn's runtime, and SHALL fail the turn when a limit is exceeded. The token budget SHALL count the tokens of new work - input, output, reasoning, and cache write - and SHALL NOT count cache reads, so the budget bounds what a turn does rather than the context it re-reads.
 
 #### Scenario: Time limit exceeded
 - **WHEN** a turn exceeds the configured wall-clock limit
@@ -71,6 +71,14 @@ The orchestrator SHALL enforce per-turn limits on agent steps, tokens, and wall-
 #### Scenario: Step limit exceeded
 - **WHEN** a turn exceeds the configured agent-step limit
 - **THEN** the turn is stopped and reported as a failure
+
+#### Scenario: Token limit exceeded
+- **WHEN** a turn's input, output, reasoning, and cache-write tokens exceed the configured token limit
+- **THEN** the turn is stopped and reported as a failure
+
+#### Scenario: Cache reads do not consume the token budget
+- **WHEN** a turn re-reads a large, unchanged context and reports most of its tokens as cache reads
+- **THEN** the cache reads do not count against the token limit, so the turn is not failed for re-reading its own context
 
 ### Requirement: Structured turn result
 A turn SHALL report a structured result including the commit or commits produced, a human-readable summary, and any explicit questions for the human.
@@ -236,7 +244,7 @@ The orchestrator SHALL pass configured environment variables into the container,
 - **THEN** provider credentials are supplied at run time rather than baked into the image
 
 ### Requirement: Per-repository network and cache mounts
-The orchestrator SHALL apply the environment's configured network mode and SHALL support named-volume mounts for tool caches, defaulting the network to allow provider egress.
+The orchestrator SHALL apply the environment's configured network mode, defaulting the network to allow provider egress, and SHALL support named-volume mounts for tool caches. Before a turn runs, the orchestrator SHALL make each mounted cache volume writable by the turn's user, so a cache path the image does not provide as writable still persists across turns.
 
 #### Scenario: Network policy applied
 - **WHEN** an environment configures a network mode
@@ -249,6 +257,10 @@ The orchestrator SHALL apply the environment's configured network mode and SHALL
 #### Scenario: Cache volume persists across turns
 - **WHEN** an environment mounts a named cache volume
 - **THEN** successive turns of that repository reuse its contents
+
+#### Scenario: Cache volume is made writable by the turn
+- **WHEN** an environment mounts a named cache volume whose path the image does not provide as writable
+- **THEN** the orchestrator makes the volume writable by the turn's user before the turn runs, so the turn can populate the cache
 
 ### Requirement: Container provisioning failures fail the turn
 The orchestrator SHALL fail a turn with a clear error when the image cannot be pulled or started, the container exits unsuccessfully, or the container returns a missing or malformed result.
