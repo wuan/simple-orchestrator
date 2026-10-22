@@ -349,3 +349,39 @@ export function buildDockerRunArgs(options: DockerRunOptions): string[] {
   args.push(options.image, ...options.command);
   return args;
 }
+
+/** A cache volume to make writable by the turn user before a turn runs. */
+export interface DockerCachePrepareOptions {
+  image: string;
+  /** Named volume to prepare. */
+  volume: string;
+  /** Absolute path inside the container the volume is mounted at. */
+  path: string;
+  /** uid:gid the volume should be usable by; defaults to the orchestrator process. */
+  user?: string;
+}
+
+/**
+ * Build the argv that makes a named cache volume writable by the turn user. A
+ * named volume is created root-owned, and a turn runs as the orchestrator's
+ * (non-root) user, so an image that does not pre-create the cache path leaves
+ * the turn unable to write it and the cache never warms. Running `chown` as
+ * root over the mounted path once fixes the ownership; only the mount point is
+ * changed because the turn's later writes are already owned correctly.
+ */
+export function buildCachePrepareArgs(options: DockerCachePrepareOptions): string[] {
+  const user = options.user ?? `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`;
+  return [
+    'run',
+    '--rm',
+    '--user',
+    '0:0',
+    '--volume',
+    `${options.volume}:${options.path}`,
+    '--entrypoint',
+    'chown',
+    options.image,
+    user,
+    options.path,
+  ];
+}

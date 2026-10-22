@@ -9,7 +9,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 import { DEFAULT_ENVIRONMENT_NETWORK } from '../config/types.js';
 import { NodeCommandRunner, type CommandRunner } from '../system/commands.js';
 import { RepositoryStore, type RepositorySource } from './repository-store.js';
-import { buildDockerRunArgs, WorktreeSandbox } from './sandbox.js';
+import { buildCachePrepareArgs, buildDockerRunArgs, WorktreeSandbox } from './sandbox.js';
 
 const cleanups: string[] = [];
 const commands: CommandRunner = new NodeCommandRunner();
@@ -404,6 +404,27 @@ describe('buildDockerRunArgs', () => {
   it('ends with the image and the turn command', () => {
     const args = buildDockerRunArgs(base);
     expect(args.slice(-3)).toEqual(['opencode:latest', 'node', '/opt/runner/dist/runner.js']);
+  });
+});
+
+describe('buildCachePrepareArgs', () => {
+  it('runs chown as root over the mounted cache volume', () => {
+    const args = buildCachePrepareArgs({
+      image: 'opencode:latest',
+      volume: 'orchestrator-acme-widget-gradle',
+      path: '/home/agent/.gradle',
+      user: '1000:1001',
+    });
+    expect(args.slice(0, 2)).toEqual(['run', '--rm']);
+    expect(valueAfter(args, '--user')).toBe('0:0');
+    expect(valueAfter(args, '--entrypoint')).toBe('chown');
+    expect(allVolumeTargets(args)).toEqual(['orchestrator-acme-widget-gradle:/home/agent/.gradle']);
+    expect(args.slice(-3)).toEqual(['opencode:latest', '1000:1001', '/home/agent/.gradle']);
+  });
+
+  it('defaults the prepared owner to the orchestrator process', () => {
+    const args = buildCachePrepareArgs({ image: 'opencode:latest', volume: 'v', path: '/cache' });
+    expect(args.at(-2)).toBe(`${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`);
   });
 });
 
