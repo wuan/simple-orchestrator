@@ -220,6 +220,36 @@ describe('environment image flavours', () => {
     }
   });
 
+  it('installs PlatformIO and the embedded gate tools in the platformio flavour only', () => {
+    const text = dockerfile();
+    const stages = flavourStages();
+    const platformio = stages.platformio;
+
+    // The platformio stage provides PlatformIO Core in a virtual environment,
+    // the coverage tool the native test report uses, and the pinned
+    // formatting and lint tools the repository's commit gate expects, with
+    // PlatformIO's core directory exposed as a cache path and the environment
+    // usable by an arbitrary uid.
+    expect(flavours()).toContain('platformio');
+    expect(platformio).toBeDefined();
+    expect(platformio).toMatch(/apt-get install[^\n]*\bpython3-venv\b/);
+    expect(platformio).toMatch(/apt-get install[^\n]*\blcov\b/);
+    expect(platformio).toMatch(/apt-get install[^\n]*\bshellcheck\b/);
+    expect(platformio).toContain('platformio==${PLATFORMIO_VERSION}');
+    expect(platformio).toContain('clang-format==${CLANG_FORMAT_VERSION}');
+    expect(platformio).toContain('PLATFORMIO_CORE_DIR=/tmp/.platformio');
+    expect(platformio).toContain('/opt/platformio/bin');
+    expect(platformio).toMatch(/chmod -R a\+rwX \/opt\/platformio/);
+
+    // The toolchain stays in the platformio flavour: the shared contract and
+    // the node, rust, and android flavours do not carry it.
+    const base = text.slice(text.indexOf('FROM node:24'), text.indexOf('FROM base AS node'));
+    for (const stage of [base, stages.node, stages.rust, stages.android]) {
+      expect(stage).not.toContain('PLATFORMIO_CORE_DIR');
+      expect(stage).not.toContain('/opt/platformio');
+    }
+  });
+
   it('discovers the flavours from the Dockerfile and passes the lockfile SDK', () => {
     const workflow = parse(readFileSync(WORKFLOW, 'utf8')) as Workflow;
     const discovery = workflow.jobs?.flavours?.steps?.find((step) => step.id === 'discover');
