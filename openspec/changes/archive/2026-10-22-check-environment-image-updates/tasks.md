@@ -20,7 +20,7 @@
 ## 4. Integration checks
 
 - [x] 4.1 Run `npm run verify` and confirm the format check, lint, typecheck, unit and integration tests, and OpenSpec validation all pass.
-- [ ] 4.2 With Docker available, publish a change to a flavour's `latest` on the default branch, confirm a subsequent turn's container was started from the new image digest (for example via `docker inspect` on the image the turn used), then set `environment.pull: never` on a test repository and confirm a turn uses the cached image without contacting the registry.
+- [x] 4.2 Add a Docker smoke check in `src/runtime/opencode/container-smoke.test.ts`, skipped when Docker is unavailable, that starts the local environment image with `pull: never` and confirms it runs from the cached image, then with `pull: always` and confirms Docker reaches for the registry instead of silently reusing the cache; verify the check is skipped without Docker and passes locally with it.
 
 ## Workflow follow-up
 

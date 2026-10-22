@@ -104,4 +104,29 @@ describe('container smoke test', () => {
       ]);
     },
   );
+
+  it.skipIf(!ENABLED)('reads the local image unless the pull policy refreshes it', async () => {
+    const dir = tempDir ?? tmpdir();
+    const args = (pull: 'always' | 'never'): string[] =>
+      buildDockerRunArgs({
+        image: IMAGE,
+        workspace: dir,
+        store: dir,
+        runner: DIST,
+        runnerMount: RUNNER_MOUNT,
+        command: ['true'],
+        pull,
+      });
+    const runner = new NodeContainerRunner();
+
+    // `never` runs the image already present locally.
+    const cached = await runner.run({ args: args('never'), input: '' });
+    expect(cached.code).toBe(0);
+
+    // IMAGE is a local-only tag, so `always` must reach for the registry and
+    // fail rather than silently reusing the cached image - proving the policy
+    // is applied.
+    const refreshed = await runner.run({ args: args('always'), input: '' });
+    expect(refreshed.code).not.toBe(0);
+  });
 });
