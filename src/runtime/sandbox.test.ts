@@ -6,7 +6,7 @@ import process from 'node:process';
 
 import { afterEach, describe, expect, it } from 'vitest';
 
-import { DEFAULT_ENVIRONMENT_NETWORK } from '../config/types.js';
+import { DEFAULT_ENVIRONMENT_NETWORK, DEFAULT_ENVIRONMENT_PULL } from '../config/types.js';
 import { NodeCommandRunner, type CommandRunner } from '../system/commands.js';
 import { RepositoryStore, type RepositorySource } from './repository-store.js';
 import { buildCachePrepareArgs, buildDockerRunArgs, WorktreeSandbox } from './sandbox.js';
@@ -349,6 +349,17 @@ describe('buildDockerRunArgs', () => {
     expect(valueAfter(args, '--user')).toBe(
       `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`,
     );
+  });
+
+  it('defaults the image pull policy to checking the registry', () => {
+    const args = buildDockerRunArgs(base);
+    expect(valueAfter(args, '--pull')).toBe(DEFAULT_ENVIRONMENT_PULL);
+  });
+
+  it('emits a configured pull policy ahead of the image reference', () => {
+    const args = buildDockerRunArgs({ ...base, pull: 'never' });
+    expect(valueAfter(args, '--pull')).toBe('never');
+    expect(args.indexOf('--pull')).toBeLessThan(args.indexOf('opencode:latest'));
   });
 
   it('mounts the store and the workspace at their identical absolute paths', () => {

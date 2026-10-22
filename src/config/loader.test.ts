@@ -244,6 +244,50 @@ repositories:
       });
     });
 
+    it('parses an explicit image pull policy', () => {
+      const config = parseConfig(`
+${MINIMAL}    environment:
+      image: node:24
+      pull: never
+`);
+      expect(config.repositories[0]?.environment?.pull).toBe('never');
+    });
+
+    it('merges a shared image pull policy beneath an entry', () => {
+      const config = parseConfig(`
+defaults:
+  provider: github
+  owner: acme
+  credential: env:GITHUB_TOKEN
+  environment:
+    image: ghcr.io/acme/base:latest
+    pull: missing
+repositories:
+  - name: widget
+  - name: gadget
+    environment:
+      pull: never
+`);
+      const [widget, gadget] = config.repositories;
+      expect(widget?.environment?.pull).toBe('missing');
+      expect(gadget?.environment?.pull).toBe('never');
+    });
+
+    it('fails fast, naming the repository, when the pull policy is unsupported', () => {
+      const bad = `
+${MINIMAL}    environment:
+      image: node:24
+      pull: sometimes
+`;
+      expect(() => parseConfig(bad)).toThrowError(ConfigError);
+      try {
+        parseConfig(bad);
+      } catch (error) {
+        expect((error as ConfigError).repo).toBe('acme/widget');
+        expect((error as Error).message).toContain('pull');
+      }
+    });
+
     it('fails fast, naming the repository, when the image is missing', () => {
       const bad = `
 repositories:

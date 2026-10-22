@@ -36,6 +36,14 @@ export interface EnvironmentGitIdentity {
 }
 
 /**
+ * When the orchestrator refreshes an environment image before starting a
+ * containerized turn, mirroring `docker run --pull`. `always` checks the
+ * registry every turn, `missing` reuses the local image, and `never` never
+ * contacts the registry.
+ */
+export type EnvironmentPull = 'always' | 'missing' | 'never';
+
+/**
  * A per-repository execution environment: a container image the turn runs in,
  * so an agent can use a toolchain (Android, JDK, Rust, ...) the host does not
  * carry. Only `image` is required; the rest default to a documented policy.
@@ -45,6 +53,8 @@ export interface EnvironmentSpec {
   image: string;
   /** Container network mode; defaults to {@link DEFAULT_ENVIRONMENT_NETWORK}. */
   network?: string;
+  /** Image-refresh policy before a turn; defaults to {@link DEFAULT_ENVIRONMENT_PULL}. */
+  pull?: EnvironmentPull;
   /** Names of the orchestrator's environment variables passed into the container. */
   env?: string[];
   /** Git identity the container's commits use; required for a commit to succeed. */
@@ -135,6 +145,14 @@ export const DEFAULT_BASE_BRANCH = 'main';
  * turn unable to call the model.
  */
 export const DEFAULT_ENVIRONMENT_NETWORK = 'bridge';
+
+/**
+ * Default image-refresh policy. A repository that names a mutable tag such as
+ * `latest` picks up a newly published image before the next turn; `missing` and
+ * `never` are documented opt-outs for the previous behaviour and offline hosts.
+ */
+export const DEFAULT_ENVIRONMENT_PULL: EnvironmentPull = 'always';
+
 export const DEFAULT_POLL_INTERVAL_SECONDS = 30;
 export const DEFAULT_MAX_REVISE_ROUNDS = 3;
 
