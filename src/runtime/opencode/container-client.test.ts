@@ -107,6 +107,47 @@ describe('ContainerOpenCodeClient', () => {
     expect(call?.input).toContain('"expectedSdkVersion":"2.0.31"');
   });
 
+  it('checks the registry by default before starting a turn', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+
+    await client(runner).runSkill(skillRequest());
+
+    const args = runner.calls.at(-1)?.args ?? [];
+    expect(args[args.indexOf('--pull') + 1]).toBe('always');
+    // The flag stays ahead of the image reference it applies to.
+    expect(args.indexOf('--pull')).toBeLessThan(args.indexOf('ghcr.io/acme/agent-java:latest'));
+  });
+
+  it('forwards a configured image pull policy', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+
+    await client(runner).runSkill(skillRequest({ environment: { ...ENVIRONMENT, pull: 'never' } }));
+
+    const args = runner.calls.at(-1)?.args ?? [];
+    expect(args[args.indexOf('--pull') + 1]).toBe('never');
+  });
+
+  it('does not re-check a digest-pinned image even when the policy is always', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+    const digest = `ghcr.io/acme/agent-java@sha256:${'a'.repeat(64)}`;
+
+    await client(runner).runSkill(
+      skillRequest({ environment: { ...ENVIRONMENT, image: digest, pull: 'always' } }),
+    );
+
+    const args = runner.calls.at(-1)?.args ?? [];
+    expect(args[args.indexOf('--pull') + 1]).toBe('missing');
+  });
+
   it('prepares each cache volume as root before the turn runs', async () => {
     const runner = eventsRunner([
       { type: 'ready', sdkVersion: '2.0.31' },

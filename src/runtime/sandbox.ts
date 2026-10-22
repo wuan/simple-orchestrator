@@ -3,7 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import process from 'node:process';
 
-import { DEFAULT_ENVIRONMENT_NETWORK } from '../config/types.js';
+import {
+  DEFAULT_ENVIRONMENT_NETWORK,
+  DEFAULT_ENVIRONMENT_PULL,
+  type EnvironmentPull,
+} from '../config/types.js';
 import { NodeCommandRunner, type CommandRunner, type CommandResult } from '../system/commands.js';
 import { expandHome } from '../system/paths.js';
 import type { RepositorySource, RepositoryStore } from './repository-store.js';
@@ -296,6 +300,8 @@ export interface DockerRunOptions {
   command: string[];
   /** Container network mode; defaults to {@link DEFAULT_ENVIRONMENT_NETWORK}. */
   network?: string;
+  /** Image-refresh policy; defaults to {@link DEFAULT_ENVIRONMENT_PULL}. */
+  pull?: EnvironmentPull;
   /** uid:gid the container runs as; defaults to the orchestrator process. */
   user?: string;
   /** Writable home directory inside the container; defaults to `/tmp`. */
@@ -316,9 +322,22 @@ export interface DockerRunOptions {
  */
 export function buildDockerRunArgs(options: DockerRunOptions): string[] {
   const network = options.network ?? DEFAULT_ENVIRONMENT_NETWORK;
+  const pull = options.pull ?? DEFAULT_ENVIRONMENT_PULL;
   const user = options.user ?? `${process.getuid?.() ?? 0}:${process.getgid?.() ?? 0}`;
   const home = options.home ?? '/tmp';
-  const args = ['run', '--rm', '-i', '--network', network, '--user', user, '--env', `HOME=${home}`];
+  const args = [
+    'run',
+    '--rm',
+    '-i',
+    '--pull',
+    pull,
+    '--network',
+    network,
+    '--user',
+    user,
+    '--env',
+    `HOME=${home}`,
+  ];
   for (const name of options.env ?? []) args.push('--env', name);
   if (options.gitIdentity !== undefined) {
     const { name, email } = options.gitIdentity;

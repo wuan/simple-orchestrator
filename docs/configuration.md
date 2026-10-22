@@ -166,6 +166,7 @@ matching the host's architecture when it pulls the tag.
 | ------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `image`       | yes      | —        | Container image providing the environment.                                                                                                                                     |
 | `network`     | no       | `bridge` | Container network mode. The model loop runs inside the container, so provider egress is required.                                                                              |
+| `pull`        | no       | `always` | When to refresh the image before a turn: `always` checks the registry, `missing` reuses the local image, `never` never contacts the registry.                                  |
 | `env`         | no       | —        | Names of the orchestrator's environment variables passed into the container (for provider auth).                                                                               |
 | `gitIdentity` | no       | —        | `name` and `email` an in-container commit uses.                                                                                                                                |
 | `caches`      | no       | —        | Named volumes reused across the repository's turns, each a `name` and a container `path`. The orchestrator makes each volume writable by the turn's user before the turn runs. |
@@ -193,6 +194,16 @@ An entry inherits the shared environment field by field, so `gadget` above uses
 its own image and caches while keeping the shared `gitIdentity`; `widget` uses
 the shared image unchanged. An `environment` block that names no image (after
 the merge) fails startup naming the repository.
+
+Before each containerized turn the orchestrator refreshes the image according to
+its `pull` policy, which defaults to `always`, so a mutable tag such as `latest`
+runs the image the tag currently names rather than a stale local copy. An image
+reference that encodes a digest (`...@sha256:...`) is immutable and is never
+re-checked against the registry. Set `pull: missing` to keep Docker's previous
+behaviour of reusing the local image, or `pull: never` to run fully offline; a
+refresh that the policy requires and that fails (a registry that is unreachable
+or rejects the credential) fails the turn rather than silently using the cached
+image.
 
 The configured `agent.apiKeyEnv` is passed into every containerized turn
 automatically, so a repository does not have to repeat it in `environment.env`

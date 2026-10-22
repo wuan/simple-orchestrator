@@ -13,6 +13,7 @@ import {
   DEFAULT_POLL_INTERVAL_SECONDS,
   DEFAULT_WORKSPACE_ROOT,
   type AgentConfig,
+  type EnvironmentPull,
   type EnvironmentSpec,
   type LabelConfig,
   type Limits,
@@ -132,6 +133,30 @@ function parseLabels(
   return { ...DEFAULT_LABELS, ...defaults, ...overrides };
 }
 
+/** The documented `environment.pull` values. */
+const ENVIRONMENT_PULLS: readonly EnvironmentPull[] = ['always', 'missing', 'never'];
+
+/**
+ * Read the optional image-refresh policy, rejecting a value outside the
+ * documented union. Absent, the runtime applies {@link DEFAULT_ENVIRONMENT_PULL},
+ * so an entry and `defaults` can each leave it unset.
+ */
+function optionalEnvironmentPull(
+  record: Record<string, unknown>,
+  context: string,
+  repo?: string,
+): EnvironmentPull | undefined {
+  const value = record['pull'];
+  if (value === undefined) return undefined;
+  if (typeof value !== 'string' || !ENVIRONMENT_PULLS.includes(value as EnvironmentPull)) {
+    throw new ConfigError(
+      `${context}: 'pull' must be one of ${ENVIRONMENT_PULLS.map((pull) => `'${pull}'`).join(', ')}`,
+      repo,
+    );
+  }
+  return value as EnvironmentPull;
+}
+
 /**
  * Read the environment fields actually present, leaving the rest unset so a
  * partial `defaults.environment` can supply the remainder. Only `image` is
@@ -151,6 +176,9 @@ function parseEnvironmentValues(
 
   const network = optionalNonEmptyStringValue(record, 'network', context, repo);
   if (network !== undefined) environment.network = network;
+
+  const pull = optionalEnvironmentPull(record, context, repo);
+  if (pull !== undefined) environment.pull = pull;
 
   const env = record['env'];
   if (env !== undefined) {

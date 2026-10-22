@@ -1,6 +1,11 @@
 import { join } from 'node:path';
 
-import type { EnvironmentCache } from '../../config/types.js';
+import {
+  DEFAULT_ENVIRONMENT_PULL,
+  type EnvironmentCache,
+  type EnvironmentPull,
+  type EnvironmentSpec,
+} from '../../config/types.js';
 import type { RepoRef, TurnUsage } from '../../domain/types.js';
 import { NodeContainerRunner, type ContainerRunner } from '../../system/commands.js';
 import { buildCachePrepareArgs, buildDockerRunArgs, type DockerCacheMount } from '../sandbox.js';
@@ -46,6 +51,26 @@ export function scopeCacheVolumes(repo: RepoRef, caches: EnvironmentCache[]): Do
     const named = `orchestrator-${scope}-${cache.name}`.replace(/[^a-zA-Z0-9_.-]/g, '-');
     return { volume: named, path: cache.path };
   });
+}
+
+/**
+ * Whether the image reference encodes a digest (`...@sha256:<64 hex>`). A
+ * digest names exact content that cannot move, so there is no newer image to
+ * look for.
+ */
+export function isDigestReference(image: string): boolean {
+  return /@sha256:[0-9a-f]{64}$/i.test(image);
+}
+
+/**
+ * Resolve the image-refresh policy for a turn. A digest-pinned image is
+ * immutable, so it is treated as `missing` regardless of the configured policy;
+ * otherwise the environment's policy applies, defaulting to
+ * {@link DEFAULT_ENVIRONMENT_PULL}.
+ */
+export function resolveEnvironmentPull(environment: EnvironmentSpec): EnvironmentPull {
+  if (isDigestReference(environment.image)) return 'missing';
+  return environment.pull ?? DEFAULT_ENVIRONMENT_PULL;
 }
 
 interface ParsedEvent {
@@ -158,6 +183,7 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
         runnerMount: this.runnerMount,
         command: ['node', join(this.runnerMount, 'runner.js')],
         ...(environment.network === undefined ? {} : { network: environment.network }),
+        pull: resolveEnvironmentPull(environment),
         ...(this.user === undefined ? {} : { user: this.user }),
         ...(this.home === undefined ? {} : { home: this.home }),
         ...(envNames.length === 0 ? {} : { env: envNames }),

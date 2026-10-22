@@ -54,6 +54,12 @@ Pushes to `main` publish `latest` and the branch name; version tags publish the
 semantic versions; pull requests build the image without pushing, so an image
 change is validated before it lands.
 
+Because `latest` is a mutable tag, the orchestrator refreshes a repository's
+image before each containerized turn, so a republished `latest` is picked up
+without a manual `docker pull`. A digest-pinned image is never re-checked, and
+set `environment.pull: missing` or `never` to keep the local image or run fully
+offline.
+
 The build's provenance and SBOM are published as signed attestations attached to
 the published image digest rather than as entries in the image index, so a
 published tag's index contains exactly the flavour's supported platform
