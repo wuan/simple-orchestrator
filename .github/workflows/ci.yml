@@ -20,7 +20,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
-      - run: npm install -g @fission-ai/openspec@1.14.2
+      - run: npm install -g @fission-ai/openspec@1.16.0
       - run: npm run verify
         env:
           COVERAGE: 'true'
