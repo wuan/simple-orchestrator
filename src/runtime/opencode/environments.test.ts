@@ -250,6 +250,56 @@ describe('environment image flavours', () => {
     }
   });
 
+  it('installs uv and its cache paths in the uv flavour only', () => {
+    const text = dockerfile();
+    const stages = flavourStages();
+    const uv = stages.uv;
+
+    // The uv stage copies the published static binary into a system path and
+    // keeps every download uv makes under one cache root, so a single volume
+    // and a non-root turn both work.
+    expect(flavours()).toContain('uv');
+    expect(uv).toBeDefined();
+    expect(text).toMatch(/^FROM ghcr\.io\/astral-sh\/uv:\$\{UV_VERSION\} AS uv-bin$/m);
+    expect(text).toMatch(/^ARG UV_VERSION=\S+$/m);
+    expect(uv).toContain('COPY --from=uv-bin /uv /uvx /usr/local/bin/');
+    expect(uv).toMatch(/chmod 0755 \/usr\/local\/bin\/uv \/usr\/local\/bin\/uvx/);
+    for (const variable of [
+      'UV_CACHE_DIR=/tmp/.uv/cache',
+      'UV_PYTHON_INSTALL_DIR=/tmp/.uv/python',
+      'UV_TOOL_DIR=/tmp/.uv/tools',
+      'PRE_COMMIT_HOME=/tmp/.uv/pre-commit',
+      'UV_LINK_MODE=copy',
+    ]) {
+      expect(uv).toContain(variable);
+    }
+    expect(uv).toMatch(/chmod -R a\+rwX \/tmp\/\.uv/);
+
+    // A flavour without a platform declaration is published for both supported
+    // platforms; uv's static binaries and the Python builds it installs exist
+    // for linux/amd64 and linux/arm64. Only the comment block immediately above
+    // the stage counts, matching the workflow's discovery.
+    const uvFrom = text.indexOf('FROM base AS uv');
+    const header: string[] = [];
+    for (const line of text.slice(0, uvFrom).split('\n').reverse()) {
+      if (line.trim() === '' || !line.startsWith('#')) break;
+      header.unshift(line);
+    }
+    expect(header.join('\n')).not.toMatch(/^# platforms:/m);
+
+    // The toolchain stays in the uv flavour: no other flavour carries uv, and
+    // the intermediate uv-bin stage is not published as a flavour.
+    const base = text.slice(text.indexOf('FROM node:24'), text.indexOf('FROM base AS node'));
+    for (const stage of [base, stages.node, stages.rust, stages.android]) {
+      expect(stage).not.toContain('UV_CACHE_DIR');
+      expect(stage).not.toContain('/usr/local/bin/uv');
+      expect(stage).not.toContain('astral-sh/uv');
+    }
+    expect(stages.platformio).not.toContain('UV_CACHE_DIR');
+    expect(stages.platformio).not.toContain('/usr/local/bin/uv');
+    expect(flavours()).not.toContain('uv-bin');
+  });
+
   it('discovers the flavours from the Dockerfile and passes the lockfile SDK', () => {
     const workflow = parse(readFileSync(WORKFLOW, 'utf8')) as Workflow;
     const discovery = workflow.jobs?.flavours?.steps?.find((step) => step.id === 'discover');
