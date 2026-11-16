@@ -145,8 +145,8 @@ fallback.
 By default a turn runs in-process on the host, with whatever toolchains the host
 carries. An optional `environment` block runs the repository's turns inside a
 container instead, so an agent can use a pre-built toolchain - an Android
-SDK/Gradle image, a JDK, a Rust toolchain, a PlatformIO toolchain - without
-installing it on the host.
+SDK/Gradle image, a JDK, a Rust toolchain, a PlatformIO toolchain, a uv Python
+toolchain - without installing it on the host.
 The whole turn (the OpenCode loop, the agent's `bash`, `read`, `write`, and
 `edit`, `git`, and `openspec`) runs in the container. The GitHub push credential
 never enters it: the orchestrator publishes the branch from the host after the
@@ -163,7 +163,7 @@ is used verbatim. `latest` follows the default branch and can carry a different
 SDK, so do not pair it with a checkout that may lag behind. See
 [`environments`](../environments/README.md) for the image contract and the
 ready-made flavours CI publishes to GHCR. Each flavour is published for the
-platforms its toolchain supports - `node`, `rust`, and `platformio` cover
+platforms its toolchain supports - `node`, `rust`, `platformio`, and `uv` cover
 `linux/amd64` and `linux/arm64`, `android` covers `linux/amd64` - and Docker
 selects the image matching the host's architecture when it pulls the tag.
 

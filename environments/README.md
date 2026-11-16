@@ -42,7 +42,7 @@ ghcr.io/wuan/simple-orchestrator/<flavour>
 ```
 
 Every flavour is published for exactly the platforms its toolchain supports:
-the `node`, `rust`, and `platformio` flavours cover `linux/amd64` and
+the `node`, `rust`, `platformio`, and `uv` flavours cover `linux/amd64` and
 `linux/arm64`, while `android` covers `linux/amd64` only (see
 [Platforms](#platforms)). The tags name
 an image index rather than a single architecture, so the host's container
@@ -105,6 +105,7 @@ for its own `@opencode/sdk` version. Name an explicit tag (such as
 | `rust`       | `rustc`/`cargo` (stable, `clippy`, `rustfmt`), `build-essential`, `cmake`, `pkg-config`, `libssl-dev` | [bo-srv-rs](https://github.com/wuan/bo-srv-rs) and other Rust repositories                    |
 | `android`    | `openjdk-17-jdk` and the Android SDK (`platform-tools`, `platforms;android-35`, `build-tools;35.0.0`) | Android repositories that build with Gradle and the Android Gradle Plugin                     |
 | `platformio` | PlatformIO Core, `lcov`, the pinned `clang-format` and `shellcheck`, and `pre-commit`                 | [klimacontrol](https://github.com/wuan/klimacontrol) and other embedded firmware repositories |
+| `uv`         | The pinned `uv` binary and cache paths under `/tmp/.uv`                                               | Python repositories that resolve interpreters and dependencies with uv                        |
 
 The Rust flavour matches the toolchain and native build dependencies a Rust
 repository's CI installs, including `libssl-dev` so a dependency tree that links
@@ -160,10 +161,35 @@ repositories:
           path: /tmp/.platformio
 ```
 
+The uv flavour installs the pinned `uv` binary in `/usr/local/bin`, so a turn
+runs `uv sync`, `uv run`, `uvx`, and `pre-commit` without installing `uv`. It
+leaves the Python version, dependencies, and development tools to the
+repository's `pyproject.toml`, `uv.lock`, and `.python-version`, so the image
+carries no interpreter and no project tools. The interpreters, packages, and
+tools `uv` downloads live under `/tmp/.uv`, exposed through `UV_CACHE_DIR`,
+`UV_PYTHON_INSTALL_DIR`, `UV_TOOL_DIR`, and `PRE_COMMIT_HOME`; a cache volume
+there keeps them warm between turns. Point a Python repository at it with a uv
+cache volume reused across turns:
+
+```yaml
+repositories:
+  - name: docoracle
+    environment:
+      image: ghcr.io/wuan/simple-orchestrator/uv:latest
+      env:
+        - LLM_API_KEY
+      caches:
+        - name: uv
+          path: /tmp/.uv
+```
+
+`UV_LINK_MODE=copy` makes uv copy rather than hardlink from the cache volume
+into the bind-mounted worktree, which is normally a different filesystem.
+
 ## Platforms
 
 A flavour is published for exactly the platforms its toolchain supports. The
-`node`, `rust`, and `platformio` flavours cover both `linux/amd64` and
+`node`, `rust`, `platformio`, and `uv` flavours cover both `linux/amd64` and
 `linux/arm64`; a host on either architecture pulls a native image.
 
 The `android` flavour is published for **`linux/amd64` only**: Google publishes

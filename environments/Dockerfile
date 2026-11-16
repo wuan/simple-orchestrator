@@ -33,6 +33,11 @@
 # clear message instead. CI passes the version pinned in package-lock.json.
 ARG OPENCODE_SDK_VERSION
 
+# The uv version the uv flavour installs. Declared before the first FROM so the
+# intermediate stage can use it in its FROM line; raise it here when a
+# repository's build backend needs a newer uv.
+ARG UV_VERSION=0.13.7
+
 # The shared base: the image contract every flavour must meet.
 FROM node:24-bookworm-slim AS base
 
@@ -174,3 +179,51 @@ RUN apt-get update \
   && clang-format --version \
   && shellcheck --version \
   && lcov --version
+
+# uv flavour, for Python repositories that resolve their interpreter and
+# dependencies with uv (for example wuan/docoracle, wuan/voxoracle, and
+# wuan/scan-pdf): the pinned uv binary in a system path, plus cache paths for the
+# interpreters, packages, tools, and pre-commit environments uv downloads. The
+# repository's pyproject.toml, uv.lock, and .python-version decide the Python
+# version and the project tooling, so the image carries no interpreter and no
+# project tools. It inherits both supported platforms: uv publishes static
+# linux/amd64 and linux/arm64 binaries and the Python builds it installs do too.
+#
+# The intermediate stage builds from the published uv image, not the shared
+# base, so it is not mistaken for a publishable flavour; only the `FROM base AS
+# uv` stage below is discovered and published.
+FROM ghcr.io/astral-sh/uv:${UV_VERSION} AS uv-bin
+
+FROM base AS uv
+
+# Re-declare the pin inside the stage so the build fails loudly if it is ever
+# cleared, and so raising it stays a one-line Dockerfile change.
+ARG UV_VERSION
+
+# Copy the official static binary and its uvx companion into /usr/local/bin, on
+# PATH for any uid a turn runs as, and prove the binary executes in the build.
+COPY --from=uv-bin /uv /uvx /usr/local/bin/
+
+RUN chmod 0755 /usr/local/bin/uv /usr/local/bin/uvx \
+  && uv --version
+
+# Keep every download uv makes in one documentable cache root so a single named
+# volume at /tmp/.uv survives between turns: interpreters in UV_PYTHON_INSTALL_DIR,
+# packages and wheels in UV_CACHE_DIR, uvx tools in UV_TOOL_DIR, and the hook
+# environments pre-commit downloads in PRE_COMMIT_HOME. Create the directories
+# at build time and make them writable by any uid a turn runs as; the cache
+# volume repeats the ownership fix before each turn.
+#
+# UV_LINK_MODE=copy: the cache volume and the bind-mounted worktree are usually
+# different filesystems, so uv's hardlink optimisation would fall back to
+# copying anyway; the explicit mode avoids repeated warnings.
+ENV UV_CACHE_DIR=/tmp/.uv/cache \
+    UV_PYTHON_INSTALL_DIR=/tmp/.uv/python \
+    UV_TOOL_DIR=/tmp/.uv/tools \
+    PRE_COMMIT_HOME=/tmp/.uv/pre-commit \
+    UV_LINK_MODE=copy \
+    PATH=/usr/local/bin:$PATH
+
+RUN mkdir -p "$UV_CACHE_DIR" "$UV_PYTHON_INSTALL_DIR" "$UV_TOOL_DIR" "$PRE_COMMIT_HOME" \
+  && chmod -R a+rwX /tmp/.uv \
+  && uv --version
