@@ -128,7 +128,7 @@ turns:
 repositories:
   - name: my-android-app
     environment:
-      image: ghcr.io/wuan/simple-orchestrator/android:latest
+      image: ghcr.io/wuan/simple-orchestrator/android
       env:
         - LLM_API_KEY
       caches:
@@ -153,7 +153,7 @@ repository at it with a PlatformIO cache volume reused across turns:
 repositories:
   - name: klimacontrol
     environment:
-      image: ghcr.io/wuan/simple-orchestrator/platformio:latest
+      image: ghcr.io/wuan/simple-orchestrator/platformio
       env:
         - LLM_API_KEY
       caches:
@@ -175,7 +175,7 @@ cache volume reused across turns:
 repositories:
   - name: docoracle
     environment:
-      image: ghcr.io/wuan/simple-orchestrator/uv:latest
+      image: ghcr.io/wuan/simple-orchestrator/uv
       env:
         - LLM_API_KEY
       caches:
