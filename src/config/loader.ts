@@ -11,6 +11,7 @@ import {
   DEFAULT_LOGGING,
   DEFAULT_MAX_REVISE_ROUNDS,
   DEFAULT_POLL_INTERVAL_SECONDS,
+  DEFAULT_STATUS,
   DEFAULT_WORKSPACE_ROOT,
   type AgentConfig,
   type EnvironmentPull,
@@ -21,6 +22,7 @@ import {
   type OrchestratorConfig,
   type RepositoryConfig,
   type RepositoryDefaults,
+  type StatusConfig,
   type WorkspaceConfig,
 } from './types.js';
 
@@ -404,6 +406,42 @@ function parseWorkspace(raw: unknown): WorkspaceConfig {
   return workspace;
 }
 
+/** The valid TCP port range, inclusive. */
+const MIN_PORT = 1;
+const MAX_PORT = 65535;
+
+function parseStatusPort(value: unknown): number {
+  if (value === undefined) return DEFAULT_STATUS.port;
+  if (
+    typeof value !== 'number' ||
+    !Number.isInteger(value) ||
+    value < MIN_PORT ||
+    value > MAX_PORT
+  ) {
+    throw new ConfigError(`status: 'port' must be an integer between ${MIN_PORT} and ${MAX_PORT}`);
+  }
+  return value;
+}
+
+/**
+ * Parse the optional top-level `status` block. It is disabled and bound to a
+ * loopback host by default; any non-empty host is accepted, so an operator can
+ * opt into a non-loopback bind explicitly.
+ */
+function parseStatus(raw: unknown): StatusConfig {
+  if (raw === undefined) return { ...DEFAULT_STATUS };
+  const record = asRecord(raw, 'status');
+  const enabled = record['enabled'];
+  if (enabled !== undefined && typeof enabled !== 'boolean') {
+    throw new ConfigError("status: 'enabled' must be a boolean when provided");
+  }
+  return {
+    enabled: enabled ?? DEFAULT_STATUS.enabled,
+    host: optionalNonEmptyString(record, 'host', 'status', DEFAULT_STATUS.host),
+    port: parseStatusPort(record['port']),
+  };
+}
+
 function parseLogging(raw: unknown): LoggingConfig {
   if (raw === undefined) return { ...DEFAULT_LOGGING };
   const record = asRecord(raw, 'logging');
@@ -437,6 +475,7 @@ export function parseConfig(raw: unknown): OrchestratorConfig {
     workspace: parseWorkspace(record['workspace']),
     logging: parseLogging(record['logging']),
     agent: parseAgent(record['agent']),
+    status: parseStatus(record['status']),
   };
 }
 

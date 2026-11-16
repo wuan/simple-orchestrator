@@ -63,6 +63,20 @@ export function runProviderContractTests(name: string, makeFixture: () => Provid
       expect(issues.map((issue) => issue.ref.number)).toContain(number);
     });
 
+    it('carries the host web URL on issues and pull requests', async () => {
+      const fixture = makeFixture();
+      const number = await fixture.seedTriggerIssue();
+      const issue = (await fixture.provider.listTriggerIssues('openspec')).find(
+        (candidate) => candidate.ref.number === number,
+      );
+      // The field stays optional so a host that exposes no web URL can omit it.
+      expect(issue?.url).toMatch(/^https?:\/\//);
+
+      const created = await startWorkflow(fixture);
+      const stored = await fixture.provider.getPullRequest(created.ref);
+      expect(stored?.url).toMatch(/^https?:\/\//);
+    });
+
     it('starts a workflow as a single draft pull request linked to the issue', async () => {
       const fixture = makeFixture();
       const created = await startWorkflow(fixture);

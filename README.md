@@ -348,6 +348,33 @@ Label an issue with `openspec` to start a workflow. Lifecycle labels
 `openspec:proposing`, `openspec:ready`, `openspec:implementing`,
 `openspec:done`, and `openspec:failed` are managed on the pull request.
 
+### Status UI
+
+The orchestrator can serve a read-only overview of the issues and pull requests
+it is currently driving, so you can answer "what is it working on?" without
+visiting each repository by hand. It is **off by default** and the service stays
+an outbound-only poller unless you opt in:
+
+```yaml
+status:
+  enabled: true
+  host: 127.0.0.1 # loopback by default
+  port: 8787
+```
+
+Enable it and start the long-running poller; `GET /` renders an HTML page and
+`GET /status.json` returns the same snapshot as JSON. Every other HTTP method is
+refused with `405`, and the view only reads through the provider, so it never
+changes a label, comment, or pull request. The listener runs only alongside the
+poll loop, never a `--once` sweep, and stops with the service.
+
+The listener binds to loopback by default because the view exposes private
+repository titles. Set `host` to an explicit address (for example `0.0.0.0`) to
+reach it from elsewhere. **No authentication is provided**: the orchestrator is
+expected to run in a private subnet, so put remote access behind a reverse proxy
+that terminates TLS and controls who can reach the port. See
+[docs/configuration.md](docs/configuration.md#status) for the fields.
+
 ### Local smoke test
 
 The built-in `fake` provider keeps everything in memory so you can confirm the
@@ -431,10 +458,11 @@ than silently doing nothing.
 
 ## Deploy
 
-The service is a stateless, outbound-only poller: it needs no inbound ports,
-no webhooks, and no database, so it runs identically on a laptop, a VM, or in a
-cluster. [`deploy/`](deploy/README.md) ships a systemd unit and an install guide
-for running it as a user service.
+The service is a stateless, outbound-only poller: by default it needs no inbound
+ports, no webhooks, and no database, so it runs identically on a laptop, a VM, or
+in a cluster. The optional [Status UI](#status-ui) adds a read-only listener when
+you opt in. [`deploy/`](deploy/README.md) ships a systemd unit and an install
+guide for running it as a user service.
 
 - Provide credentials via the environment (a secret manager is fine).
 - Run on **Node.js 24+**; OpenCode is embedded in the process, so there is no

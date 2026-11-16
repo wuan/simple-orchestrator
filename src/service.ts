@@ -28,10 +28,14 @@ export interface ServiceRepository {
   repo: RepositoryConfig;
   intervalSeconds: number;
   poller: Poller;
+  /** The repository's provider, exposed so read-only views can read without polling. */
+  provider: RepoProvider;
 }
 
 export interface Service {
   repositories: ServiceRepository[];
+  /** Resolved credential values, keyed by `repoKey`, used to seed a redactor. */
+  credentials: Map<string, string>;
 }
 
 export interface BuildServiceOptions {
@@ -122,8 +126,8 @@ export async function createService(
       maxReviseRounds: repo.maxReviseRounds,
       logger,
     });
-    return { key, repo, intervalSeconds: repo.pollIntervalSeconds, poller };
+    return { key, repo, intervalSeconds: repo.pollIntervalSeconds, poller, provider };
   });
 
-  return { repositories };
+  return { repositories, credentials };
 }

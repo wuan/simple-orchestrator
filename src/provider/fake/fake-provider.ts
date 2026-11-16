@@ -24,6 +24,16 @@ function targetKey(target: ThreadTarget): string {
   return target.kind === 'issue' ? `issue:${target.ref.number}` : `pr:${target.ref.number}`;
 }
 
+/** The synthetic web URL the in-memory host exposes for an issue. */
+function issueUrl(repo: RepoRef, number: number): string {
+  return `https://github.com/${repo.owner}/${repo.name}/issues/${number}`;
+}
+
+/** The synthetic web URL the in-memory host exposes for a pull request. */
+function pullRequestUrl(repo: RepoRef, number: number): string {
+  return `https://github.com/${repo.owner}/${repo.name}/pull/${number}`;
+}
+
 const HUMAN: Actor = { login: 'reviewer', isBot: false };
 
 /**
@@ -76,6 +86,7 @@ export class FakeProvider implements RepoProvider {
       body: input.body ?? '',
       labels: [...(input.labels ?? [])],
       state: input.state ?? 'open',
+      url: issueUrl(this.repo, input.number),
     };
     this.issues.set(input.number, issue);
     return issue;
@@ -101,6 +112,7 @@ export class FakeProvider implements RepoProvider {
       state: input.state ?? 'open',
       draft: input.draft ?? true,
       labels: [...(input.labels ?? [])],
+      url: pullRequestUrl(this.repo, input.number),
     };
     if (input.linkedIssue !== undefined) {
       pr.linkedIssue = { repo: this.repo, number: input.linkedIssue };
@@ -182,6 +194,7 @@ export class FakeProvider implements RepoProvider {
       draft: input.draft,
       labels: [],
       linkedIssue: input.issue,
+      url: pullRequestUrl(this.repo, number),
     };
     this.pulls.set(number, pr);
     return Promise.resolve({ ...pr, labels: [...pr.labels] });
