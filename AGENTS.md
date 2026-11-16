@@ -55,3 +55,8 @@ alters what the system must do, capture it as a change (`openspec new change`)
 rather than editing the main specs directly; `openspec validate --strict` is
 part of the gate. See the `openspec-*` skills for the propose, apply, sync, and
 archive workflows.
+
+The project runs the OpenSpec 2.x CLI (CI pins `@fission-ai/openspec@2.0.0`).
+The CLI installs the shared skills under `.agents/skills/`, which OpenCode reads
+directly; that tree is committed, and upgrading it runs through `openspec
+update` rather than editing the skills by hand.

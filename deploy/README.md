@@ -11,7 +11,7 @@ Prerequisites, per [Deploy](../README.md#deploy):
 - Node.js 24+ and a built tree (`npm ci && npm run build`) so `dist/run.js` and
   `dist/index.js` are current.
 - `git`, `gh`, and `openspec` on `PATH`; `docker` too when any repository
-  configures an `environment`.
+  configures an `environment`. The orchestrator needs the OpenSpec 2.x CLI.
 - Credentials in an environment file and a `config.yaml` in the checkout
   (`config*.yaml` is git-ignored, so start from `examples/config.yaml`).
 
