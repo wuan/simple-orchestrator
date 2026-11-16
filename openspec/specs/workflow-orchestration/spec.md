@@ -51,11 +51,19 @@ Each turn SHALL run as a stateless unit that re-reads the branch and the full re
 - **THEN** those comments do not count toward the revise-round limit, so a change that reaches READY on every turn still gets the configured number of revise rounds
 
 ### Requirement: Objective readiness predicate
-The orchestrator SHALL mark a change READY only when the OpenSpec change is complete and passes strict validation, computed from the OpenSpec CLI rather than from agent output.
+The orchestrator SHALL mark a change READY only when the OpenSpec change is complete and passes strict validation, computed from the OpenSpec CLI rather than from agent output. An artifact that OpenSpec reports as `skipped` SHALL count as satisfied.
 
 #### Scenario: Change becomes ready
-- **WHEN** all artifacts of the change are done and `openspec validate --strict` passes
+- **WHEN** every artifact of the change is `done` or `skipped` and `openspec validate --strict` passes
 - **THEN** the orchestrator sets the change to READY and prompts for approval
+
+#### Scenario: Change declares no spec delta
+- **WHEN** a change sets `skip_specs: true`, `openspec status` reports its `specs` artifact as `skipped`, every other artifact is `done`, and `openspec validate --strict` passes
+- **THEN** the orchestrator sets the change to READY and prompts for approval
+
+#### Scenario: Unfinished artifact blocks readiness
+- **WHEN** an artifact reports a state other than `done` or `skipped`, such as `ready` or `missing`
+- **THEN** the orchestrator keeps the change in PROPOSING
 
 #### Scenario: Agent claims readiness prematurely
 - **WHEN** an agent reports the change is ready but the readiness predicate does not pass
