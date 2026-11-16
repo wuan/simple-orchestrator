@@ -51,9 +51,12 @@ natively wherever it is published. A pull-request build validates only the
 runner's native `linux/amd64` platform and does not emulate `linux/arm64`;
 publications cover the flavour's declared platforms.
 
-Pushes to `main` publish `latest` and the branch name; version tags publish the
-semantic versions; pull requests build the image without pushing, so an image
-change is validated before it lands.
+Pushes to `main` publish `latest`, the branch name, and an SDK-version tag
+`<flavour>:sdk-<version>`; version tags publish the semantic versions; every
+publish also carries a short commit-SHA tag. The SDK-version tag names the
+`@opencode/sdk` the image installs, so it is the tag to use when pairing an
+image with a checkout. Pull requests build the image without pushing, so an
+image change is validated before it lands and no tag reaches the registry.
 
 Because `latest` is a mutable tag, the orchestrator refreshes a repository's
 image before each containerized turn, so a republished `latest` is picked up
@@ -76,7 +79,7 @@ Point a repository at a published flavour:
 repositories:
   - name: bo-srv-rs
     environment:
-      image: ghcr.io/wuan/simple-orchestrator/rust:latest
+      image: ghcr.io/wuan/simple-orchestrator/rust
       env:
         - LLM_API_KEY
       gitIdentity:
@@ -89,7 +92,10 @@ repositories:
 
 The image is the only field that must name a flavour; the rest is the shared
 `environment` block documented in
-[`docs/configuration.md`](../docs/configuration.md#environment).
+[`docs/configuration.md`](../docs/configuration.md#environment). The example
+leaves the tag off: the orchestrator selects the `<flavour>:sdk-<version>` build
+for its own `@opencode/sdk` version. Name an explicit tag (such as
+`rust:sdk-2.0.32`) only when you need one particular build.
 
 ## Flavours
 

@@ -33,30 +33,35 @@ const ENABLED = dockerAvailable() && existsSync(join(DIST, 'runner.js'));
 
 let tempDir: string | undefined;
 
-beforeAll(() => {
-  if (!ENABLED) return;
-  try {
-    execFileSync('docker', ['image', 'inspect', IMAGE], { stdio: 'ignore', timeout: 10_000 });
-  } catch {
-    // Not present: build the plain Node.js flavour. It has no default SDK
-    // version, so pass the orchestrator's own.
-    execFileSync(
-      'docker',
-      [
-        'build',
-        '--build-arg',
-        `OPENCODE_SDK_VERSION=${resolveSdkVersion()}`,
-        '--target',
-        'node',
-        '-t',
-        IMAGE,
-        ENVIRONMENTS_DIR,
-      ],
-      { stdio: 'inherit', timeout: 10 * 60 * 1000 },
-    );
-  }
-  tempDir = mkdtempSync(join(tmpdir(), 'orchestrator-smoke-'));
-});
+// Building the image can take minutes; Vitest's default 10-second hook timeout
+// would abort the build.
+beforeAll(
+  () => {
+    if (!ENABLED) return;
+    try {
+      execFileSync('docker', ['image', 'inspect', IMAGE], { stdio: 'ignore', timeout: 10_000 });
+    } catch {
+      // Not present: build the plain Node.js flavour. It has no default SDK
+      // version, so pass the orchestrator's own.
+      execFileSync(
+        'docker',
+        [
+          'build',
+          '--build-arg',
+          `OPENCODE_SDK_VERSION=${resolveSdkVersion()}`,
+          '--target',
+          'node',
+          '-t',
+          IMAGE,
+          ENVIRONMENTS_DIR,
+        ],
+        { stdio: 'inherit', timeout: 10 * 60 * 1000 },
+      );
+    }
+    tempDir = mkdtempSync(join(tmpdir(), 'orchestrator-smoke-'));
+  },
+  10 * 60 * 1000,
+);
 
 afterAll(() => {
   if (tempDir !== undefined) rmSync(tempDir, { recursive: true, force: true });
@@ -74,6 +79,8 @@ describe('container smoke test', () => {
         runner: DIST,
         runnerMount: RUNNER_MOUNT,
         command: ['node', join(RUNNER_MOUNT, 'runner.js')],
+        // The image is a local-only tag, so never reach for the registry.
+        pull: 'never',
         env: [],
       });
 

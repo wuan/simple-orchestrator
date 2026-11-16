@@ -15,6 +15,20 @@ import { resolveSdkVersion } from './sdk-version.js';
 /** Path the compiled runner is mounted at inside the container by default. */
 export const DEFAULT_RUNNER_MOUNT = '/opt/runner/dist';
 
+/**
+ * Resolve the image a turn runs: an untagged reference selects the
+ * `sdk-<version>` tag built for the orchestrator's SDK version, while a
+ * reference that already names a tag or a digest is used verbatim. The tag
+ * separator is the last colon after the last slash, so a registry port such as
+ * `localhost:5000/agent` is not mistaken for a tag.
+ */
+export function resolveImageReference(image: string, sdkVersion: string): string {
+  if (image.includes('@')) return image;
+  const tagStart = image.lastIndexOf(':');
+  if (tagStart > image.lastIndexOf('/')) return image;
+  return `${image}:sdk-${sdkVersion}`;
+}
+
 export interface ContainerOpenCodeClientOptions {
   /** Host directory holding the compiled runner, bind-mounted read-only. */
   runnerDir: string;
@@ -170,13 +184,16 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
       envNames.push(this.apiKeyEnv);
     }
     const store = request.store;
+    // An untagged image selects the SDK-tagged build, so cache preparation and
+    // the turn use the same image.
+    const image = resolveImageReference(environment.image, this.sdkVersion);
     const caches =
       environment.caches === undefined || request.repo === undefined
         ? undefined
         : scopeCacheVolumes(request.repo, environment.caches);
-    return this.prepareCaches(environment.image, caches).then(() => {
+    return this.prepareCaches(image, caches).then(() => {
       const args = buildDockerRunArgs({
-        image: environment.image,
+        image,
         workspace: request.workspace,
         store,
         runner: this.runnerDir,

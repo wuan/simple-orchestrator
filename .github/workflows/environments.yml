@@ -10,6 +10,10 @@ name: Environment images
 # Pushes to `main` and version tags always build, because the SDK version baked
 # into the image comes from `package-lock.json` and can change without
 # `environments/` changing. Pull requests build only when an image input moved.
+#
+# Every publish carries an `sdk-<version>` tag naming the `@opencode/sdk` the
+# image installs, so an orchestrator can pull the image matching its own SDK
+# version instead of a movable `latest` that may have drifted ahead.
 
 on:
   push:
@@ -131,6 +135,7 @@ jobs:
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
             type=sha,format=short
+            type=raw,value=sdk-${{ steps.sdk.outputs.version }}
             type=raw,value=latest,enable={{is_default_branch}}
 
       - name: Build and push ${{ matrix.flavour }}

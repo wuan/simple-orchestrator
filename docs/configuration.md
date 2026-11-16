@@ -156,7 +156,11 @@ The repository store and the turn's worktree are mounted at their identical
 absolute paths, the container runs as the orchestrator's user with a writable
 home, and the compiled runner is mounted read-only. The image must provide
 Node.js 24+, `git`, and the toolchain, and must have `@opencode/sdk` installed at
-the orchestrator's version; the runner fails fast when the version differs. See
+the orchestrator's version; the runner fails fast when the version differs. An
+image reference without a tag selects the image published for the orchestrator's
+own `@opencode/sdk` version (for example `:sdk-2.2.7`); an explicit tag or digest
+is used verbatim. `latest` follows the default branch and can carry a different
+SDK, so do not pair it with a checkout that may lag behind. See
 [`environments`](../environments/README.md) for the image contract and the
 ready-made flavours CI publishes to GHCR. Each flavour is published for the
 platforms its toolchain supports - `node`, `rust`, and `platformio` cover
@@ -165,7 +169,7 @@ selects the image matching the host's architecture when it pulls the tag.
 
 | Field         | Required | Default  | Description                                                                                                                                                                    |
 | ------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `image`       | yes      | —        | Container image providing the environment.                                                                                                                                     |
+| `image`       | yes      | —        | Container image providing the environment; without a tag, the orchestrator's SDK tag is selected.                                                                              |
 | `network`     | no       | `bridge` | Container network mode. The model loop runs inside the container, so provider egress is required.                                                                              |
 | `pull`        | no       | `always` | When to refresh the image before a turn: `always` checks the registry, `missing` reuses the local image, `never` never contacts the registry.                                  |
 | `env`         | no       | —        | Names of the orchestrator's environment variables passed into the container (for provider auth).                                                                               |

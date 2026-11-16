@@ -12,11 +12,12 @@ import {
   ContainerOpenCodeClient,
   DEFAULT_RUNNER_MOUNT,
   EnvironmentOpenCodeClient,
+  resolveImageReference,
   scopeCacheVolumes,
 } from './container-client.js';
 
 const ENVIRONMENT: EnvironmentSpec = {
-  image: 'ghcr.io/acme/agent-java:latest',
+  image: 'ghcr.io/acme/agent-java',
   network: 'host',
   env: ['LLM_API_KEY'],
   gitIdentity: { name: 'OpenSpec Agent', email: 'agent@example.com' },
@@ -77,6 +78,31 @@ function client(runner: ContainerRunner, sdkVersion = '2.0.31'): ContainerOpenCo
   });
 }
 
+describe('resolveImageReference', () => {
+  it('selects the SDK tag for an untagged image', () => {
+    expect(resolveImageReference('ghcr.io/wuan/simple-orchestrator/rust', '2.2.7')).toBe(
+      'ghcr.io/wuan/simple-orchestrator/rust:sdk-2.2.7',
+    );
+  });
+
+  it('keeps an explicit tag', () => {
+    expect(resolveImageReference('ghcr.io/acme/agent-java:latest', '2.2.7')).toBe(
+      'ghcr.io/acme/agent-java:latest',
+    );
+  });
+
+  it('keeps a digest reference', () => {
+    const digest = 'ghcr.io/acme/agent-java@sha256:abc';
+    expect(resolveImageReference(digest, '2.2.7')).toBe(digest);
+  });
+
+  it('does not mistake a registry port for a tag', () => {
+    expect(resolveImageReference('localhost:5000/agent', '2.2.7')).toBe(
+      'localhost:5000/agent:sdk-2.2.7',
+    );
+  });
+});
+
 describe('ContainerOpenCodeClient', () => {
   it('builds the container argv from the environment and runs the turn', async () => {
     const runner = eventsRunner([
@@ -99,7 +125,7 @@ describe('ContainerOpenCodeClient', () => {
     expect(args).toContain('LLM_API_KEY');
     expect(args).toContain('GIT_AUTHOR_NAME=OpenSpec Agent');
     expect(args.slice(-3)).toEqual([
-      'ghcr.io/acme/agent-java:latest',
+      'ghcr.io/acme/agent-java:sdk-2.0.31',
       'node',
       '/opt/runner/dist/runner.js',
     ]);
@@ -118,7 +144,7 @@ describe('ContainerOpenCodeClient', () => {
     const args = runner.calls.at(-1)?.args ?? [];
     expect(args[args.indexOf('--pull') + 1]).toBe('always');
     // The flag stays ahead of the image reference it applies to.
-    expect(args.indexOf('--pull')).toBeLessThan(args.indexOf('ghcr.io/acme/agent-java:latest'));
+    expect(args.indexOf('--pull')).toBeLessThan(args.indexOf('ghcr.io/acme/agent-java:sdk-2.0.31'));
   });
 
   it('forwards a configured image pull policy', async () => {
@@ -236,6 +262,27 @@ describe('ContainerOpenCodeClient', () => {
 
     const args = runner.calls.at(-1)?.args ?? [];
     expect(args.filter((arg) => arg === 'LLM_API_KEY')).toHaveLength(1);
+  });
+
+  it('uses an explicitly tagged image verbatim', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+    const environment: EnvironmentSpec = {
+      ...ENVIRONMENT,
+      image: 'ghcr.io/acme/agent-java:latest',
+    };
+
+    await client(runner).runSkill(skillRequest({ environment }));
+
+    const call = runner.calls.at(-1);
+    expect(call?.args.slice(-3)).toEqual([
+      'ghcr.io/acme/agent-java:latest',
+      'node',
+      '/opt/runner/dist/runner.js',
+    ]);
+    expect(call?.input).toContain('"expectedSdkVersion":"2.0.31"');
   });
 
   it('forwards usage events before resolving', async () => {
