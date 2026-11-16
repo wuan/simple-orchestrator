@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DEFAULT_LABELS,
   DEFAULT_LIMITS,
+  DEFAULT_STATUS,
   type EnvironmentSpec,
   type OrchestratorConfig,
 } from './config/types.js';
@@ -38,6 +39,7 @@ function config(): OrchestratorConfig {
     workspace: { root: '/tmp/orchestrator-run-test' },
     logging: { verbose: false },
     agent: { model: 'fake/model' },
+    status: { ...DEFAULT_STATUS },
   };
 }
 

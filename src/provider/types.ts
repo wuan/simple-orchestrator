@@ -10,6 +10,8 @@ export interface ProviderIssue {
   body: string;
   labels: string[];
   state: 'open' | 'closed';
+  /** The host's web URL for the issue, when it exposes one. */
+  url?: string;
 }
 
 export interface ProviderPullRequest {
@@ -24,6 +26,8 @@ export interface ProviderPullRequest {
   linkedIssue?: IssueRef;
   /** Opaque host identifier used by a provider to address its own APIs. */
   nodeId?: string;
+  /** The host's web URL for the pull request, when it exposes one. */
+  url?: string;
 }
 
 export interface ProviderReview {

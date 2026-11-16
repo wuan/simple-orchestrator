@@ -4,6 +4,7 @@ import { EnvCredentialResolver } from './config/credentials.js';
 import {
   DEFAULT_LABELS,
   DEFAULT_LIMITS,
+  DEFAULT_STATUS,
   type EnvironmentSpec,
   type OrchestratorConfig,
 } from './config/types.js';
@@ -44,6 +45,7 @@ function config(environment?: EnvironmentSpec): OrchestratorConfig {
     workspace: { root: '/tmp/orchestrator-service-test' },
     logging: { verbose: false },
     agent: { model: 'fake/model' },
+    status: { ...DEFAULT_STATUS },
   };
 }
 

@@ -43,3 +43,11 @@ agent:
   # Point at the OpenCode database that holds provider auth and models when it is
   # not the SDK default (or set OPENCODE_DB instead).
   # database: ~/.local/share/opencode/opencode.db
+# The opt-in, read-only status overview is disabled by default; when enabled it
+# binds loopback at 127.0.0.1:8787 and serves GET / (HTML) and GET /status.json
+# (JSON). No authentication is provided, so expose a non-loopback host only
+# behind a reverse proxy.
+# status:
+#   enabled: true
+#   host: 127.0.0.1
+#   port: 8787

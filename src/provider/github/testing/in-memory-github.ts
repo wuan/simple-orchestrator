@@ -185,6 +185,14 @@ export class InMemoryGitHub implements HttpClient {
     return this.pulls.get(number)?.labels ?? this.issues.get(number)?.labels;
   }
 
+  private issueHtmlUrl(number: number): string {
+    return `https://github.com/${this.owner}/${this.repo}/issues/${number}`;
+  }
+
+  private pullHtmlUrl(number: number): string {
+    return `https://github.com/${this.owner}/${this.repo}/pull/${number}`;
+  }
+
   private issuePayload(record: IssueRecord): unknown {
     return {
       number: record.number,
@@ -192,6 +200,7 @@ export class InMemoryGitHub implements HttpClient {
       body: record.body,
       state: record.state,
       labels: record.labels.map((name) => ({ name })),
+      html_url: this.issueHtmlUrl(record.number),
     };
   }
 
@@ -207,6 +216,7 @@ export class InMemoryGitHub implements HttpClient {
       head: { ref: record.head },
       base: { ref: record.base },
       labels: record.labels.map((name) => ({ name })),
+      html_url: this.pullHtmlUrl(record.number),
     };
   }
 
@@ -351,6 +361,7 @@ export class InMemoryGitHub implements HttpClient {
         state: pull.state,
         labels: pull.labels.map((name) => ({ name })),
         pull_request: {},
+        html_url: this.pullHtmlUrl(pull.number),
       }));
     return [...issueList, ...pullAsIssues];
   }
