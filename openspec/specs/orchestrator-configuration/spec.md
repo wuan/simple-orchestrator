@@ -163,11 +163,19 @@ The orchestrator SHALL accept an optional top-level `defaults` block whose field
 - **THEN** startup fails with an error naming the affected repository
 
 ### Requirement: Configurable turn environment
-The orchestrator SHALL accept an optional `environment` block on a repository entry and in `defaults`, naming a container image and optional network mode, image pull policy, environment variable names, git identity, and cache volumes, and SHALL apply documented defaults when optional fields are omitted.
+The orchestrator SHALL accept an optional `environment` block on a repository entry and in `defaults`, naming a container image and optional network mode, image pull policy, environment variable names, git identity, and cache volumes, and SHALL apply documented defaults when optional fields are omitted. A container image reference that names no tag SHALL select the image for the orchestrator's `@opencode/sdk` version.
 
 #### Scenario: Environment image is used
 - **WHEN** a repository entry configures an environment image
 - **THEN** turns for that repository run in a container of that image
+
+#### Scenario: Untagged image follows the orchestrator's SDK version
+- **WHEN** a repository entry configures `ghcr.io/wuan/simple-orchestrator/rust` without a tag
+- **THEN** its turns run the image tagged for the orchestrator's resolved `@opencode/sdk` version
+
+#### Scenario: Explicit image tag is honored
+- **WHEN** a repository entry configures an environment image with a tag
+- **THEN** the orchestrator runs that tagged image rather than deriving a tag
 
 #### Scenario: Entry inherits an environment default
 - **WHEN** `defaults` sets an environment image and a repository entry omits it

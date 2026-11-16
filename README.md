@@ -235,7 +235,9 @@ behind by an earlier attempt is not reused when a workflow starts. See
 ## Requirements
 
 - Node.js 24+ and git
-- The `openspec` CLI on `PATH` (used for the readiness predicate)
+- The OpenSpec 2.x CLI on `PATH` (used for the readiness predicate); the
+  `openspec-*` skills live in `.agents/skills/` and refresh with
+  `openspec update`
 - A container runtime (Docker) if any repository configures a turn
   [`environment`](docs/configuration.md#environment)
 - An agent runtime (see [Agent runtime](#agent-runtime)); the shipped one embeds

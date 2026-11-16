@@ -10,4 +10,8 @@ package-lock.json
 # OpenSpec owns the formatting of its specs and changes.
 openspec/
 
+# OpenSpec owns the formatting of the skills it installs; `openspec update`
+# rewrites them verbatim.
+.agents/skills/
+
 *.log
