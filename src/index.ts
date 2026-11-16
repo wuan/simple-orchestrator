@@ -9,6 +9,11 @@ import {
 import { loadConfigFile } from './config/loader.js';
 import { createLogger } from './logging.js';
 import { createService, type BuildServiceOptions, type Service } from './service.js';
+import {
+  startStatusServer,
+  type StatusServerFactory,
+  type StatusServerHandle,
+} from './status/server.js';
 import { NodeCommandRunner } from './system/commands.js';
 import { VERSION } from './version.js';
 
@@ -75,6 +80,10 @@ export interface MainDeps {
   serviceOptions?: Partial<BuildServiceOptions>;
   stdout?: (text: string) => void;
   stderr?: (text: string) => void;
+  /** Builds the status listener; overridable so tests avoid binding a port. */
+  statusServerFactory?: StatusServerFactory;
+  /** Aborts the long-running loop; tests use this instead of process signals. */
+  signal?: AbortSignal;
 }
 
 /** Parse arguments, load config, build the service, and run it. */
@@ -137,7 +146,35 @@ export async function main(argv: string[], deps: MainDeps = {}): Promise<number>
     return 0;
   }
 
-  await runLoop(service, deps);
+  // The status listener is opt-in and only runs alongside the long-running
+  // poll loop, never a one-shot sweep.
+  let statusServer: StatusServerHandle | undefined;
+  if (config.status.enabled) {
+    const factory = deps.statusServerFactory ?? startStatusServer;
+    try {
+      statusServer = await factory({
+        sources: service.repositories.map((repository) => ({
+          key: repository.key,
+          labels: repository.repo.labels,
+          provider: repository.provider,
+        })),
+        host: config.status.host,
+        port: config.status.port,
+        secrets: [...service.credentials.values()],
+      });
+    } catch (error) {
+      err(`startup error: ${message(error)}\n`);
+      return 1;
+    }
+    err(`status UI listening on ${config.status.host}:${config.status.port}\n`);
+  }
+
+  try {
+    await runLoop(service, deps);
+  } finally {
+    // Stop the listener on the same stop signal that ends the poll loop.
+    await statusServer?.close();
+  }
   return 0;
 }
 
@@ -164,6 +201,13 @@ export async function runLoop(service: Service, deps: MainDeps = {}): Promise<vo
   const stop = (): void => controller.abort();
   process.on('SIGINT', stop);
   process.on('SIGTERM', stop);
+  // A caller-supplied signal (used by tests) stops the loop the same way the
+  // process signals do.
+  const external = deps.signal;
+  if (external !== undefined) {
+    if (external.aborted) controller.abort();
+    else external.addEventListener('abort', stop, { once: true });
+  }
 
   const due = new Map<string, number>(service.repositories.map((repo) => [repo.key, 0]));
 
@@ -195,6 +239,7 @@ export async function runLoop(service: Service, deps: MainDeps = {}): Promise<vo
   } finally {
     process.off('SIGINT', stop);
     process.off('SIGTERM', stop);
+    external?.removeEventListener('abort', stop);
   }
 }
 

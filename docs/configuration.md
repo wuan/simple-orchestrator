@@ -19,6 +19,7 @@ the `gh` CLI.
 | `workspace`    | no       | see below | Where repository clones and per-turn worktrees live.      |
 | `logging`      | no       | see below | Diagnostic verbosity.                                     |
 | `agent`        | no       | see below | Embedded OpenCode host model, endpoint, and database.     |
+| `status`       | no       | see below | Opt-in, read-only web overview of the active work.        |
 
 ### `repositories[]`
 
@@ -139,6 +140,38 @@ auth (find it with `opencode debug paths db`) - but do **not** point it at a
 database a running OpenCode service is using: two hosts on one database disrupt
 each other. When the configured variable is unset, stored auth remains the
 fallback.
+
+### `status`
+
+The orchestrator can serve a read-only web overview of the issues and pull
+requests it is currently driving. It is **off by default**, so the shipped
+service stays an outbound-only poller that opens no inbound port. When enabled,
+`GET /` renders an HTML page and `GET /status.json` returns the same snapshot as
+JSON; every other method is refused. The view only reads through the existing
+provider, so it never writes labels, comments, or pull requests, and it never
+includes credential values.
+
+| Field     | Required | Default     | Description                               |
+| --------- | -------- | ----------- | ----------------------------------------- |
+| `enabled` | no       | `false`     | Serve the read-only status overview.      |
+| `host`    | no       | `127.0.0.1` | Interface the listener binds to.          |
+| `port`    | no       | `8787`      | TCP port the listener binds to (1-65535). |
+
+The listener binds to loopback by default because the view exposes private
+repository titles. Set `host` to an explicit address (for example `0.0.0.0`) to
+expose it on another interface. **No authentication is provided**: the
+orchestrator is expected to run in a private subnet, so remote access belongs
+behind a reverse proxy that terminates TLS and controls who can reach the port.
+
+```yaml
+status:
+  enabled: true
+  host: 127.0.0.1
+  port: 8787
+```
+
+An invalid field — a non-boolean `enabled`, an empty `host`, or a port outside
+`1`-`65535` — fails startup instead of opening a partially configured listener.
 
 ### `environment`
 

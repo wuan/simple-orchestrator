@@ -21,6 +21,8 @@ export interface GithubIssuePayload {
   state: string;
   labels: GithubLabel[];
   pull_request?: unknown;
+  /** The host's web URL for the issue. */
+  html_url?: string | null;
 }
 
 export interface GithubPullPayload {
@@ -35,6 +37,8 @@ export interface GithubPullPayload {
   head: { ref: string };
   base: { ref: string };
   labels?: GithubLabel[];
+  /** The host's web URL for the pull request. */
+  html_url?: string | null;
 }
 
 export interface GithubReviewPayload {
@@ -71,13 +75,17 @@ export function isPullRequestPayload(payload: GithubIssuePayload): boolean {
 }
 
 export function mapIssue(repo: RepoRef, payload: GithubIssuePayload): ProviderIssue {
-  return {
+  const issue: ProviderIssue = {
     ref: { repo, number: payload.number },
     title: payload.title,
     body: payload.body ?? '',
     labels: labelNames(payload.labels),
     state: payload.state === 'closed' ? 'closed' : 'open',
   };
+  if (typeof payload.html_url === 'string' && payload.html_url !== '') {
+    issue.url = payload.html_url;
+  }
+  return issue;
 }
 
 function pullRequestState(payload: GithubPullPayload): 'open' | 'closed' | 'merged' {
@@ -98,6 +106,9 @@ export function mapPullRequest(repo: RepoRef, payload: GithubPullPayload): Provi
     labels: labelNames(payload.labels),
   };
   if (payload.node_id !== undefined) pullRequest.nodeId = payload.node_id;
+  if (typeof payload.html_url === 'string' && payload.html_url !== '') {
+    pullRequest.url = payload.html_url;
+  }
   return pullRequest;
 }
 

@@ -68,6 +68,16 @@ A restart is safe: on start the orchestrator re-discovers in-flight workflows
 from their lifecycle labels and resumes without duplicating turns. Label an
 issue `openspec` to start a workflow.
 
+### Status view
+
+If `config.yaml` enables the [`status`](../docs/configuration.md#status) block,
+the service also serves a read-only overview of the active work on the
+configured host and port (loopback `127.0.0.1:8787` by default). It starts only
+with the long-running poll loop, so the `--once` override below opens no
+listener, and it is stopped with the service. There is **no authentication**: if
+the bind address is not loopback, reach it through a reverse proxy that
+terminates TLS and restricts access.
+
 ## Run once instead of polling
 
 For a one-shot poll (a timer, a CI job) override the command and let the unit

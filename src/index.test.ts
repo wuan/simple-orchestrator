@@ -6,6 +6,7 @@ import { describe, expect, it } from 'vitest';
 
 import { EnvCredentialResolver } from './config/credentials.js';
 import { main, parseCliArgs } from './index.js';
+import type { StatusServerFactory, StatusServerOptions } from './status/server.js';
 
 const FAKE_CONFIG = `
 repositories:
@@ -186,5 +187,105 @@ repositories:
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
+  });
+});
+
+interface RecordingStatusFactory {
+  factory: StatusServerFactory;
+  calls: StatusServerOptions[];
+  closed: () => number;
+}
+
+function recordingStatusFactory(): RecordingStatusFactory {
+  const calls: StatusServerOptions[] = [];
+  let closed = 0;
+  const factory: StatusServerFactory = (options) => {
+    calls.push(options);
+    return Promise.resolve({
+      close: () => {
+        closed += 1;
+        return Promise.resolve();
+      },
+    });
+  };
+  return { factory, calls, closed: () => closed };
+}
+
+/** Run main against a temporary config with a pre-aborted loop and a fake listener. */
+async function runWithConfig(
+  yaml: string,
+  argv: string[],
+  statusServerFactory?: StatusServerFactory,
+): Promise<number> {
+  const dir = mkdtempSync(join(tmpdir(), 'orchestrator-status-'));
+  try {
+    const configPath = join(dir, 'config.yaml');
+    writeFileSync(configPath, yaml);
+    const out = collect();
+    const err = collect();
+    const controller = new AbortController();
+    controller.abort();
+    return await main(['--config', configPath, ...argv], {
+      env: { ANY_VALUE: '1' },
+      stdout: out.write,
+      stderr: err.write,
+      signal: controller.signal,
+      ...(statusServerFactory === undefined ? {} : { statusServerFactory }),
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe('status UI startup', () => {
+  it('starts the listener on loopback and stops it with the loop', async () => {
+    const recorder = recordingStatusFactory();
+    const code = await runWithConfig(
+      `${FAKE_CONFIG}\nstatus:\n  enabled: true\n  host: 127.0.0.1\n  port: 8787\n`,
+      [],
+      recorder.factory,
+    );
+
+    expect(code).toBe(0);
+    expect(recorder.calls).toHaveLength(1);
+    expect(recorder.calls[0]).toMatchObject({ host: '127.0.0.1', port: 8787 });
+    expect(recorder.calls[0]?.secrets).toEqual(['1']);
+    expect(recorder.closed()).toBe(1);
+  });
+
+  it('honors an explicit non-loopback host', async () => {
+    const recorder = recordingStatusFactory();
+    const code = await runWithConfig(
+      `${FAKE_CONFIG}\nstatus:\n  enabled: true\n  host: 0.0.0.0\n  port: 9100\n`,
+      [],
+      recorder.factory,
+    );
+
+    expect(code).toBe(0);
+    expect(recorder.calls[0]).toMatchObject({ host: '0.0.0.0', port: 9100 });
+  });
+
+  it('opens no listener when the status block is disabled', async () => {
+    const recorder = recordingStatusFactory();
+    const code = await runWithConfig(
+      `${FAKE_CONFIG}\nstatus:\n  enabled: false\n`,
+      [],
+      recorder.factory,
+    );
+
+    expect(code).toBe(0);
+    expect(recorder.calls).toHaveLength(0);
+  });
+
+  it('opens no listener for a one-shot run', async () => {
+    const recorder = recordingStatusFactory();
+    const code = await runWithConfig(
+      `${FAKE_CONFIG}\nstatus:\n  enabled: true\n`,
+      ['--once'],
+      recorder.factory,
+    );
+
+    expect(code).toBe(0);
+    expect(recorder.calls).toHaveLength(0);
   });
 });

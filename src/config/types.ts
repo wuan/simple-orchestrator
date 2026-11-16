@@ -120,12 +120,23 @@ export interface AgentConfig {
   apiKeyEnv?: string;
 }
 
+/** The opt-in, read-only web overview of active work. */
+export interface StatusConfig {
+  /** When false (the default) the service opens no status listener. */
+  enabled: boolean;
+  /** Interface the listener binds to; defaults to loopback. */
+  host: string;
+  /** TCP port the listener binds to; defaults to {@link DEFAULT_STATUS_PORT}. */
+  port: number;
+}
+
 export interface OrchestratorConfig {
   repositories: RepositoryConfig[];
   limits: Limits;
   workspace: WorkspaceConfig;
   logging: LoggingConfig;
   agent: AgentConfig;
+  status: StatusConfig;
 }
 
 export const DEFAULT_LABELS: LabelConfig = {
@@ -182,6 +193,17 @@ export const DEFAULT_LIMITS: Limits = {
 /** Verbose diagnostics are off unless the operator opts in. */
 export const DEFAULT_LOGGING: LoggingConfig = {
   verbose: false,
+};
+
+/** Bind loopback by default: the view can expose private repository titles. */
+export const DEFAULT_STATUS_HOST = '127.0.0.1';
+export const DEFAULT_STATUS_PORT = 8787;
+
+/** The status listener is off, loopback-bound, and on a fixed port by default. */
+export const DEFAULT_STATUS: StatusConfig = {
+  enabled: false,
+  host: DEFAULT_STATUS_HOST,
+  port: DEFAULT_STATUS_PORT,
 };
 
 /** Stable identifier for a configured repository. */

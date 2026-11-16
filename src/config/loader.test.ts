@@ -7,6 +7,7 @@ import {
   DEFAULT_LABELS,
   DEFAULT_MAX_REVISE_ROUNDS,
   DEFAULT_POLL_INTERVAL_SECONDS,
+  DEFAULT_STATUS,
   DEFAULT_WORKSPACE_ROOT,
 } from './types.js';
 
@@ -209,6 +210,61 @@ agent:
   apiKeyEnv: false
 `),
     ).toThrowError(/apiKeyEnv/);
+  });
+
+  describe('status UI', () => {
+    it('disables the listener, on loopback and the documented port, by default', () => {
+      expect(parseConfig(MINIMAL).status).toEqual(DEFAULT_STATUS);
+      expect(DEFAULT_STATUS).toEqual({ enabled: false, host: '127.0.0.1', port: 8787 });
+    });
+
+    it('accepts an enabled listener with an explicit host and port', () => {
+      const config = parseConfig(`
+${MINIMAL}
+status:
+  enabled: true
+  host: 0.0.0.0
+  port: 9000
+`);
+      expect(config.status).toEqual({ enabled: true, host: '0.0.0.0', port: 9000 });
+    });
+
+    it('accepts a non-loopback host without the other fields', () => {
+      const config = parseConfig(`
+${MINIMAL}
+status:
+  enabled: true
+  host: 192.168.1.10
+`);
+      expect(config.status).toEqual({ enabled: true, host: '192.168.1.10', port: 8787 });
+    });
+
+    it('rejects a non-boolean enabled value', () => {
+      const bad = `
+${MINIMAL}
+status:
+  enabled: 3
+`;
+      expect(() => parseConfig(bad)).toThrowError(/enabled/);
+    });
+
+    it('rejects an empty host', () => {
+      const bad = `
+${MINIMAL}
+status:
+  host: ''
+`;
+      expect(() => parseConfig(bad)).toThrowError(/host/);
+    });
+
+    it.each([0, 65536, 1.5])('rejects an out-of-range port (%s)', (port) => {
+      const bad = `
+${MINIMAL}
+status:
+  port: ${port}
+`;
+      expect(() => parseConfig(bad)).toThrowError(/port/);
+    });
   });
 
   describe('turn environments', () => {
