@@ -10,7 +10,7 @@
 ## 2. Integration verification
 
 - [x] 2.1 Run `npm run verify` and confirm the format check, lint, typecheck, unit and integration tests, and OpenSpec validation all pass
-- [ ] 2.2 Open a pull request and confirm the environment workflow builds the `uv` target on the native platform without pushing an image
+- [x] 2.2 Open a pull request and confirm the environment workflow builds the `uv` target on the native platform without pushing an image
 
 ## Workflow follow-up
 
