@@ -129,6 +129,8 @@ lifecycle label on the **pull request**:
 
 **READY** is computed objectively from `openspec status --json` and
 `openspec validate --strict` after every propose turn, never from agent prose.
+An artifact reported as `skipped` counts as satisfied, so a change that sets
+`skip_specs: true` for a tooling or documentation-only change can reach READY.
 Setting a phase replaces any other phase label, so a pull request carries exactly
 one phase label (or none, after cancellation). All of these names are
 configurable through `labels`; see [configuration](docs/configuration.md#labels).

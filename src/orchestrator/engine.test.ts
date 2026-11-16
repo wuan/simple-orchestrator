@@ -276,6 +276,22 @@ describe('WorkflowEngine.start', () => {
       DEFAULT_LABELS.proposing,
     );
   });
+
+  it('sets READY when the change declares a skipped artifact', async () => {
+    const { provider, runtime, engine, openspec } = harness({ ready: false });
+    openspec.markReady('add-x', [
+      { id: 'proposal', status: 'done' },
+      { id: 'specs', status: 'skipped' },
+      { id: 'tasks', status: 'done' },
+    ]);
+    const issue = await seedIssue(provider);
+    runtime.enqueue(proposeResult());
+
+    const result = await engine.start(issue);
+    expect(await labelsOf(provider, result.pullRequest?.ref.number ?? -1)).toContain(
+      DEFAULT_LABELS.ready,
+    );
+  });
 });
 
 describe('WorkflowEngine.drive', () => {
@@ -346,6 +362,29 @@ describe('WorkflowEngine.drive', () => {
       (await h.provider.getPullRequest({ repo: h.provider.repo, number: pullRequestNumber }))!,
     );
     expect(second.kind).toBe('idle');
+    expect(h.runtime.requests.filter((r) => r.context.skill === 'apply')).toHaveLength(1);
+  });
+
+  it('applies an approved change whose specs artifact is skipped', async () => {
+    const h = harness({ ready: false });
+    h.openspec.markReady('add-x', [
+      { id: 'proposal', status: 'done' },
+      { id: 'specs', status: 'skipped' },
+      { id: 'tasks', status: 'done' },
+    ]);
+    const issue = await seedIssue(h.provider);
+    h.runtime.enqueue(proposeResult());
+    const started = await h.engine.start(issue);
+    const pullRequestNumber = started.pullRequest?.ref.number ?? -1;
+    expect(await labelsOf(h.provider, pullRequestNumber)).toContain(DEFAULT_LABELS.ready);
+
+    h.provider.seedReview(pullRequestNumber, { state: 'approved', body: 'Implement the change' });
+    h.runtime.enqueue(applyResult());
+    const action = await h.engine.drive(
+      (await h.provider.getPullRequest({ repo: h.provider.repo, number: pullRequestNumber }))!,
+    );
+
+    expect(action.kind).toBe('apply');
     expect(h.runtime.requests.filter((r) => r.context.skill === 'apply')).toHaveLength(1);
   });
 

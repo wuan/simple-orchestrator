@@ -34,8 +34,10 @@ export interface ReadinessResult {
 
 /**
  * The objective readiness predicate: a change is ready when it is the only
- * active change, every artifact is `done`, and strict validation passes. Agent
- * self-reports are never consulted.
+ * active change, every artifact is `done` or `skipped`, and strict validation
+ * passes. `skipped` is how OpenSpec reports an artifact a change declares out
+ * of scope (for example a `skip_specs` change with no spec delta), so it is
+ * satisfied rather than unfinished. Agent self-reports are never consulted.
  */
 export async function evaluateReadiness(cli: OpenspecCli, cwd: string): Promise<ReadinessResult> {
   const changes = await cli.listChanges(cwd);
@@ -51,9 +53,11 @@ export async function evaluateReadiness(cli: OpenspecCli, cwd: string): Promise<
   if (status.artifacts.length === 0) {
     return { ready: false, changeName, reason: 'change has no artifacts' };
   }
-  const unfinished = status.artifacts.filter((artifact) => artifact.status !== 'done');
+  const unfinished = status.artifacts.filter(
+    (artifact) => artifact.status !== 'done' && artifact.status !== 'skipped',
+  );
   if (unfinished.length > 0) {
-    return { ready: false, changeName, reason: `${unfinished.length} artifact(s) not done` };
+    return { ready: false, changeName, reason: `${unfinished.length} artifact(s) unfinished` };
   }
 
   const validation = await cli.validate(changeName, cwd);

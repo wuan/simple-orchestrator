@@ -10,6 +10,17 @@ describe('evaluateReadiness', () => {
     expect(await evaluateReadiness(cli, '/w')).toMatchObject({ ready: true, changeName: 'add-x' });
   });
 
+  it('is ready when a skipped artifact is the only non-done artifact', async () => {
+    const cli = new FakeOpenspecCli();
+    cli.markReady('add-x', [
+      { id: 'proposal', status: 'done' },
+      { id: 'specs', status: 'skipped' },
+      { id: 'design', status: 'done' },
+      { id: 'tasks', status: 'done' },
+    ]);
+    expect(await evaluateReadiness(cli, '/w')).toMatchObject({ ready: true, changeName: 'add-x' });
+  });
+
   it('is not ready when an artifact is unfinished', async () => {
     const cli = new FakeOpenspecCli();
     cli.markInProgress('add-x');
