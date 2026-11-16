@@ -21,7 +21,10 @@ each repository and pull request by hand.
     interface and never writes labels, comments, or pull requests.
 - Add a top-level `status` configuration block with `enabled` (default `false`),
   `host` (default `127.0.0.1`), and `port` (default `8787`). The service stays
-  outbound-only by default; the listener is opt-in and bound to loopback.
+  outbound-only by default; the listener is opt-in and bound to loopback, and an
+  operator can set an explicit (including non-loopback) host. No authentication
+  is added: the orchestrator is expected to run in a private subnet.
+- Keep the interface to the served view only; no `status` CLI command is added.
 - Extend the normalized provider model so issues and pull requests carry the
   host's web URL, letting the view link to them.
 - Document the view, its configuration, and how to expose it behind a reverse

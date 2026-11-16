@@ -31,10 +31,12 @@ behavior. The relevant current state:
 
 **Non-Goals:**
 
-- Authentication, TLS termination, or multi-user access control for the view.
+- Authentication, TLS termination, or multi-user access control for the view;
+  review confirmed these are out of scope for now (private subnet).
 - Any mutation (labels, comments, reviews, merges) through the view.
 - Historical, metrics, or cost reporting; only current active work.
-- A standalone `status` CLI command (noted as a possible follow-up).
+- A standalone `status` CLI command; review confirmed the served web UI is the
+  intended shape and no CLI status is planned.
 
 ## Decisions
 
@@ -48,18 +50,20 @@ persisting anything.
 
 *Alternatives considered.* A one-shot `orchestrator status` CLI command that
 prints a table would be simpler and need no listener, but it is a snapshot, not
-an overview an operator can leave open; it is left as a follow-up rather than
-the primary shape. A separate status process would duplicate provider and
-credential wiring for little benefit.
+an overview an operator can leave open. Review settled on the served web UI and
+ruled the CLI out, so this change ships no `status` command. A separate status
+process would duplicate provider and credential wiring for little benefit.
 
 ### Opt-in listener, loopback by default, no authentication yet
 
 A new top-level `status` block (`enabled` false, `host` `127.0.0.1`, `port`
 `8787`) keeps the shipped behavior outbound-only. Loopback is the safe default
-because the view exposes private repository titles; remote access is an explicit
-operator choice, documented behind a reverse proxy. Authentication is deferred:
-adding it would change the specs, so it is not assumed here (see Open
-Questions).
+because the view exposes private repository titles. An operator who needs the
+view remotely sets `host` to a non-loopback address explicitly, which this
+change supports. Review confirmed that binding is in scope and that no
+authentication is needed yet because the orchestrator runs in a private subnet;
+TLS and access control therefore remain out of scope and are the operator's
+responsibility, with the docs pointing remote exposure at a reverse proxy.
 
 ### Derive the snapshot from provider reads, no new state
 
@@ -103,10 +107,10 @@ reads providers directly and stays decoupled from `Poller` internals.
 
 ## Risks / Trade-offs
 
-- **[No authentication]** The loopback default limits exposure, and the docs
-  call out that remote access needs a reverse proxy with its own access control.
-  If the view is later exposed directly, authentication becomes a follow-up
-  change.
+- **[No authentication]** Accepted: the listener is opt-in, defaults to
+  loopback, and the orchestrator runs in a private subnet. An operator who binds
+  a non-loopback interface takes on access control themselves (the docs
+  recommend a reverse proxy); adding authentication would be a separate change.
 - **[Provider rate limits]** The view shares the repository's quota with polling.
   The short cache and coalescing bound the extra reads; the refresh interval is
   kept small relative to the poll interval.
@@ -123,12 +127,14 @@ nothing until an operator opts in. Rollback is disabling or removing the block
 `docs/configuration.md`, and `deploy/README.md` covers enabling it and exposing
 it behind a reverse proxy.
 
-## Open Questions
+## Resolved Questions
 
-- Should the overview require a shared token when bound beyond loopback, or is
-  documenting a reverse proxy with its own access control enough? Deferred; the
-  specs define the loopback default and leave remote access to the operator.
-- Should the shipped `examples/config.yaml` show the `status` block commented
-  out, or omit it? A documentation detail that does not change behavior.
-- Should a one-shot `orchestrator status` CLI output be added for scripts and
-  CI? Deferred as a follow-up.
+All three questions from the first review are settled; none remains open and the
+specs and tasks below reflect the answers.
+
+- **Shape**: serve the read-only overview from the running orchestrator, opt-in,
+  with optional non-loopback binding. No CLI status command.
+- **Remote access**: no authentication in this change; the orchestrator runs in
+  a private subnet. A reverse proxy is the documented way to expose it.
+- **Defaults**: keep `127.0.0.1:8787` disabled by default, and allow an explicit
+  non-loopback `host`. `examples/config.yaml` shows the block commented out.

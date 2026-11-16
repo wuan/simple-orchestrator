@@ -74,8 +74,9 @@ classify it without running a turn or consulting agent output.
 ### Requirement: Status listener is opt-in and loopback-bound by default
 
 The status HTTP listener SHALL be disabled by default, SHALL bind to loopback
-when enabled without an explicit host, and SHALL run only while the service is
-polling.
+when enabled without an explicit host, SHALL bind to the configured host when
+one is given (including a non-loopback address), and SHALL run only while the
+service is polling.
 
 #### Scenario: Disabled by default
 
@@ -86,6 +87,11 @@ polling.
 
 - **WHEN** the status listener is enabled without an explicit host
 - **THEN** it binds to `127.0.0.1`
+
+#### Scenario: An explicit non-loopback host is honored
+
+- **WHEN** the status listener is enabled with an explicit non-loopback host
+- **THEN** it binds to that host instead of loopback
 
 #### Scenario: A one-shot run opens no listener
 

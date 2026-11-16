@@ -24,6 +24,11 @@ omitted, and stop with a clear error when a field is invalid.
 - **WHEN** the configuration sets the status `host` and `port`
 - **THEN** the listener binds to those values instead of the defaults
 
+#### Scenario: A non-loopback host is accepted
+
+- **WHEN** the configuration sets the status `host` to a non-loopback address
+- **THEN** the configuration loads and the listener binds to that address
+
 #### Scenario: Invalid status fields fail startup
 
 - **WHEN** a status field has the wrong type, the host is empty, or the port is
