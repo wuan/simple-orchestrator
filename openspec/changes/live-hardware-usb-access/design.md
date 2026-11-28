@@ -18,7 +18,7 @@ The two target devices behave differently:
 QT Py ESP32-S2                         JT-UM120 / FNB58
 239a:8111 firmware CDC                 2e3c:5558 composite
   -> /dev/ttyACM* (major 166)            +-- CDC interfaces -> /dev/ttyACM*
-303a:1001 ROM USB-Serial/JTAG            +-- HID interface  -> /dev/hidraw* (major 241)
+303a:0002 ROM USB OTG bootloader        +-- HID interface  -> /dev/hidraw* (major 241)
   -> /dev/ttyACM* (re-enumerates)        measurement protocol is HID
 ```
 
@@ -92,16 +92,19 @@ The host creates stable names for the three relevant device identities:
 
 ```udev
 SUBSYSTEM=="tty", ATTRS{idVendor}=="239a", ATTRS{idProduct}=="8111", SYMLINK+="qtpy2", GROUP="dialout", MODE="0660"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", SYMLINK+="qtpy2", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="0002", SYMLINK+="qtpy2", GROUP="dialout", MODE="0660"
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2e3c", ATTRS{idProduct}=="5558", SYMLINK+="jtum120", GROUP="dialout", MODE="0660"
 ```
 
 The QT Py firmware and ROM bootloader share the `qtpy2` name because only one is
-present at a time. The meter gets its own name so its `hidraw` node does not
-need to be distinguished from any `ttyACM` node it also creates. `TAG+="uaccess"`
-is deliberately not used: it grants a host ACL to the logged-in user and does
-not cross into the container. `GROUP`/`MODE` plus the orchestrator's
-`--group-add` is what makes the container's non-root user able to open the node.
+present at a time. The ESP32-S2 ROM bootloader is USB OTG `303a:0002`; the
+`303a:1001` ID belongs to ESP32-S3/C3-class USB-Serial/JTAG units, so naming it
+would not keep this board's stable link through an upload reset. The meter gets
+its own name so its `hidraw` node does not need to be distinguished from any
+`ttyACM` node it also creates. `TAG+="uaccess"` is deliberately not used: it
+grants a host ACL to the logged-in user and does not cross into the container.
+`GROUP`/`MODE` plus the orchestrator's `--group-add` is what makes the
+container's non-root user able to open the node.
 
 ### 3. Groups are resolved on the host
 
@@ -158,14 +161,27 @@ passthrough, no privileged container, and no `/dev` bind mount. The meter's writ
 capability is accepted because its protocol needs init/keepalive reports, but it
 is documented as a real hardware action.
 
+### 8. PlatformIO runs on Python 3.12
+
+The `platformio` flavour ships Python 3.12 for PlatformIO and the repository's
+pre/post scripts. Debian bookworm's system Python is 3.11, and klimacontrol's
+`compress_web.py` uses an f-string backslash that only 3.12 accepts, so an
+unmodified klimacontrol build fails before it reaches the hardware. The image
+copies the official Python 3.12 build into `/opt/python312`, installs the runtime
+libraries it needs, and creates PlatformIO's virtual environment with that
+interpreter; the shared base and the other flavours keep their system Python.
+The alternative of using the `uv` flavour's binary would make `uv` part of the
+PlatformIO image and break the rule that the Python toolchain stays in `uv`.
+
 ## Risks / Trade-offs
 
 - **ESP32 bootloader re-enumeration mid-turn** → Docker fixes the device node at
-  container creation. If the ROM bootloader (`303a:1001`) receives a different
-  `ttyACM` minor, the flash fails even though `/dev/qtpy2` resolved correctly
-  before the turn. Mitigation: a hardware spike flashes the board from a
-  container and records whether the node stays usable. If it does not, the
-  follow-up is dynamic class exposure (option C); this change's specs
+  container creation. The ROM bootloader enumerates as `303a:0002`; if it
+  receives a different `ttyACM` minor, the flash fails even though `/dev/qtpy2`
+  resolved correctly before the turn. Mitigation: the hardware spike flashes the
+  board from a container and records whether the node stays usable; it observed
+  the same `ttyACM` minor through the reset. If a host assigns a different minor,
+  the follow-up is dynamic class exposure (option C); this change's specs
   deliberately do not promise mid-turn re-enumeration.
 - **Symlink target changes between the check and container creation** → the
   device could be unplugged after the pre-check. Mitigation: Docker fails to
@@ -210,13 +226,6 @@ is documented as a real hardware action.
 
 ## Open Questions
 
-- Is the deployment host actually Linux? The `--device` path is Linux-only; if
-  the orchestrator runs on macOS under Docker Desktop, direct access is
-  unavailable and the docs should point at USB/IP instead of implying it works.
-- Does the ESP32-S2 keep the same `ttyACM` node through the ROM bootloader
-  transition on the target host? The hardware spike answers this; a negative
-  answer creates a follow-up change for dynamic class exposure rather than
-  changing this design.
 - Should a later change add per-device permissions (for example a read-only
   meter mode)? Deferrable; this change keeps `rwm` because both target workflows
   need write access.

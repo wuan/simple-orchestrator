@@ -24,6 +24,28 @@ packages. The tooling SHALL stay in the `platformio` flavour.
 - **WHEN** a flavour other than `platformio` is built
 - **THEN** it does not carry the live-hardware USB tooling
 
+### Requirement: The PlatformIO flavour runs repository scripts on Python 3.12
+
+The `platformio` turn environment flavour SHALL run PlatformIO Core and the
+repository's pre/post scripts on Python 3.12, so a repository whose scripts use
+3.12 language features builds in a turn without installing an interpreter. The
+shared base and every other flavour SHALL keep their current Python.
+
+#### Scenario: A 3.12-only pre-script runs
+
+- **WHEN** a PlatformIO turn builds a repository whose pre/post script uses 3.12 language features
+- **THEN** the script runs on Python 3.12 and the build proceeds
+
+#### Scenario: PlatformIO Core uses the same interpreter
+
+- **WHEN** a PlatformIO turn runs `pio run`
+- **THEN** PlatformIO Core runs on Python 3.12
+
+#### Scenario: The Python runtime stays in the PlatformIO flavour
+
+- **WHEN** a flavour other than `platformio` is built
+- **THEN** it does not carry the Python 3.12 runtime
+
 ### Requirement: Live-hardware prerequisites are documented
 
 The environment image documentation SHALL describe the host prerequisites for

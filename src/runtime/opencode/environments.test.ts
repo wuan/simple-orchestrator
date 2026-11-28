@@ -225,16 +225,27 @@ describe('environment image flavours', () => {
     const stages = flavourStages();
     const platformio = stages.platformio;
 
-    // The platformio stage provides PlatformIO Core in a virtual environment,
-    // the coverage tool the native test report uses, and the pinned
-    // formatting and lint tools the repository's commit gate expects, with
-    // PlatformIO's core directory exposed as a cache path and the environment
-    // usable by an arbitrary uid.
+    // The platformio stage provides PlatformIO Core on Python 3.12 in a
+    // virtual environment, the coverage tool the native test report uses, and
+    // the pinned formatting and lint tools the repository's commit gate
+    // expects, with PlatformIO's core directory exposed as a cache path and the
+    // environment usable by an arbitrary uid.
     expect(flavours()).toContain('platformio');
+    expect(flavours()).not.toContain('python312');
     expect(platformio).toBeDefined();
-    expect(platformio).toMatch(/apt-get install[^\n]*\bpython3-venv\b/);
-    expect(platformio).toMatch(/apt-get install[^\n]*\blcov\b/);
-    expect(platformio).toMatch(/apt-get install[^\n]*\bshellcheck\b/);
+    if (platformio === undefined) throw new Error('the platformio stage is missing');
+    expect(platformio).toContain('COPY --from=python312 /usr/local /opt/python312');
+    expect(platformio).toContain('/opt/python312/bin/python3.12 -m venv /opt/platformio');
+    expect(platformio).toContain('PATH=/opt/platformio/bin:/opt/python312/bin:$PATH');
+    expect(platformio).not.toMatch(/apt-get install[^\n]*\bpython3-venv\b/);
+    const installBlock = platformio.slice(
+      platformio.indexOf('apt-get install'),
+      platformio.indexOf('rm -rf /var/lib/apt/lists'),
+    );
+    expect(installBlock).toMatch(/\blcov\b/);
+    expect(installBlock).toMatch(/\bshellcheck\b/);
+    expect(installBlock).toMatch(/\blibssl3\b/);
+    expect(installBlock).toMatch(/\blibsqlite3-0\b/);
     expect(platformio).toContain('platformio==${PLATFORMIO_VERSION}');
     expect(platformio).toContain('clang-format==${CLANG_FORMAT_VERSION}');
     expect(platformio).toContain('PLATFORMIO_CORE_DIR=/tmp/.platformio');
@@ -242,11 +253,12 @@ describe('environment image flavours', () => {
     expect(platformio).toMatch(/chmod -R a\+rwX \/opt\/platformio/);
 
     // The toolchain stays in the platformio flavour: the shared contract and
-    // the node, rust, and android flavours do not carry it.
+    // the node, rust, and android flavours do not carry it or Python 3.12.
     const base = text.slice(text.indexOf('FROM node:24'), text.indexOf('FROM base AS node'));
-    for (const stage of [base, stages.node, stages.rust, stages.android]) {
+    for (const stage of [base, stages.node, stages.rust, stages.android, stages.uv]) {
       expect(stage).not.toContain('PLATFORMIO_CORE_DIR');
       expect(stage).not.toContain('/opt/platformio');
+      expect(stage).not.toContain('/opt/python312');
     }
   });
 

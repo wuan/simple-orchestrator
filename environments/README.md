@@ -104,7 +104,7 @@ for its own `@opencode/sdk` version. Name an explicit tag (such as
 | `node`       | Node.js 24 and `git` - the image contract itself                                                      | Repositories needing no toolchain beyond the contract                                         |
 | `rust`       | `rustc`/`cargo` (stable, `clippy`, `rustfmt`), `build-essential`, `cmake`, `pkg-config`, `libssl-dev` | [bo-srv-rs](https://github.com/wuan/bo-srv-rs) and other Rust repositories                    |
 | `android`    | `openjdk-17-jdk` and the Android SDK (`platform-tools`, `platforms;android-35`, `build-tools;35.0.0`) | Android repositories that build with Gradle and the Android Gradle Plugin                     |
-| `platformio` | PlatformIO Core, `lcov`, the pinned `clang-format` and `shellcheck`, and `pre-commit`                 | [klimacontrol](https://github.com/wuan/klimacontrol) and other embedded firmware repositories |
+| `platformio` | PlatformIO Core on Python 3.12, `lcov`, the pinned `clang-format` and `shellcheck`, and `pre-commit`  | [klimacontrol](https://github.com/wuan/klimacontrol) and other embedded firmware repositories |
 | `uv`         | The pinned `uv` binary and cache paths under `/tmp/.uv`                                               | Python repositories that resolve interpreters and dependencies with uv                        |
 
 The Rust flavour matches the toolchain and native build dependencies a Rust
@@ -140,14 +140,19 @@ The turn's `HOME` defaults to `/tmp`, so `~/.gradle` is `/tmp/.gradle`; the
 cache volume keeps the Gradle wrapper, dependency, and build caches between
 turns.
 
-The PlatformIO flavour installs PlatformIO Core in a virtual environment, the
-`lcov` coverage tool an embedded repository's test report runs, and the pinned
-`clang-format` and `shellcheck` its commit gate expects, alongside `pre-commit`.
-It exposes PlatformIO's core directory at `/tmp/.platformio` through
-`PLATFORMIO_CORE_DIR`, so a cache volume there keeps the platforms, toolchains,
-and libraries `pio` downloads between turns; the project's `platformio.ini`
-resolves them at turn time exactly as a local checkout would. Point an embedded
-repository at it with a PlatformIO cache volume reused across turns:
+The PlatformIO flavour installs PlatformIO Core on Python 3.12 in a virtual
+environment, the `lcov` coverage tool an embedded repository's test report runs,
+and the pinned `clang-format` and `shellcheck` its commit gate expects, alongside
+`pre-commit`. It carries Python 3.12 because Debian bookworm's system Python is
+3.11 while an embedded repository's pre/post scripts may use 3.12 language
+features (klimacontrol's `compress_web.py` does); the copied interpreter lives in
+`/opt/python312` and only this flavour uses it, so the base and the other flavours
+keep their system Python. It exposes PlatformIO's core directory at
+`/tmp/.platformio` through `PLATFORMIO_CORE_DIR`, so a cache volume there keeps
+the platforms, toolchains, and libraries `pio` downloads between turns; the
+project's `platformio.ini` resolves them at turn time exactly as a local checkout
+would. Point an embedded repository at it with a PlatformIO cache volume reused
+across turns:
 
 ```yaml
 repositories:
@@ -203,10 +208,10 @@ Give the board and the meter stable names and let the turn's non-root user open
 them. Create `/etc/udev/rules.d/99-simple-orchestrator-usb.rules`:
 
 ```udev
-# The QT Py ESP32-S2 firmware CDC interface and ROM USB-Serial/JTAG interface
-# share one stable name because only one is present at a time.
+# The QT Py ESP32-S2 firmware CDC interface and ROM USB OTG bootloader share one
+# stable name because only one is present at a time.
 SUBSYSTEM=="tty", ATTRS{idVendor}=="239a", ATTRS{idProduct}=="8111", SYMLINK+="qtpy2", GROUP="dialout", MODE="0660"
-SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", SYMLINK+="qtpy2", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="0002", SYMLINK+="qtpy2", GROUP="dialout", MODE="0660"
 
 # The JT-UM120's measurement path is its HID interface, not its CDC port.
 SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2e3c", ATTRS{idProduct}=="5558", SYMLINK+="jtum120", GROUP="dialout", MODE="0660"
@@ -215,6 +220,10 @@ SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2e3c", ATTRS{idProduct}=="5558", SYMLINK+
 SUBSYSTEM=="tty", ATTRS{idVendor}=="239a", ENV{ID_MM_DEVICE_IGNORE}="1"
 SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ENV{ID_MM_DEVICE_IGNORE}="1"
 ```
+
+The ESP32-S2's ROM bootloader enumerates as USB OTG `303a:0002`; `303a:1001` is
+the USB-Serial/JTAG ID used by ESP32-S3/C3-class chips. Naming `0002` keeps
+`qtpy2` present through the reset the uploader performs before flashing.
 
 Reload the rules and trigger the device events:
 
@@ -255,9 +264,10 @@ when it creates the container, which is why the turn can open `/dev/qtpy2` even
 though the host's link points at a transient `/dev/ttyACM*`.
 
 A device that re-enumerates **during** a turn is fixed when the container is
-created: the ESP32-S2's ROM bootloader may receive a different `ttyACM` minor
-mid-flash. That limitation is documented in the change that introduced device
-access; dynamic device-class exposure would be a separate change.
+created. The hardware spike found the ESP32-S2's ROM bootloader re-enumerating
+on the same `ttyACM` minor as the firmware, so the container's node stayed
+usable; a host that assigns a different minor mid-flash would leave the node
+stale. Dynamic device-class exposure remains a separate change.
 
 ### macOS and USB/IP
 
