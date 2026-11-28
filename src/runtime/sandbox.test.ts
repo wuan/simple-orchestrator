@@ -412,6 +412,28 @@ describe('buildDockerRunArgs', () => {
     expect(allVolumeTargets(args)).toContain('orchestrator-acme-widget-gradle:/home/agent/.gradle');
   });
 
+  it('maps configured devices to the same path inside the container', () => {
+    const args = buildDockerRunArgs({
+      ...base,
+      devices: ['/dev/qtpy2', '/dev/jtum120'],
+    });
+    expect(allFlagValues(args, '--device')).toEqual([
+      '/dev/qtpy2:/dev/qtpy2',
+      '/dev/jtum120:/dev/jtum120',
+    ]);
+  });
+
+  it('adds configured supplementary groups as numeric gids', () => {
+    const args = buildDockerRunArgs({ ...base, groups: [20, 995] });
+    expect(allFlagValues(args, '--group-add')).toEqual(['20', '995']);
+  });
+
+  it('keeps the previous argv when no device fields are configured', () => {
+    const args = buildDockerRunArgs(base);
+    expect(args).not.toContain('--device');
+    expect(args).not.toContain('--group-add');
+  });
+
   it('ends with the image and the turn command', () => {
     const args = buildDockerRunArgs(base);
     expect(args.slice(-3)).toEqual(['opencode:latest', 'node', '/opt/runner/dist/runner.js']);
@@ -443,6 +465,16 @@ describe('buildCachePrepareArgs', () => {
 function valueAfter(args: string[], flag: string): string | undefined {
   const index = args.indexOf(flag);
   return index < 0 ? undefined : args[index + 1];
+}
+
+/** Every value following a repeated flag, in order. */
+function allFlagValues(args: string[], flag: string): string[] {
+  const values: string[] = [];
+  for (let index = 0; index < args.length; index += 1) {
+    const value = args[index + 1];
+    if (args[index] === flag && value !== undefined) values.push(value);
+  }
+  return values;
 }
 
 /** Every `--volume` argument, in order. */

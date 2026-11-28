@@ -104,7 +104,7 @@ for its own `@opencode/sdk` version. Name an explicit tag (such as
 | `node`       | Node.js 24 and `git` - the image contract itself                                                      | Repositories needing no toolchain beyond the contract                                         |
 | `rust`       | `rustc`/`cargo` (stable, `clippy`, `rustfmt`), `build-essential`, `cmake`, `pkg-config`, `libssl-dev` | [bo-srv-rs](https://github.com/wuan/bo-srv-rs) and other Rust repositories                    |
 | `android`    | `openjdk-17-jdk` and the Android SDK (`platform-tools`, `platforms;android-35`, `build-tools;35.0.0`) | Android repositories that build with Gradle and the Android Gradle Plugin                     |
-| `platformio` | PlatformIO Core, `lcov`, the pinned `clang-format` and `shellcheck`, and `pre-commit`                 | [klimacontrol](https://github.com/wuan/klimacontrol) and other embedded firmware repositories |
+| `platformio` | PlatformIO Core on Python 3.12, `lcov`, the pinned `clang-format` and `shellcheck`, and `pre-commit`  | [klimacontrol](https://github.com/wuan/klimacontrol) and other embedded firmware repositories |
 | `uv`         | The pinned `uv` binary and cache paths under `/tmp/.uv`                                               | Python repositories that resolve interpreters and dependencies with uv                        |
 
 The Rust flavour matches the toolchain and native build dependencies a Rust
@@ -140,14 +140,19 @@ The turn's `HOME` defaults to `/tmp`, so `~/.gradle` is `/tmp/.gradle`; the
 cache volume keeps the Gradle wrapper, dependency, and build caches between
 turns.
 
-The PlatformIO flavour installs PlatformIO Core in a virtual environment, the
-`lcov` coverage tool an embedded repository's test report runs, and the pinned
-`clang-format` and `shellcheck` its commit gate expects, alongside `pre-commit`.
-It exposes PlatformIO's core directory at `/tmp/.platformio` through
-`PLATFORMIO_CORE_DIR`, so a cache volume there keeps the platforms, toolchains,
-and libraries `pio` downloads between turns; the project's `platformio.ini`
-resolves them at turn time exactly as a local checkout would. Point an embedded
-repository at it with a PlatformIO cache volume reused across turns:
+The PlatformIO flavour installs PlatformIO Core on Python 3.12 in a virtual
+environment, the `lcov` coverage tool an embedded repository's test report runs,
+and the pinned `clang-format` and `shellcheck` its commit gate expects, alongside
+`pre-commit`. It carries Python 3.12 because Debian bookworm's system Python is
+3.11 while an embedded repository's pre/post scripts may use 3.12 language
+features (klimacontrol's `compress_web.py` does); the copied interpreter lives in
+`/opt/python312` and only this flavour uses it, so the base and the other flavours
+keep their system Python. It exposes PlatformIO's core directory at
+`/tmp/.platformio` through `PLATFORMIO_CORE_DIR`, so a cache volume there keeps
+the platforms, toolchains, and libraries `pio` downloads between turns; the
+project's `platformio.ini` resolves them at turn time exactly as a local checkout
+would. Point an embedded repository at it with a PlatformIO cache volume reused
+across turns:
 
 ```yaml
 repositories:
@@ -185,6 +190,105 @@ repositories:
 
 `UV_LINK_MODE=copy` makes uv copy rather than hardlink from the cache volume
 into the bind-mounted worktree, which is normally a different filesystem.
+
+## Live-hardware USB devices
+
+A turn can drive attached USB hardware when its repository's `environment`
+names host device paths in `devices` and the groups that own them in `groups`
+(see [`docs/configuration.md`](../docs/configuration.md#device-access-for-live-hardware)).
+The orchestrator maps each path into the container with Docker's `--device` and
+runs the container process in the configured supplementary groups. It adds no
+privileged mode and mounts no host `/dev`; an environment that names no devices
+keeps Docker's default isolated device set. Direct device mapping is **Linux
+only**.
+
+### udev rules
+
+Give the board and the meter stable names and let the turn's non-root user open
+them. Create `/etc/udev/rules.d/99-simple-orchestrator-usb.rules`:
+
+```udev
+# The QT Py ESP32-S2 firmware CDC interface and ROM USB OTG bootloader share one
+# stable name because only one is present at a time.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="239a", ATTRS{idProduct}=="8111", SYMLINK+="qtpy2", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="0002", SYMLINK+="qtpy2", GROUP="dialout", MODE="0660"
+
+# The JT-UM120's measurement path is its HID interface, not its CDC port.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2e3c", ATTRS{idProduct}=="5558", SYMLINK+="jtum120", GROUP="dialout", MODE="0660"
+
+# Keep ModemManager off the ESP32 CDC ports so enumeration and flashing do not hang.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="239a", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ENV{ID_MM_DEVICE_IGNORE}="1"
+```
+
+The ESP32-S2's ROM bootloader enumerates as USB OTG `303a:0002`; `303a:1001` is
+the USB-Serial/JTAG ID used by ESP32-S3/C3-class chips. Naming `0002` keeps
+`qtpy2` present through the reset the uploader performs before flashing.
+
+Reload the rules and trigger the device events:
+
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=tty --subsystem-match=hidraw
+```
+
+Use `GROUP`/`MODE` rather than `TAG+="uaccess"`: the host ACL applies to the
+logged-in user and does not cross into the container. `GROUP` plus the
+orchestrator's `--group-add` (from `environment.groups`) is what lets the
+non-root turn open the node.
+
+Point the repository at the PlatformIO flavour and the stable names:
+
+```yaml
+repositories:
+  - name: klimacontrol
+    environment:
+      image: ghcr.io/wuan/simple-orchestrator/platformio
+      devices:
+        - /dev/qtpy2
+        - /dev/jtum120
+      groups:
+        - dialout
+      env:
+        - LLM_API_KEY
+      caches:
+        - name: platformio
+          path: /tmp/.platformio
+```
+
+Each configured path is checked when a turn starts: it must be absolute, resolve
+through symlinks, and be a character device. A missing, dangling, or non-device
+path fails the turn naming the configured path. The check runs every turn, so a
+stable name follows a device replugged between turns; Docker resolves the symlink
+when it creates the container, which is why the turn can open `/dev/qtpy2` even
+though the host's link points at a transient `/dev/ttyACM*`.
+
+A device that re-enumerates **during** a turn is fixed when the container is
+created. The hardware spike found the ESP32-S2's ROM bootloader re-enumerating
+on the same `ttyACM` minor as the firmware, so the container's node stayed
+usable; a host that assigns a different minor mid-flash would leave the node
+stale. Dynamic device-class exposure remains a separate change.
+
+PlatformIO's esptool uploader performs a 1200bps reset and then waits for a new
+`/dev/tty*` node, but the turn container exposes only the configured stable
+alias. A repository that uploads through the stable name therefore disables that
+rescan:
+
+```ini
+[env:adafruit_qtpy_esp32s2]
+board_upload.wait_for_upload_port = false
+```
+
+and uses `/dev/qtpy2` as its upload port. The hardware spike verified this path;
+without the setting, PlatformIO aborts after the reset even though `/dev/qtpy2`
+still resolves.
+
+### macOS and USB/IP
+
+Direct device access requires a Linux host. Docker Desktop on macOS runs
+containers in a VM without the host's device tree, so `--device` cannot reach a
+USB device attached to the Mac. Run the orchestrator on a Linux host, or forward
+the device over USB/IP and point `devices` at the forwarded node.
 
 ## Platforms
 

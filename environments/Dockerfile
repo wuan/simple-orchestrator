@@ -143,13 +143,22 @@ RUN apt-get update \
   && java -version \
   && sdkmanager --version
 
+# Python 3.12 for the PlatformIO flavour's repository scripts. The base's
+# Debian bookworm Python is 3.11, but a PlatformIO repository's pre/post scripts
+# may use 3.12 language features (klimacontrol's compress_web.py does). Copy the
+# official standalone build so PlatformIO and those scripts run on 3.12 without
+# changing the base's system Python for every flavour. This intermediate stage
+# builds from the published Python image, not the shared base, so it is not
+# mistaken for a publishable flavour.
+FROM python:3.12-slim-bookworm AS python312
+
 # PlatformIO flavour, for https://github.com/wuan/klimacontrol and other
-# embedded firmware repositories: PlatformIO Core in a system virtual
-# environment, plus the coverage and the pinned formatting and lint tools the
-# repository's test report and commit gate use (lcov, clang-format, shellcheck,
-# pre-commit). It inherits both supported platforms because PlatformIO publishes
-# its espressif32 tool packages for linux_aarch64 as well as linux_x86_64, so an
-# arm64 host pulls a native image.
+# embedded firmware repositories: PlatformIO Core on Python 3.12 in a system
+# virtual environment, plus the coverage and the pinned formatting and lint
+# tools the repository's test report and commit gate use (lcov, clang-format,
+# shellcheck, pre-commit). It inherits both supported platforms because
+# PlatformIO publishes its espressif32 tool packages for linux_aarch64 as well
+# as linux_x86_64, so an arm64 host pulls a native image.
 FROM base AS platformio
 
 # Pin the tool versions so the build fails loudly rather than baking a moving
@@ -157,24 +166,37 @@ FROM base AS platformio
 ARG PLATFORMIO_VERSION=6.2.0
 ARG CLANG_FORMAT_VERSION=19.1.7
 
-# Debian bookworm's Python is externally managed (PEP 668), so install
-# PlatformIO into a virtual environment in /opt (not the build user's $HOME) and
-# put its bin directory on PATH; a plain `pip install` would be refused. The
-# downloaded platforms, toolchains, and libraries live in PLATFORMIO_CORE_DIR so
-# a mounted cache volume at that path keeps them warm between turns, and the
-# environment is made readable and executable by any uid a turn runs as.
-ENV PLATFORMIO_CORE_DIR=/tmp/.platformio \
-    PATH=/opt/platformio/bin:$PATH
+# Debian bookworm's system Python is 3.11 and externally managed (PEP 668).
+# Copy the standalone 3.12 build into /opt, install the runtime libraries it
+# needs, and create PlatformIO's virtual environment with that interpreter. Put
+# the venv's bin directory first on PATH so `pio`, `python3`, and the repository's
+# pre/post scripts all run on 3.12. The downloaded platforms, toolchains, and
+# libraries live in PLATFORMIO_CORE_DIR so a mounted cache volume at that path
+# keeps them warm between turns, and the environment is made readable and
+# executable by any uid a turn runs as.
+COPY --from=python312 /usr/local /opt/python312
 
+ENV PLATFORMIO_CORE_DIR=/tmp/.platformio \
+    PATH=/opt/platformio/bin:/opt/python312/bin:$PATH
+
+# usbutils provides lsusb so a turn can inspect the devices Docker exposed;
+# libudev1 and libusb-1.0-0 are the runtime libraries a hidapi-based client needs
+# to enumerate and open the meter's hidraw interface. Keep them in this flavour:
+# device access is configured per repository, not baked into every image.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3-venv lcov shellcheck \
+  && apt-get install -y --no-install-recommends \
+       lcov shellcheck usbutils libudev1 libusb-1.0-0 \
+       libssl3 libsqlite3-0 libreadline8 libncursesw6 libgdbm6 \
   && rm -rf /var/lib/apt/lists/* \
-  && python3 -m venv /opt/platformio \
+  && /opt/python312/bin/python3.12 -m venv /opt/platformio \
   && /opt/platformio/bin/pip install --no-cache-dir \
        "platformio==${PLATFORMIO_VERSION}" \
        "clang-format==${CLANG_FORMAT_VERSION}" \
        pre-commit \
+  && chmod -R a+rX /opt/python312 \
   && chmod -R a+rwX /opt/platformio \
+  && python3 --version \
+  && python3 -c 'import ssl, sqlite3, readline, curses, dbm.gnu' \
   && pio --version \
   && clang-format --version \
   && shellcheck --version \

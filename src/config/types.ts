@@ -57,6 +57,18 @@ export interface EnvironmentSpec {
   pull?: EnvironmentPull;
   /** Names of the orchestrator's environment variables passed into the container. */
   env?: string[];
+  /**
+   * Absolute host device paths exposed to the container at the same path, for a
+   * turn that drives live hardware. Omitted means no extra devices beyond the
+   * runtime's default isolated set.
+   */
+  devices?: string[];
+  /**
+   * Supplementary groups the container process joins so its non-root user can
+   * open a configured device. Names are resolved to the host's gid; a numeric
+   * entry is used verbatim.
+   */
+  groups?: (string | number)[];
   /** Git identity the container's commits use; required for a commit to succeed. */
   gitIdentity?: EnvironmentGitIdentity;
   /** Named cache volumes reused across the repository's turns. */

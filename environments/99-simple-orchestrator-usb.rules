@@ -1,0 +1,11 @@
+# The QT Py ESP32-S2 firmware CDC interface and ROM USB OTG bootloader share one
+# stable name because only one is present at a time.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="239a", ATTRS{idProduct}=="8111", SYMLINK+="qtpy2", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="0002", SYMLINK+="qtpy2", GROUP="dialout", MODE="0660"
+
+# The JT-UM120's measurement path is its HID interface, not its CDC port.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2e3c", ATTRS{idProduct}=="5558", SYMLINK+="jtum120", GROUP="dialout", MODE="0660"
+
+# Keep ModemManager off the ESP32 CDC ports so enumeration and flashing do not hang.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="239a", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ENV{ID_MM_DEVICE_IGNORE}="1"

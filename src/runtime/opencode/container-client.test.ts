@@ -1,4 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { mkdtemp, rm, symlink, writeFile } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+import { afterEach, describe, expect, it } from 'vitest';
 
 import type { EnvironmentSpec } from '../../config/types.js';
 import type { TurnUsage } from '../../domain/types.js';
@@ -10,11 +14,25 @@ import type {
 import type { OpenCodeClient, OpenCodeSkillRequest, OpenCodeSkillResult } from './client.js';
 import {
   ContainerOpenCodeClient,
+  type ContainerOpenCodeClientOptions,
   DEFAULT_RUNNER_MOUNT,
   EnvironmentOpenCodeClient,
   resolveImageReference,
   scopeCacheVolumes,
 } from './container-client.js';
+
+const cleanups: string[] = [];
+
+afterEach(async () => {
+  await Promise.all(cleanups.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+});
+
+/** A temporary directory removed after the test. */
+async function tempDir(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'container-client-'));
+  cleanups.push(dir);
+  return dir;
+}
 
 const ENVIRONMENT: EnvironmentSpec = {
   image: 'ghcr.io/acme/agent-java',
@@ -67,7 +85,11 @@ function eventsRunner(
   });
 }
 
-function client(runner: ContainerRunner, sdkVersion = '2.0.31'): ContainerOpenCodeClient {
+function client(
+  runner: ContainerRunner,
+  sdkVersion = '2.0.31',
+  overrides: Partial<ContainerOpenCodeClientOptions> = {},
+): ContainerOpenCodeClient {
   return new ContainerOpenCodeClient({
     runnerDir: '/app/dist',
     model: 'greenpt/deepseek#flash',
@@ -75,7 +97,13 @@ function client(runner: ContainerRunner, sdkVersion = '2.0.31'): ContainerOpenCo
     database: '/data/opencode.db',
     runner,
     sdkVersion,
+    ...overrides,
   });
+}
+
+/** A group resolver naming `dialout` as gid 20 and nothing else. */
+async function dialoutOnly(name: string): Promise<number | undefined> {
+  return name === 'dialout' ? 20 : undefined;
 }
 
 describe('resolveImageReference', () => {
@@ -380,6 +408,152 @@ describe('ContainerOpenCodeClient', () => {
     await expect(client(runner).runSkill(skillRequest({ store: undefined }))).rejects.toThrowError(
       /requires the repository store path/,
     );
+  });
+
+  it('resolves a configured group name to the host gid', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+
+    await client(runner, '2.0.31', { resolveGroup: dialoutOnly }).runSkill(
+      skillRequest({ environment: { ...ENVIRONMENT, groups: ['dialout'] } }),
+    );
+
+    const args = runner.calls.at(-1)?.args ?? [];
+    expect(args[args.indexOf('--group-add') + 1]).toBe('20');
+  });
+
+  it('passes a numeric gid through without resolving it', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+    const resolveGroup = async (): Promise<number | undefined> => {
+      throw new Error('a numeric gid must not be resolved');
+    };
+
+    await client(runner, '2.0.31', { resolveGroup }).runSkill(
+      skillRequest({ environment: { ...ENVIRONMENT, groups: [995] } }),
+    );
+
+    const args = runner.calls.at(-1)?.args ?? [];
+    expect(args[args.indexOf('--group-add') + 1]).toBe('995');
+  });
+
+  it('fails the turn naming a configured group that does not exist', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+
+    await expect(
+      client(runner, '2.0.31', { resolveGroup: dialoutOnly }).runSkill(
+        skillRequest({ environment: { ...ENVIRONMENT, groups: ['wheel'] } }),
+      ),
+    ).rejects.toThrowError(/group 'wheel'/);
+    expect(runner.calls).toHaveLength(0);
+  });
+
+  it('exposes a configured character device at its host path', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+
+    await client(runner).runSkill(
+      skillRequest({ environment: { ...ENVIRONMENT, devices: ['/dev/null'] } }),
+    );
+
+    const args = runner.calls.at(-1)?.args ?? [];
+    expect(args[args.indexOf('--device') + 1]).toBe('/dev/null:/dev/null');
+  });
+
+  it('fails the turn naming an absent device path', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+    const missing = join(await tempDir(), 'missing');
+
+    await expect(
+      client(runner).runSkill(
+        skillRequest({ environment: { ...ENVIRONMENT, devices: [missing] } }),
+      ),
+    ).rejects.toThrowError(missing);
+    expect(runner.calls).toHaveLength(0);
+  });
+
+  it('fails the turn naming a dangling device symlink', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+    const dir = await tempDir();
+    const link = join(dir, 'qtpy2');
+    await symlink(join(dir, 'missing'), link);
+
+    await expect(
+      client(runner).runSkill(skillRequest({ environment: { ...ENVIRONMENT, devices: [link] } })),
+    ).rejects.toThrowError(link);
+    expect(runner.calls).toHaveLength(0);
+  });
+
+  it('fails the turn naming a path that is not a character device', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+    const path = join(await tempDir(), 'regular');
+    await writeFile(path, 'not a device\n');
+
+    await expect(
+      client(runner).runSkill(skillRequest({ environment: { ...ENVIRONMENT, devices: [path] } })),
+    ).rejects.toThrowError(/regular' is not a character device/);
+    expect(runner.calls).toHaveLength(0);
+  });
+
+  it('passes a stable symlink path to Docker and re-resolves its target each turn', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+    const dir = await tempDir();
+    const link = join(dir, 'qtpy2');
+    await symlink('/dev/null', link);
+    const instance = client(runner);
+    const environment: EnvironmentSpec = { ...ENVIRONMENT, devices: [link] };
+
+    await instance.runSkill(skillRequest({ environment }));
+    const first = runner.calls.at(-1)?.args ?? [];
+    expect(first[first.indexOf('--device') + 1]).toBe(`${link}:${link}`);
+
+    // The device is "replugged": the stable name now points at a different
+    // character device, and the next turn maps the same configured path.
+    await rm(link);
+    await symlink('/dev/zero', link);
+    await instance.runSkill(skillRequest({ environment }));
+    const second = runner.calls.at(-1)?.args ?? [];
+    expect(second[second.indexOf('--device') + 1]).toBe(`${link}:${link}`);
+
+    // Repointing the name at a non-device proves the check re-resolves rather
+    // than trusting the target cached from the first turn.
+    await rm(link);
+    await writeFile(link, 'not a device\n');
+    await expect(instance.runSkill(skillRequest({ environment }))).rejects.toThrowError(link);
+  });
+
+  it('keeps the previous argv when the environment names no devices or groups', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+
+    await client(runner).runSkill(skillRequest());
+
+    const args = runner.calls.at(-1)?.args ?? [];
+    expect(args).not.toContain('--device');
+    expect(args).not.toContain('--group-add');
   });
 
   it('exposes the default runner mount', () => {

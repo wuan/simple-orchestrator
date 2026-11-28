@@ -195,6 +195,47 @@ function parseEnvironmentValues(
     });
   }
 
+  const devices = record['devices'];
+  if (devices !== undefined) {
+    if (!Array.isArray(devices)) {
+      throw new ConfigError(`${context}: 'devices' must be a list of absolute paths`, repo);
+    }
+    environment.devices = devices.map((value, index) => {
+      if (typeof value !== 'string' || value.trim() === '') {
+        throw new ConfigError(`${context}: 'devices[${index}]' must be a non-empty string`, repo);
+      }
+      if (!value.startsWith('/')) {
+        throw new ConfigError(`${context}: 'devices[${index}]' must be an absolute path`, repo);
+      }
+      return value;
+    });
+  }
+
+  const groups = record['groups'];
+  if (groups !== undefined) {
+    if (!Array.isArray(groups)) {
+      throw new ConfigError(
+        `${context}: 'groups' must be a list of non-empty names or numeric gids`,
+        repo,
+      );
+    }
+    environment.groups = groups.map((value, index) => {
+      if (typeof value === 'number') {
+        if (!Number.isInteger(value) || value < 0) {
+          throw new ConfigError(`${context}: 'groups[${index}]' must be a non-negative gid`, repo);
+        }
+        return value;
+      }
+      if (typeof value !== 'string' || value.trim() === '') {
+        throw new ConfigError(
+          `${context}: 'groups[${index}]' must be a non-empty name or numeric gid`,
+          repo,
+        );
+      }
+      return value;
+    });
+  }
+
   const gitIdentity = record['gitIdentity'];
   if (gitIdentity !== undefined) {
     const identityContext = `${context}.gitIdentity`;

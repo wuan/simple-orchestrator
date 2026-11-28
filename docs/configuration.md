@@ -206,6 +206,8 @@ selects the image matching the host's architecture when it pulls the tag.
 | `network`     | no       | `bridge` | Container network mode. The model loop runs inside the container, so provider egress is required.                                                                              |
 | `pull`        | no       | `always` | When to refresh the image before a turn: `always` checks the registry, `missing` reuses the local image, `never` never contacts the registry.                                  |
 | `env`         | no       | —        | Names of the orchestrator's environment variables passed into the container (for provider auth).                                                                               |
+| `devices`     | no       | —        | Absolute host device paths exposed to the container at the same path, for a turn that drives live hardware. Validated at turn start; Linux hosts only.                         |
+| `groups`      | no       | —        | Supplementary groups the container process joins so its non-root user can open a configured device. Names resolve to the host gid; numeric gids pass through.                  |
 | `gitIdentity` | no       | —        | `name` and `email` an in-container commit uses.                                                                                                                                |
 | `caches`      | no       | —        | Named volumes reused across the repository's turns, each a `name` and a container `path`. The orchestrator makes each volume writable by the turn's user before the turn runs. |
 
@@ -231,7 +233,59 @@ repositories:
 An entry inherits the shared environment field by field, so `gadget` above uses
 its own image and caches while keeping the shared `gitIdentity`; `widget` uses
 the shared image unchanged. An `environment` block that names no image (after
-the merge) fails startup naming the repository.
+the merge) fails startup naming the repository. `devices` and `groups` inherit
+the same way, and an array is taken wholesale from the layer that sets it.
+
+### Device access for live hardware
+
+A turn that drives attached USB hardware names the host device paths in
+`devices`; each is mapped into the container at the same path with Docker's
+device mapping. `groups` names supplementary groups the container process joins,
+so a turn running as the orchestrator's non-root uid/gid can open a device owned
+by a group such as `dialout`. Group names are resolved to the host's gid, because
+the image's `/etc/group` can differ from the host's; a numeric entry is passed
+through as a gid.
+
+Before the container starts, every configured path is checked: it must be
+absolute, resolve through symlinks, and be a character device. A missing,
+dangling, or non-character path fails the turn with an error naming the configured
+path rather than starting a hardware turn without its hardware. Because the check
+runs per turn, a stable udev symlink is re-resolved each time and follows a device
+that was replugged between turns.
+
+Device access is opt-in per repository and intentionally narrow: it adds no
+`--privileged` flag and mounts no host `/dev`. An environment that names no
+devices keeps Docker's default isolated device set. `--device` is a Linux
+facility; Docker Desktop on macOS runs containers in a VM without the host's
+device tree. The host-side prerequisites (udev rules for group ownership and
+stable names, keeping ModemManager off firmware ports, and the macOS/USB/IP
+limitation) are documented in
+[`environments/README.md`](../environments/README.md#live-hardware-usb-devices).
+
+```yaml
+repositories:
+  - name: klimacontrol
+    provider: github
+    owner: wuan
+    credential: env:GITHUB_TOKEN
+    environment:
+      image: ghcr.io/wuan/simple-orchestrator/platformio
+      devices:
+        - /dev/qtpy2
+        - /dev/jtum120
+      groups:
+        - dialout
+      env:
+        - LLM_API_KEY
+      caches:
+        - name: platformio
+          path: /tmp/.platformio
+```
+
+The paths above are stable udev symlinks, so the repository config does not name
+a transient `ttyACM`/`hidraw` node. The `dialout` group is resolved on the host
+and added to the container process, and each device is mapped read-write because
+flashing and the meter's protocol both need to send control messages.
 
 Before each containerized turn the orchestrator refreshes the image according to
 its `pull` policy, which defaults to `always`, so a mutable tag such as `latest`
