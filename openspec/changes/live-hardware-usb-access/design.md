@@ -173,6 +173,16 @@ interpreter; the shared base and the other flavours keep their system Python.
 The alternative of using the `uv` flavour's binary would make `uv` part of the
 PlatformIO image and break the rule that the Python toolchain stays in `uv`.
 
+### 9. PlatformIO uploads through the stable port
+
+PlatformIO's esptool uploader resets the board and then looks for a new
+`/dev/tty*` node, but the turn container exposes only the configured stable
+alias, which pyserial does not enumerate as a new port. A repository that flashes
+through `qtpy2` therefore sets `board_upload.wait_for_upload_port = false` and
+uses `/dev/qtpy2` as its upload port. The hardware spike verified this path;
+without the setting the uploader aborts after the reset even though the alias
+resolves correctly.
+
 ## Risks / Trade-offs
 
 - **ESP32 bootloader re-enumeration mid-turn** → Docker fixes the device node at
@@ -183,6 +193,10 @@ PlatformIO image and break the rule that the Python toolchain stays in `uv`.
   the same `ttyACM` minor through the reset. If a host assigns a different minor,
   the follow-up is dynamic class exposure (option C); this change's specs
   deliberately do not promise mid-turn re-enumeration.
+- **PlatformIO port rescan after reset** → the uploader waits for a new
+  `/dev/tty*` node, but the container exposes only the stable alias. Mitigation:
+  the documented `board_upload.wait_for_upload_port = false` setting keeps
+  `/dev/qtpy2` as the upload port; the hardware spike verified the upload.
 - **Symlink target changes between the check and container creation** → the
   device could be unplugged after the pre-check. Mitigation: Docker fails to
   create the device and the turn fails; the window is small and the failure is

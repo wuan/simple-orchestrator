@@ -9,7 +9,7 @@ Containerized turns currently see only Docker's minimal `/dev`: `buildDockerRunA
 - Add declarative device access to a repository's `environment` block: `devices` lists host device paths, and `groups` names supplementary groups the turn's process joins so a non-root turn can open the nodes.
 - Pass each device path into the container with Docker's device mapping, and each group as a supplementary group.
 - Check each configured device path when a turn starts and fail the turn with a clear error naming the path when it is absent or is not a character device.
-- Document the host-side prerequisites: udev rules that set group ownership and stable device names (`SYMLINK`), plus keeping ModemManager off the ESP32 CDC ports. The ESP32-S2's ROM bootloader is named as `303a:0002` so `qtpy2` survives the uploader's reset.
+- Document the host-side prerequisites: udev rules that set group ownership and stable device names (`SYMLINK`), plus keeping ModemManager off the ESP32 CDC ports. The ESP32-S2's ROM bootloader is named as `303a:0002` so `qtpy2` survives the uploader's reset, and the documentation records the PlatformIO upload-port setting that keeps the stable name usable.
 - Add the container-side tooling a hardware turn needs (`usbutils`, and the `libudev`/`libusb` runtime for HID clients) to the PlatformIO flavour.
 - Ship Python 3.12 in the PlatformIO flavour so the target repository's pre/post scripts run; Debian bookworm's system Python is 3.11 and klimacontrol's `compress_web.py` needs 3.12.
 - Leave device access out of the image itself: images stay hardware-agnostic; the repository's environment block names the devices.

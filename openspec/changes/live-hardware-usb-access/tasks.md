@@ -25,7 +25,7 @@
 ## 4. Live-hardware verification
 
 - [x] 4.1 Flash the QT Py ESP32-S2 from a PlatformIO turn using `/dev/qtpy2`; verify the firmware uploads and record whether the `ttyACM` node survives the ROM bootloader re-enumeration.
-  - Verified: the firmware built and the upload succeeded once pointed at the bootloader's node. The board re-enumerated as `303a:0002`, not the documented `303a:1001`, so `/dev/qtpy2` disappeared at the uploader's reset and the stable-name upload aborted. The rule now names `303a:0002`; flashing through the transient `/dev/ttyACM0` wrote 1,436,336 bytes and verified the hash, and `/dev/qtpy2` returned as `239a:8111` after the reset. The `ttyACM` minor stayed `0`, so no dynamic-class follow-up is needed; the host's installed rule needs the same `0002` update before a stable-name rerun.
+  - Verified: the firmware built and the upload succeeded through `/dev/qtpy2`. The board re-enumerated as `303a:0002`, not the originally documented `303a:1001`; the corrected udev rule keeps `/dev/qtpy2` present through the uploader's reset. PlatformIO's default port rescan looks for a new `/dev/tty*` node, so the upload uses `board_upload.wait_for_upload_port = false`; with that setting it wrote 1,436,336 bytes and verified the hash. The `ttyACM` minor stayed `0`, so no dynamic-class follow-up is needed.
 - [x] 4.2 Read live measurements from the JT-UM120 using `/dev/jtum120`; verify the turn opens the `hidraw` node and prints voltage/current samples.
   - Verified: a container running as uid 1001 with `dialout` opened `/dev/jtum120`, read 77 HID reports, and decoded live samples around 5.19 V, 0.08–0.15 W, and 27.5–28.1 °C.
 - [x] 4.3 Run an end-to-end turn for the klimacontrol repository with the PlatformIO environment, devices, and `dialout` group; verify the turn sees the devices, builds the firmware, and completes.
@@ -35,5 +35,5 @@
 ## Workflow follow-up
 
 - Archive the change after the project's review requirements are satisfied.
-- The hardware spike found that the ESP32-S2 ROM bootloader PID is `303a:0002`; the documented rule uses that ID. The host's installed rule still names `303a:1001` and must be updated to match before a stable-name rerun. Dynamic device-class exposure is not needed on this host because the `ttyACM` minor stayed stable.
+- The hardware spike found that the ESP32-S2 ROM bootloader PID is `303a:0002`; the documented and installed host rule use that ID. Stable-name uploads use `board_upload.wait_for_upload_port = false` because PlatformIO's default rescan cannot see the alias. Dynamic device-class exposure is not needed on this host because the `ttyACM` minor stayed stable.
 - If portability across hosts becomes a requirement, extend the `devices` field with `usb:<vid>:<pid>` selectors as a later change; path entries stay valid.

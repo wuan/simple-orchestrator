@@ -269,6 +269,20 @@ on the same `ttyACM` minor as the firmware, so the container's node stayed
 usable; a host that assigns a different minor mid-flash would leave the node
 stale. Dynamic device-class exposure remains a separate change.
 
+PlatformIO's esptool uploader performs a 1200bps reset and then waits for a new
+`/dev/tty*` node, but the turn container exposes only the configured stable
+alias. A repository that uploads through the stable name therefore disables that
+rescan:
+
+```ini
+[env:adafruit_qtpy_esp32s2]
+board_upload.wait_for_upload_port = false
+```
+
+and uses `/dev/qtpy2` as its upload port. The hardware spike verified this path;
+without the setting, PlatformIO aborts after the reset even though `/dev/qtpy2`
+still resolves.
+
 ### macOS and USB/IP
 
 Direct device access requires a Linux host. Docker Desktop on macOS runs
