@@ -8,7 +8,13 @@ import {
 } from '../../config/types.js';
 import type { RepoRef, TurnUsage } from '../../domain/types.js';
 import { NodeContainerRunner, type ContainerRunner } from '../../system/commands.js';
-import { assertDeviceAvailable, hostGroupResolver, type GroupResolver } from '../hardware.js';
+import {
+  assertDeviceAvailable,
+  describeHardwareDevice,
+  hostGroupResolver,
+  type GroupResolver,
+  type HardwareManifest,
+} from '../hardware.js';
 import { buildCachePrepareArgs, buildDockerRunArgs, type DockerCacheMount } from '../sandbox.js';
 import type { OpenCodeClient, OpenCodeSkillRequest, OpenCodeSkillResult } from './client.js';
 import { resolveSdkVersion } from './sdk-version.js';
@@ -152,7 +158,7 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
   private readonly user: string | undefined;
   private readonly home: string | undefined;
   private readonly resolveGroup: GroupResolver;
-  private readonly logger: (message: string) => void;
+  private readonly logger: ((message: string) => void) | undefined;
 
   /** Cache volumes already prepared (chowned for the turn user) this process. */
   private readonly preparedVolumes = new Set<string>();
@@ -171,7 +177,7 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
     this.user = options.user;
     this.home = options.home;
     this.resolveGroup = options.resolveGroup ?? hostGroupResolver();
-    this.logger = options.logger ?? (() => {});
+    this.logger = options.logger;
   }
 
   async runSkill(request: OpenCodeSkillRequest): Promise<OpenCodeSkillResult> {
@@ -182,10 +188,11 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
     if (request.store === undefined) {
       throw new Error('a container turn requires the repository store path');
     }
-    const devices = environment.devices ?? [];
+    const devices = (environment.devices ?? []).map((device) => device.path);
     // Check the hardware before doing any cache work, so a missing device fails
     // the turn quickly and names the path rather than starting without it.
     await this.checkDevices(devices);
+    this.logHardware(request.hardware);
     const groups = await this.resolveGroups(environment.groups ?? []);
     // The configured provider variable crosses with the container even when the
     // environment does not name it, without repeating it when it already does.
@@ -228,9 +235,23 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
       ...(this.database === undefined ? {} : { database: this.database }),
       ...(this.apiEndpoint === undefined ? {} : { apiEndpoint: this.apiEndpoint }),
       ...(this.apiKeyEnv === undefined ? {} : { apiKeyEnv: this.apiKeyEnv }),
+      ...(request.hardware === undefined ? {} : { hardware: request.hardware }),
       expectedSdkVersion: this.sdkVersion,
     });
     return this.runTurn(request, args, payload);
+  }
+
+  /**
+   * Report the resolved inventory through the verbose logger, so an operator
+   * can confirm that a configured stable name resolved to the expected USB
+   * identity. Diagnostic only: nothing here changes the turn.
+   */
+  private logHardware(manifest: HardwareManifest | undefined): void {
+    if (this.logger === undefined) return;
+    for (const device of manifest?.devices ?? []) {
+      const detail = describeHardwareDevice(device);
+      this.logger(detail === '' ? `hardware ${device.path}` : `hardware ${device.path}: ${detail}`);
+    }
   }
 
   /** Check every configured device path before the container starts. */
@@ -289,7 +310,7 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
       if (result.code !== 0) {
         const stderr = result.stderr.trim();
         const suffix = stderr === '' ? '' : `: ${stderr}`;
-        this.logger(
+        this.logger?.(
           `could not prepare cache volume ${cache.volume} (exit ${result.code ?? 'unknown'})${suffix}`,
         );
         return;
@@ -297,7 +318,7 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
       this.preparedVolumes.add(cache.volume);
     } catch (error) {
       const detail = error instanceof Error ? error.message : String(error);
-      this.logger(`could not prepare cache volume ${cache.volume}: ${detail}`);
+      this.logger?.(`could not prepare cache volume ${cache.volume}: ${detail}`);
     }
   }
 

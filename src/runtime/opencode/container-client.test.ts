@@ -6,6 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest';
 
 import type { EnvironmentSpec } from '../../config/types.js';
 import type { TurnUsage } from '../../domain/types.js';
+import type { HardwareManifest } from '../hardware.js';
 import type {
   ContainerRunOptions,
   ContainerRunResult,
@@ -462,7 +463,7 @@ describe('ContainerOpenCodeClient', () => {
     ]);
 
     await client(runner).runSkill(
-      skillRequest({ environment: { ...ENVIRONMENT, devices: ['/dev/null'] } }),
+      skillRequest({ environment: { ...ENVIRONMENT, devices: [{ path: '/dev/null' }] } }),
     );
 
     const args = runner.calls.at(-1)?.args ?? [];
@@ -478,7 +479,7 @@ describe('ContainerOpenCodeClient', () => {
 
     await expect(
       client(runner).runSkill(
-        skillRequest({ environment: { ...ENVIRONMENT, devices: [missing] } }),
+        skillRequest({ environment: { ...ENVIRONMENT, devices: [{ path: missing }] } }),
       ),
     ).rejects.toThrowError(missing);
     expect(runner.calls).toHaveLength(0);
@@ -494,7 +495,9 @@ describe('ContainerOpenCodeClient', () => {
     await symlink(join(dir, 'missing'), link);
 
     await expect(
-      client(runner).runSkill(skillRequest({ environment: { ...ENVIRONMENT, devices: [link] } })),
+      client(runner).runSkill(
+        skillRequest({ environment: { ...ENVIRONMENT, devices: [{ path: link }] } }),
+      ),
     ).rejects.toThrowError(link);
     expect(runner.calls).toHaveLength(0);
   });
@@ -508,7 +511,9 @@ describe('ContainerOpenCodeClient', () => {
     await writeFile(path, 'not a device\n');
 
     await expect(
-      client(runner).runSkill(skillRequest({ environment: { ...ENVIRONMENT, devices: [path] } })),
+      client(runner).runSkill(
+        skillRequest({ environment: { ...ENVIRONMENT, devices: [{ path }] } }),
+      ),
     ).rejects.toThrowError(/regular' is not a character device/);
     expect(runner.calls).toHaveLength(0);
   });
@@ -522,7 +527,7 @@ describe('ContainerOpenCodeClient', () => {
     const link = join(dir, 'qtpy2');
     await symlink('/dev/null', link);
     const instance = client(runner);
-    const environment: EnvironmentSpec = { ...ENVIRONMENT, devices: [link] };
+    const environment: EnvironmentSpec = { ...ENVIRONMENT, devices: [{ path: link }] };
 
     await instance.runSkill(skillRequest({ environment }));
     const first = runner.calls.at(-1)?.args ?? [];
@@ -554,6 +559,67 @@ describe('ContainerOpenCodeClient', () => {
     const args = runner.calls.at(-1)?.args ?? [];
     expect(args).not.toContain('--device');
     expect(args).not.toContain('--group-add');
+  });
+
+  it('maps described device entries to their host paths', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+
+    await client(runner).runSkill(
+      skillRequest({
+        environment: {
+          ...ENVIRONMENT,
+          devices: [{ path: '/dev/null', description: 'a test device' }],
+        },
+      }),
+    );
+
+    const args = runner.calls.at(-1)?.args ?? [];
+    expect(args[args.indexOf('--device') + 1]).toBe('/dev/null:/dev/null');
+  });
+
+  it('carries the hardware manifest in the runner payload', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+    const hardware: HardwareManifest = {
+      devices: [
+        { path: '/dev/null', description: 'a test device', identity: { vendorId: '0001' } },
+      ],
+    };
+
+    await client(runner).runSkill(skillRequest({ hardware }));
+
+    const input = runner.calls.at(-1)?.input ?? '';
+    expect(input).toContain('"hardware"');
+    expect(input).toContain('"description":"a test device"');
+    expect(input).toContain('"vendorId":"0001"');
+  });
+
+  it('logs the resolved inventory only when a logger is provided', async () => {
+    const runner = eventsRunner([
+      { type: 'ready', sdkVersion: '2.0.31' },
+      { type: 'result', result: RESULT },
+    ]);
+    const hardware: HardwareManifest = {
+      devices: [
+        { path: '/dev/null', description: 'a test device', identity: { vendorId: '0001' } },
+      ],
+    };
+    const messages: string[] = [];
+
+    await client(runner, '2.0.31', { logger: (message) => messages.push(message) }).runSkill(
+      skillRequest({ hardware }),
+    );
+
+    expect(messages).toContain('hardware /dev/null: a test device (vendor 0001)');
+
+    // Without a logger injected, no diagnostic is produced.
+    await client(runner).runSkill(skillRequest({ hardware }));
+    expect(messages).toHaveLength(1);
   });
 
   it('exposes the default runner mount', () => {

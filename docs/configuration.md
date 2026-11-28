@@ -200,16 +200,16 @@ platforms its toolchain supports - `node`, `rust`, `platformio`, and `uv` cover
 `linux/amd64` and `linux/arm64`, `android` covers `linux/amd64` - and Docker
 selects the image matching the host's architecture when it pulls the tag.
 
-| Field         | Required | Default  | Description                                                                                                                                                                    |
-| ------------- | -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `image`       | yes      | —        | Container image providing the environment; without a tag, the orchestrator's SDK tag is selected.                                                                              |
-| `network`     | no       | `bridge` | Container network mode. The model loop runs inside the container, so provider egress is required.                                                                              |
-| `pull`        | no       | `always` | When to refresh the image before a turn: `always` checks the registry, `missing` reuses the local image, `never` never contacts the registry.                                  |
-| `env`         | no       | —        | Names of the orchestrator's environment variables passed into the container (for provider auth).                                                                               |
-| `devices`     | no       | —        | Absolute host device paths exposed to the container at the same path, for a turn that drives live hardware. Validated at turn start; Linux hosts only.                         |
-| `groups`      | no       | —        | Supplementary groups the container process joins so its non-root user can open a configured device. Names resolve to the host gid; numeric gids pass through.                  |
-| `gitIdentity` | no       | —        | `name` and `email` an in-container commit uses.                                                                                                                                |
-| `caches`      | no       | —        | Named volumes reused across the repository's turns, each a `name` and a container `path`. The orchestrator makes each volume writable by the turn's user before the turn runs. |
+| Field         | Required | Default  | Description                                                                                                                                                                                                |
+| ------------- | -------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `image`       | yes      | —        | Container image providing the environment; without a tag, the orchestrator's SDK tag is selected.                                                                                                          |
+| `network`     | no       | `bridge` | Container network mode. The model loop runs inside the container, so provider egress is required.                                                                                                          |
+| `pull`        | no       | `always` | When to refresh the image before a turn: `always` checks the registry, `missing` reuses the local image, `never` never contacts the registry.                                                              |
+| `env`         | no       | —        | Names of the orchestrator's environment variables passed into the container (for provider auth).                                                                                                           |
+| `devices`     | no       | —        | Devices exposed to the container at the same host path, for a turn that drives live hardware. Each entry is an absolute path or a `path`/`description` mapping. Validated at turn start; Linux hosts only. |
+| `groups`      | no       | —        | Supplementary groups the container process joins so its non-root user can open a configured device. Names resolve to the host gid; numeric gids pass through.                                              |
+| `gitIdentity` | no       | —        | `name` and `email` an in-container commit uses.                                                                                                                                                            |
+| `caches`      | no       | —        | Named volumes reused across the repository's turns, each a `name` and a container `path`. The orchestrator makes each volume writable by the turn's user before the turn runs.                             |
 
 ```yaml
 defaults:
@@ -271,7 +271,8 @@ repositories:
     environment:
       image: ghcr.io/wuan/simple-orchestrator/platformio
       devices:
-        - /dev/qtpy2
+        - path: /dev/qtpy2
+          description: Adafruit QT Py ESP32-S2; e-ink display and sensors wired to it
         - /dev/jtum120
       groups:
         - dialout
@@ -286,6 +287,28 @@ The paths above are stable udev symlinks, so the repository config does not name
 a transient `ttyACM`/`hidraw` node. The `dialout` group is resolved on the host
 and added to the container process, and each device is mapped read-write because
 flashing and the meter's protocol both need to send control messages.
+
+A `devices` entry may be a bare absolute path or a mapping with a `path` and an
+optional non-empty `description`; both forms merge through `defaults` like the
+other environment fields. The description is a short operator hint that travels
+with the exposure, such as the board model or what is wired to it.
+
+When a containerized turn exposes at least one device, the orchestrator probes
+each configured path on the host with `udevadm` for vendor/product ids, model,
+serial, subsystem, and devlinks. The turn instruction then advertises each
+exposed device with its configured description and any detected identity, and
+names a read-only manifest at `/tmp/orchestrator-hardware.json` holding the full
+inventory for the agent to read on demand. The manifest lives outside the
+mounted worktree, so it cannot be committed. The probe is best-effort: a missing
+`udevadm`, a failed lookup, or a partial record leaves the description in place
+and never fails the turn; the path availability check remains the only hard
+failure. An environment with no devices gets no advertisement, and a device the
+environment does not list is never advertised.
+
+The advertisement names only what the environment exposes. Physical context that
+USB enumeration cannot observe - attached sensors, a display, the pin map, and
+the device protocol - stays with the repository's own documentation; the turn
+instruction points the agent there rather than the orchestrator inventing it.
 
 Before each containerized turn the orchestrator refreshes the image according to
 its `pull` policy, which defaults to `always`, so a mutable tag such as `latest`
@@ -339,6 +362,10 @@ repositories:
     baseBranch: develop
     environment:
       image: ghcr.io/acme/agent-java:latest
+      devices:
+        - path: /dev/qtpy2
+          description: Adafruit QT Py ESP32-S2; e-ink display and sensors wired to it
+        - /dev/jtum120
 limits:
   maxSteps: 200
   maxTokens: 200000

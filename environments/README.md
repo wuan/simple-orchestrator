@@ -245,7 +245,8 @@ repositories:
     environment:
       image: ghcr.io/wuan/simple-orchestrator/platformio
       devices:
-        - /dev/qtpy2
+        - path: /dev/qtpy2
+          description: Adafruit QT Py ESP32-S2; e-ink display and sensors wired to it
         - /dev/jtum120
       groups:
         - dialout
@@ -262,6 +263,22 @@ path fails the turn naming the configured path. The check runs every turn, so a
 stable name follows a device replugged between turns; Docker resolves the symlink
 when it creates the container, which is why the turn can open `/dev/qtpy2` even
 though the host's link points at a transient `/dev/ttyACM*`.
+
+A configured device entry can be a bare path or a `path`/`description` mapping.
+The description is a short hint the turn sees, such as the board model or what
+is wired to it. At turn start the orchestrator probes each configured path on the
+host with `udevadm` for vendor/product ids, model, serial, subsystem, and
+devlinks, then the turn instruction advertises each exposed device with its
+description and detected identity. The full inventory is written to
+`/tmp/orchestrator-hardware.json` inside the container, outside the mounted
+worktree, and the instruction names that path so the agent reads detail only
+when its task touches hardware. The probe is best-effort, so a missing `udevadm`
+or a partial record still leaves the path and description advertised. Sensors,
+displays, pin maps, and protocols cannot be discovered over USB; that physical
+context stays in the repository's own documentation, which the instruction
+points at. With verbose logging enabled, the orchestrator also logs the resolved
+inventory so an operator can confirm a stable name resolved to the expected USB
+identity.
 
 A device that re-enumerates **during** a turn is fixed when the container is
 created. The hardware spike found the ESP32-S2's ROM bootloader re-enumerating

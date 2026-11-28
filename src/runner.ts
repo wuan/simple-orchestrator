@@ -1,7 +1,14 @@
+import { writeFile } from 'node:fs/promises';
 import process from 'node:process';
 import { pathToFileURL } from 'node:url';
 
 import type { TurnSkill, TurnUsage } from './domain/types.js';
+import {
+  HARDWARE_MANIFEST_PATH,
+  type DeviceIdentity,
+  type HardwareDevice,
+  type HardwareManifest,
+} from './runtime/hardware.js';
 import type { OpenCodeSkillRequest, OpenCodeSkillResult } from './runtime/opencode/client.js';
 import { EmbeddedOpenCodeClient } from './runtime/opencode/sdk-client.js';
 import { createEmbeddedHostFactory, parseModelRef } from './runtime/opencode/sdk-host.js';
@@ -20,6 +27,8 @@ export interface RunnerRequest {
   apiEndpoint?: string;
   /** Environment variable the provider reads its API key from. */
   apiKeyEnv?: string;
+  /** Hardware inventory to write outside the worktree before prompting. */
+  hardware?: HardwareManifest;
   /** The orchestrator's `@opencode/sdk` version the image must match. */
   expectedSdkVersion?: string;
 }
@@ -48,6 +57,9 @@ export interface RunnerClient {
 
 export type RunnerClientFactory = (options: RunnerClientOptions) => RunnerClient;
 
+/** Writes the serialized hardware manifest; injectable so tests avoid `/tmp`. */
+export type HardwareManifestWriter = (path: string, contents: string) => Promise<void>;
+
 export interface RunnerDeps {
   /** Writes one event line to the host. */
   write: (event: RunnerEvent) => void;
@@ -55,10 +67,80 @@ export interface RunnerDeps {
   createClient: RunnerClientFactory;
   /** Resolves the image's installed `@opencode/sdk` version. */
   sdkVersion: () => string;
+  /** Writes the hardware manifest; defaults to the real container path. */
+  writeManifest?: HardwareManifestWriter;
+}
+
+/** The default manifest writer: write the JSON document to the shared path. */
+async function defaultManifestWriter(path: string, contents: string): Promise<void> {
+  await writeFile(path, contents, 'utf8');
 }
 
 function message(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+function asRecord(value: unknown, context: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new Error(`${context} must be a JSON object`);
+  }
+  return value as Record<string, unknown>;
+}
+
+/** Read the optional detected identity on a manifest device. */
+function parseIdentity(raw: unknown, context: string): DeviceIdentity | undefined {
+  if (raw === undefined) return undefined;
+  const record = asRecord(raw, context);
+  const identity: DeviceIdentity = {};
+  for (const key of ['vendorId', 'productId', 'model', 'serial', 'subsystem'] as const) {
+    const value = record[key];
+    if (value === undefined) continue;
+    if (typeof value !== 'string' || value === '') {
+      throw new Error(`${context}.${key} must be a non-empty string when provided`);
+    }
+    identity[key] = value;
+  }
+  const devlinks = record['devlinks'];
+  if (devlinks !== undefined) {
+    if (!Array.isArray(devlinks) || devlinks.some((link) => typeof link !== 'string')) {
+      throw new Error(`${context}.devlinks must be a list of strings when provided`);
+    }
+    identity.devlinks = devlinks as string[];
+  }
+  return Object.keys(identity).length === 0 ? undefined : identity;
+}
+
+/** Read one manifest device, rejecting a missing path or a malformed field. */
+function parseHardwareDevice(raw: unknown, index: number): HardwareDevice {
+  const context = `the runner request 'hardware.devices[${index}]'`;
+  const record = asRecord(raw, context);
+  const path = record['path'];
+  if (typeof path !== 'string' || path === '' || !path.startsWith('/')) {
+    throw new Error(`${context}.path must be an absolute path`);
+  }
+  const description = record['description'];
+  if (description !== undefined) {
+    if (typeof description !== 'string' || description === '') {
+      throw new Error(`${context}.description must be a non-empty string when provided`);
+    }
+  }
+  const identity = parseIdentity(record['identity'], `${context}.identity`);
+  return {
+    path,
+    ...(description === undefined ? {} : { description }),
+    ...(identity === undefined ? {} : { identity }),
+  };
+}
+
+/** Validate the optional per-turn hardware manifest from the host. */
+function parseHardware(raw: unknown): HardwareManifest | undefined {
+  if (raw === undefined) return undefined;
+  const record = asRecord(raw, "the runner request 'hardware'");
+  const devices = record['devices'];
+  if (!Array.isArray(devices)) {
+    throw new Error("the runner request 'hardware.devices' must be a list");
+  }
+  return { devices: devices.map((device, index) => parseHardwareDevice(device, index)) };
 }
 
 /** Validate the host's JSON request, rejecting anything malformed. */
@@ -93,6 +175,7 @@ export function parseRunnerRequest(input: string): RunnerRequest {
   const database = optional('database');
   const apiEndpoint = optional('apiEndpoint');
   const apiKeyEnv = optional('apiKeyEnv');
+  const hardware = parseHardware(record['hardware']);
   const expectedSdkVersion = optional('expectedSdkVersion');
   return {
     skill,
@@ -103,6 +186,7 @@ export function parseRunnerRequest(input: string): RunnerRequest {
     ...(database === undefined ? {} : { database }),
     ...(apiEndpoint === undefined ? {} : { apiEndpoint }),
     ...(apiKeyEnv === undefined ? {} : { apiKeyEnv }),
+    ...(hardware === undefined ? {} : { hardware }),
     ...(expectedSdkVersion === undefined ? {} : { expectedSdkVersion }),
   };
 }
@@ -137,6 +221,21 @@ export async function runRunner(input: string, deps: RunnerDeps): Promise<number
     return 1;
   }
   deps.write({ type: 'ready', sdkVersion });
+
+  if (request.hardware !== undefined) {
+    try {
+      await (deps.writeManifest ?? defaultManifestWriter)(
+        HARDWARE_MANIFEST_PATH,
+        `${JSON.stringify(request.hardware, null, 2)}\n`,
+      );
+    } catch (error) {
+      deps.write({
+        type: 'error',
+        error: `could not write the hardware manifest: ${message(error)}`,
+      });
+      return 1;
+    }
+  }
 
   const client = deps.createClient({
     ...(request.model === undefined ? {} : { model: request.model }),

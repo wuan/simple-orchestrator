@@ -1,4 +1,13 @@
 import type { TurnContext, TurnResult } from '../../domain/types.js';
+import {
+  buildHardwareManifest,
+  describeHardwareDevice,
+  HARDWARE_MANIFEST_PATH,
+  udevDeviceIdentityProbe,
+  type DeviceIdentityProbe,
+  type HardwareDevice,
+  type HardwareManifest,
+} from '../hardware.js';
 import type { AgentRuntime, TurnRequest } from '../types.js';
 import type { OpenCodeClient } from './client.js';
 
@@ -9,12 +18,31 @@ const SKILL_INSTRUCTIONS: Record<TurnContext['skill'], string> = {
     'Implement the change tasks, then run `openspec archive` and include the archived change, the updated code, and the updated specs in your commit.',
 };
 
+/** One advertised device line, with its configured hint and detected identity. */
+function hardwareDeviceLine(device: HardwareDevice): string {
+  const detail = describeHardwareDevice(device);
+  return detail === '' ? `- ${device.path}` : `- ${device.path} - ${detail}`;
+}
+
+/**
+ * The compact hardware advertisement. Only the devices this turn's environment
+ * exposes appear; full detail stays in the manifest the instruction names.
+ */
+function hardwareLines(manifest: HardwareManifest): string[] {
+  return [
+    'Hardware exposed to this turn:',
+    ...manifest.devices.map(hardwareDeviceLine),
+    `Full detail: ${HARDWARE_MANIFEST_PATH}`,
+    'A turn holds these devices until it ends. Sensors, displays, pin maps, and protocols are documented by the repository; consult it for physical context.',
+  ];
+}
+
 /**
  * Compose the instruction handed to the agent for a turn. The agent is told to
  * commit only to the workflow branch - the orchestrator publishes it - and to
  * report a structured outcome.
  */
-export function buildSkillPrompt(context: TurnContext): string {
+export function buildSkillPrompt(context: TurnContext, manifest?: HardwareManifest): string {
   const changeLine =
     context.changeName === undefined ? '' : ` for change \`${context.changeName}\``;
   const feedback =
@@ -37,6 +65,9 @@ export function buildSkillPrompt(context: TurnContext): string {
   return [
     `You are running the OpenSpec \`${context.skill}\` workflow${changeLine} on branch \`${context.branch}\`.`,
     SKILL_INSTRUCTIONS[context.skill],
+    ...(manifest === undefined || manifest.devices.length === 0
+      ? []
+      : ['', ...hardwareLines(manifest)]),
     '',
     'New reviewer feedback to address:',
     feedback,
@@ -48,14 +79,29 @@ export function buildSkillPrompt(context: TurnContext): string {
   ].join('\n');
 }
 
+export interface OpenCodeRuntimeOptions {
+  /** Probes a configured device's host identity; defaults to `udevadm`. */
+  probe?: DeviceIdentityProbe;
+}
+
 /** Runs OpenSpec skills through an OpenCode client. */
 export class OpenCodeRuntime implements AgentRuntime {
   readonly id = 'opencode';
 
-  constructor(private readonly client: OpenCodeClient) {}
+  private readonly probe: DeviceIdentityProbe;
+
+  constructor(
+    private readonly client: OpenCodeClient,
+    options: OpenCodeRuntimeOptions = {},
+  ) {
+    this.probe = options.probe ?? udevDeviceIdentityProbe();
+  }
 
   async run(request: TurnRequest): Promise<TurnResult> {
-    const prompt = buildSkillPrompt(request.context);
+    const devices = request.environment?.devices ?? [];
+    const hardware =
+      devices.length === 0 ? undefined : await buildHardwareManifest(devices, this.probe);
+    const prompt = buildSkillPrompt(request.context, hardware);
     const result = await this.client.runSkill({
       skill: request.context.skill,
       workspace: request.workspace,
@@ -63,6 +109,7 @@ export class OpenCodeRuntime implements AgentRuntime {
       repo: request.context.repo,
       store: request.store,
       environment: request.environment,
+      ...(hardware === undefined ? {} : { hardware }),
       signal: request.signal,
       onUsage: request.onUsage,
     });

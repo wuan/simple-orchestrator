@@ -1,7 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
-import { DEFAULT_LIMITS } from '../../config/types.js';
+import { DEFAULT_LIMITS, type EnvironmentSpec } from '../../config/types.js';
 import type { TurnContext, TurnSkill } from '../../domain/types.js';
+import type { HardwareManifest } from '../hardware.js';
 import type { TurnRequest } from '../types.js';
 import type { OpenCodeClient, OpenCodeSkillRequest, OpenCodeSkillResult } from './client.js';
 import { buildSkillPrompt, OpenCodeRuntime } from './opencode-runtime.js';
@@ -32,9 +33,22 @@ function context(skill: TurnSkill, pendingBaseIntegration?: boolean): TurnContex
   };
 }
 
-function request(skill: TurnSkill): TurnRequest {
-  return { context: context(skill), workspace: '/workspace', limits: DEFAULT_LIMITS };
+function request(skill: TurnSkill, environment?: EnvironmentSpec): TurnRequest {
+  return {
+    context: context(skill),
+    workspace: '/workspace',
+    limits: DEFAULT_LIMITS,
+    ...(environment === undefined ? {} : { environment }),
+  };
 }
+
+const HARDWARE_ENVIRONMENT: EnvironmentSpec = {
+  image: 'ghcr.io/acme/agent-platformio:latest',
+  devices: [
+    { path: '/dev/qtpy2', description: 'Adafruit QT Py ESP32-S2' },
+    { path: '/dev/jtum120' },
+  ],
+};
 
 const RESULTS: Record<TurnSkill, OpenCodeSkillResult> = {
   propose: {
@@ -82,6 +96,44 @@ describe('buildSkillPrompt', () => {
     );
     expect(buildSkillPrompt(context('propose', false))).not.toContain('unresolved merge');
   });
+
+  it('advertises exposed hardware and names the manifest path', () => {
+    const manifest: HardwareManifest = {
+      devices: [
+        {
+          path: '/dev/qtpy2',
+          description: 'Adafruit QT Py ESP32-S2',
+          identity: {
+            vendorId: '239a',
+            productId: '8111',
+            model: 'QT_Py_ESP32-S2',
+            serial: 'ABC',
+          },
+        },
+        {
+          path: '/dev/jtum120',
+          identity: { vendorId: '2e3c', productId: '5558', model: 'JT-UM120 meter' },
+        },
+      ],
+    };
+
+    const prompt = buildSkillPrompt(context('apply'), manifest);
+
+    expect(prompt).toContain('Hardware exposed to this turn:');
+    expect(prompt).toContain(
+      '- /dev/qtpy2 - Adafruit QT Py ESP32-S2 (USB 239a:8111, QT_Py_ESP32-S2, serial ABC)',
+    );
+    expect(prompt).toContain('- /dev/jtum120 - USB 2e3c:5558, JT-UM120 meter');
+    expect(prompt).toContain('Full detail: /tmp/orchestrator-hardware.json');
+    expect(prompt).toContain('documented by the repository');
+  });
+
+  it('leaves the instruction unchanged when no devices are exposed', () => {
+    expect(buildSkillPrompt(context('apply'), { devices: [] })).toBe(
+      buildSkillPrompt(context('apply')),
+    );
+    expect(buildSkillPrompt(context('apply'))).not.toContain('Hardware exposed to this turn');
+  });
 });
 
 describe('OpenCodeRuntime', () => {
@@ -103,5 +155,61 @@ describe('OpenCodeRuntime', () => {
     expect(result.skill).toBe('apply');
     expect(result.commits).toEqual(['c2', 'c3']);
     expect(client.calls[0]?.skill).toBe('apply');
+  });
+
+  it('builds the hardware manifest and hands it to the client', async () => {
+    const client = new ScriptedClient(RESULTS);
+    const probe = async (path: string) =>
+      path === '/dev/qtpy2'
+        ? { vendorId: '239a', productId: '8111', model: 'QT_Py_ESP32-S2' }
+        : { vendorId: '2e3c', productId: '5558', model: 'JT-UM120 meter' };
+
+    await new OpenCodeRuntime(client, { probe }).run(request('apply', HARDWARE_ENVIRONMENT));
+
+    const call = client.calls[0];
+    expect(call?.hardware).toEqual({
+      devices: [
+        {
+          path: '/dev/qtpy2',
+          description: 'Adafruit QT Py ESP32-S2',
+          identity: { vendorId: '239a', productId: '8111', model: 'QT_Py_ESP32-S2' },
+        },
+        {
+          path: '/dev/jtum120',
+          identity: { vendorId: '2e3c', productId: '5558', model: 'JT-UM120 meter' },
+        },
+      ],
+    });
+    expect(call?.prompt).toContain('Hardware exposed to this turn:');
+    expect(call?.prompt).toContain('Full detail: /tmp/orchestrator-hardware.json');
+  });
+
+  it('leaves an environment with no devices unadvertised', async () => {
+    const client = new ScriptedClient(RESULTS);
+
+    await new OpenCodeRuntime(client).run(
+      request('apply', { image: 'ghcr.io/acme/agent-java:latest' }),
+    );
+
+    const call = client.calls[0];
+    expect(call?.hardware).toBeUndefined();
+    expect(call?.prompt).not.toContain('Hardware exposed to this turn');
+  });
+
+  it('does not advertise an ambient host device the environment omits', async () => {
+    const client = new ScriptedClient(RESULTS);
+    const probe = async (path: string) =>
+      path === '/dev/ambient' ? { vendorId: 'ffff', productId: '0001' } : { vendorId: '239a' };
+
+    await new OpenCodeRuntime(client, { probe }).run(
+      request('apply', {
+        image: 'ghcr.io/acme/agent-platformio:latest',
+        devices: [{ path: '/dev/qtpy2' }],
+      }),
+    );
+
+    const call = client.calls[0];
+    expect(call?.hardware?.devices.map((device) => device.path)).toEqual(['/dev/qtpy2']);
+    expect(call?.prompt).not.toContain('/dev/ambient');
   });
 });

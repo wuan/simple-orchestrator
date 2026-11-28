@@ -428,8 +428,74 @@ ${MINIMAL}    environment:
         - dialout
         - 995
 `);
-      expect(config.repositories[0]?.environment?.devices).toEqual(['/dev/qtpy2', '/dev/jtum120']);
+      expect(config.repositories[0]?.environment?.devices).toEqual([
+        { path: '/dev/qtpy2' },
+        { path: '/dev/jtum120' },
+      ]);
       expect(config.repositories[0]?.environment?.groups).toEqual(['dialout', 995]);
+    });
+
+    it('parses a device entry with a description', () => {
+      const config = parseConfig(`
+${MINIMAL}    environment:
+      image: ghcr.io/wuan/simple-orchestrator/platformio
+      devices:
+        - path: /dev/qtpy2
+          description: Adafruit QT Py ESP32-S2; e-ink display and sensors wired to it
+        - /dev/jtum120
+`);
+      expect(config.repositories[0]?.environment?.devices).toEqual([
+        {
+          path: '/dev/qtpy2',
+          description: 'Adafruit QT Py ESP32-S2; e-ink display and sensors wired to it',
+        },
+        { path: '/dev/jtum120' },
+      ]);
+    });
+
+    it('parses a device mapping without a description', () => {
+      const config = parseConfig(`
+${MINIMAL}    environment:
+      image: node:24
+      devices:
+        - path: /dev/qtpy2
+`);
+      expect(config.repositories[0]?.environment?.devices).toEqual([{ path: '/dev/qtpy2' }]);
+    });
+
+    it('rejects a device mapping without a path', () => {
+      const bad = `
+${MINIMAL}    environment:
+      image: node:24
+      devices:
+        - description: no path here
+`;
+      expect(() => parseConfig(bad)).toThrowError(/devices\[0\].*path/);
+    });
+
+    it('rejects an empty or non-string device description', () => {
+      for (const description of ["''", '42']) {
+        const bad = `
+${MINIMAL}    environment:
+      image: node:24
+      devices:
+        - path: /dev/qtpy2
+          description: ${description}
+`;
+        expect(() => parseConfig(bad)).toThrowError(/devices\[0\].*description/);
+      }
+    });
+
+    it('rejects a device entry that is neither a path nor a mapping', () => {
+      for (const entry of ['42', '[a, b]', 'true']) {
+        const bad = `
+${MINIMAL}    environment:
+      image: node:24
+      devices:
+        - ${entry}
+`;
+        expect(() => parseConfig(bad)).toThrowError(/devices\[0\]/);
+      }
     });
 
     it('parses the documented PlatformIO hardware example', () => {
@@ -454,7 +520,7 @@ repositories:
 `);
       expect(config.repositories[0]?.environment).toMatchObject({
         image: 'ghcr.io/wuan/simple-orchestrator/platformio',
-        devices: ['/dev/qtpy2', '/dev/jtum120'],
+        devices: [{ path: '/dev/qtpy2' }, { path: '/dev/jtum120' }],
         groups: ['dialout'],
         env: ['LLM_API_KEY'],
         caches: [{ name: 'platformio', path: '/tmp/.platformio' }],
@@ -641,9 +707,12 @@ repositories:
         - /dev/jtum120
 `);
       const [inherited, overridden] = config.repositories;
-      expect(inherited?.environment?.devices).toEqual(['/dev/default-board']);
+      expect(inherited?.environment?.devices).toEqual([{ path: '/dev/default-board' }]);
       expect(inherited?.environment?.groups).toEqual(['dialout']);
-      expect(overridden?.environment?.devices).toEqual(['/dev/qtpy2', '/dev/jtum120']);
+      expect(overridden?.environment?.devices).toEqual([
+        { path: '/dev/qtpy2' },
+        { path: '/dev/jtum120' },
+      ]);
       expect(overridden?.environment?.groups).toEqual(['dialout']);
     });
 

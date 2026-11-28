@@ -19,6 +19,10 @@ repositories:
     baseBranch: develop
     environment:
       image: ghcr.io/acme/agent-java:latest
+      devices:
+        - path: /dev/qtpy2
+          description: Adafruit QT Py ESP32-S2; e-ink display and sensors wired to it
+        - /dev/jtum120
       caches:
         - name: gradle
           path: /home/agent/.gradle

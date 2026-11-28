@@ -14,6 +14,7 @@ import {
   DEFAULT_STATUS,
   DEFAULT_WORKSPACE_ROOT,
   type AgentConfig,
+  type DeviceSpec,
   type EnvironmentPull,
   type EnvironmentSpec,
   type LabelConfig,
@@ -160,6 +161,46 @@ function optionalEnvironmentPull(
 }
 
 /**
+ * Read one `environment.devices` entry: either the existing bare absolute path
+ * or a mapping with a `path` and an optional non-empty `description`. Both
+ * forms normalize to {@link DeviceSpec}, so the consumers see one shape.
+ */
+function parseDeviceEntry(
+  value: unknown,
+  index: number,
+  context: string,
+  repo?: string,
+): DeviceSpec {
+  const prefix = `${context}: 'devices[${index}]'`;
+  if (typeof value === 'string') {
+    if (value.trim() === '') {
+      throw new ConfigError(`${prefix} must be a non-empty string`, repo);
+    }
+    if (!value.startsWith('/')) {
+      throw new ConfigError(`${prefix} must be an absolute path`, repo);
+    }
+    return { path: value };
+  }
+  if (typeof value !== 'object' || value === null || Array.isArray(value)) {
+    throw new ConfigError(`${prefix} must be an absolute path or a mapping with a 'path'`, repo);
+  }
+  const record = value as Record<string, unknown>;
+  const path = record['path'];
+  if (typeof path !== 'string' || path.trim() === '') {
+    throw new ConfigError(`${prefix}.path must be a non-empty string`, repo);
+  }
+  if (!path.startsWith('/')) {
+    throw new ConfigError(`${prefix}.path must be an absolute path`, repo);
+  }
+  const description = record['description'];
+  if (description === undefined) return { path };
+  if (typeof description !== 'string' || description.trim() === '') {
+    throw new ConfigError(`${prefix}.description must be a non-empty string when provided`, repo);
+  }
+  return { path, description };
+}
+
+/**
  * Read the environment fields actually present, leaving the rest unset so a
  * partial `defaults.environment` can supply the remainder. Only `image` is
  * checked for presence after the entry and defaults have merged.
@@ -198,17 +239,14 @@ function parseEnvironmentValues(
   const devices = record['devices'];
   if (devices !== undefined) {
     if (!Array.isArray(devices)) {
-      throw new ConfigError(`${context}: 'devices' must be a list of absolute paths`, repo);
+      throw new ConfigError(
+        `${context}: 'devices' must be a list of absolute paths or mappings`,
+        repo,
+      );
     }
-    environment.devices = devices.map((value, index) => {
-      if (typeof value !== 'string' || value.trim() === '') {
-        throw new ConfigError(`${context}: 'devices[${index}]' must be a non-empty string`, repo);
-      }
-      if (!value.startsWith('/')) {
-        throw new ConfigError(`${context}: 'devices[${index}]' must be an absolute path`, repo);
-      }
-      return value;
-    });
+    environment.devices = devices.map((value, index) =>
+      parseDeviceEntry(value, index, context, repo),
+    );
   }
 
   const groups = record['groups'];

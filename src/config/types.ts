@@ -44,6 +44,18 @@ export interface EnvironmentGitIdentity {
 export type EnvironmentPull = 'always' | 'missing' | 'never';
 
 /**
+ * An absolute host device path exposed to a turn, plus an optional operator
+ * hint describing what the device is. The description travels with the
+ * exposure so it cannot drift from the configured path list.
+ */
+export interface DeviceSpec {
+  /** Absolute host path exposed to the container at the same path. */
+  path: string;
+  /** Short hardware hint advertised to the turn alongside the device. */
+  description?: string;
+}
+
+/**
  * A per-repository execution environment: a container image the turn runs in,
  * so an agent can use a toolchain (Android, JDK, Rust, ...) the host does not
  * carry. Only `image` is required; the rest default to a documented policy.
@@ -58,11 +70,12 @@ export interface EnvironmentSpec {
   /** Names of the orchestrator's environment variables passed into the container. */
   env?: string[];
   /**
-   * Absolute host device paths exposed to the container at the same path, for a
-   * turn that drives live hardware. Omitted means no extra devices beyond the
-   * runtime's default isolated set.
+   * Absolute host devices exposed to the container at the same path, for a turn
+   * that drives live hardware. A bare path or a `{ path, description }` mapping
+   * is accepted; omitted means no extra devices beyond the runtime's default
+   * isolated set.
    */
-  devices?: string[];
+  devices?: DeviceSpec[];
   /**
    * Supplementary groups the container process joins so its non-root user can
    * open a configured device. Names are resolved to the host's gid; a numeric

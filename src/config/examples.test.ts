@@ -37,6 +37,14 @@ describe('documented example config', () => {
     expect(override?.environment?.caches).toEqual([
       { name: 'gradle', path: '/home/agent/.gradle' },
     ]);
+    // A device entry carries an operator hint; a bare path stays valid.
+    expect(override?.environment?.devices).toEqual([
+      {
+        path: '/dev/qtpy2',
+        description: 'Adafruit QT Py ESP32-S2; e-ink display and sensors wired to it',
+      },
+      { path: '/dev/jtum120' },
+    ]);
     expect(override?.environment?.gitIdentity).toEqual({
       name: 'OpenSpec Agent',
       email: 'agent@example.com',

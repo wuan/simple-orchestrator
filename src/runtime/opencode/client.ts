@@ -1,5 +1,6 @@
 import type { EnvironmentSpec } from '../../config/types.js';
 import type { RepoRef, TurnSkill, TurnUsage } from '../../domain/types.js';
+import type { HardwareManifest } from '../hardware.js';
 
 export interface OpenCodeSkillRequest {
   skill: TurnSkill;
@@ -11,6 +12,8 @@ export interface OpenCodeSkillRequest {
   store?: string;
   /** Container environment for the turn; in-process when omitted. */
   environment?: EnvironmentSpec;
+  /** Per-turn hardware inventory the runner writes outside the worktree. */
+  hardware?: HardwareManifest;
   signal?: AbortSignal;
   onUsage?: (usage: Partial<TurnUsage>) => void;
 }

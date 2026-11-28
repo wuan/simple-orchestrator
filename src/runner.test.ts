@@ -47,6 +47,7 @@ interface Harness {
   events: RunnerEvent[];
   options: RunnerClientOptions[];
   client: FakeClient;
+  manifests: { path: string; contents: string }[];
 }
 
 function harness(
@@ -55,7 +56,8 @@ function harness(
   const events: RunnerEvent[] = [];
   const options: RunnerClientOptions[] = [];
   const client = new FakeClient(behavior);
-  return { events, options, client };
+  const manifests: { path: string; contents: string }[] = [];
+  return { events, options, client, manifests };
 }
 
 function run(h: Harness, input: string, sdkVersion = '2.0.31'): Promise<number> {
@@ -66,6 +68,9 @@ function run(h: Harness, input: string, sdkVersion = '2.0.31'): Promise<number> 
       return h.client;
     },
     sdkVersion: () => sdkVersion,
+    writeManifest: async (path, contents) => {
+      h.manifests.push({ path, contents });
+    },
   });
 }
 
@@ -157,6 +162,48 @@ describe('runRunner', () => {
     expect(h.events.at(-1)).toMatchObject({ type: 'error' });
     expect((h.events.at(-1) as { error: string }).error).toContain('does not match');
     expect(h.options).toHaveLength(0);
+  });
+
+  it('writes the hardware manifest to the shared path before prompting', async () => {
+    const hardware = {
+      devices: [
+        {
+          path: '/dev/qtpy2',
+          description: 'Adafruit QT Py ESP32-S2',
+          identity: { vendorId: '239a', productId: '8111', model: 'QT_Py_ESP32-S2' },
+        },
+        { path: '/dev/jtum120' },
+      ],
+    };
+    const h = harness(async () => RESULT);
+
+    const code = await run(h, request({ hardware }));
+
+    expect(code).toBe(0);
+    expect(h.manifests).toHaveLength(1);
+    expect(h.manifests[0]?.path).toBe('/tmp/orchestrator-hardware.json');
+    expect(JSON.parse(h.manifests[0]?.contents ?? '')).toEqual(hardware);
+    expect(h.client.requests[0]?.prompt).toBe('do the thing');
+  });
+
+  it('rejects a malformed hardware manifest without creating a client', async () => {
+    const malformed = [
+      { devices: [{ description: 'no path' }] },
+      { devices: [{ path: 'relative' }] },
+      { devices: [{ path: '/dev/qtpy2', description: '' }] },
+      { devices: 'not-a-list' },
+      { devices: [{ path: '/dev/qtpy2', identity: { vendorId: 5 } }] },
+    ];
+
+    for (const hardware of malformed) {
+      const h = harness(async () => RESULT);
+      const code = await run(h, request({ hardware }));
+
+      expect(code).toBe(1);
+      expect(h.events.at(-1)).toMatchObject({ type: 'error' });
+      expect(h.options).toHaveLength(0);
+      expect(h.manifests).toHaveLength(0);
+    }
   });
 
   it('reports a terminal error when the SDK cannot be resolved', async () => {
