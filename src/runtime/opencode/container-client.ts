@@ -8,6 +8,7 @@ import {
 } from '../../config/types.js';
 import type { RepoRef, TurnUsage } from '../../domain/types.js';
 import { NodeContainerRunner, type ContainerRunner } from '../../system/commands.js';
+import { assertDeviceAvailable, hostGroupResolver, type GroupResolver } from '../hardware.js';
 import { buildCachePrepareArgs, buildDockerRunArgs, type DockerCacheMount } from '../sandbox.js';
 import type { OpenCodeClient, OpenCodeSkillRequest, OpenCodeSkillResult } from './client.js';
 import { resolveSdkVersion } from './sdk-version.js';
@@ -52,6 +53,8 @@ export interface ContainerOpenCodeClientOptions {
   user?: string;
   /** Writable home directory inside the container; defaults to `/tmp`. */
   home?: string;
+  /** Resolve a host group name to its gid; defaults to `getent group`. */
+  resolveGroup?: GroupResolver;
   logger?: (message: string) => void;
 }
 
@@ -148,6 +151,7 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
   private readonly sdkVersion: string;
   private readonly user: string | undefined;
   private readonly home: string | undefined;
+  private readonly resolveGroup: GroupResolver;
   private readonly logger: (message: string) => void;
 
   /** Cache volumes already prepared (chowned for the turn user) this process. */
@@ -166,17 +170,23 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
     this.sdkVersion = options.sdkVersion ?? resolveSdkVersion();
     this.user = options.user;
     this.home = options.home;
+    this.resolveGroup = options.resolveGroup ?? hostGroupResolver();
     this.logger = options.logger ?? (() => {});
   }
 
-  runSkill(request: OpenCodeSkillRequest): Promise<OpenCodeSkillResult> {
+  async runSkill(request: OpenCodeSkillRequest): Promise<OpenCodeSkillResult> {
     const environment = request.environment;
     if (environment === undefined) {
-      return Promise.reject(new Error('a container turn requires a configured environment'));
+      throw new Error('a container turn requires a configured environment');
     }
     if (request.store === undefined) {
-      return Promise.reject(new Error('a container turn requires the repository store path'));
+      throw new Error('a container turn requires the repository store path');
     }
+    const devices = environment.devices ?? [];
+    // Check the hardware before doing any cache work, so a missing device fails
+    // the turn quickly and names the path rather than starting without it.
+    await this.checkDevices(devices);
+    const groups = await this.resolveGroups(environment.groups ?? []);
     // The configured provider variable crosses with the container even when the
     // environment does not name it, without repeating it when it already does.
     const envNames = [...(environment.env ?? [])];
@@ -191,35 +201,64 @@ export class ContainerOpenCodeClient implements OpenCodeClient {
       environment.caches === undefined || request.repo === undefined
         ? undefined
         : scopeCacheVolumes(request.repo, environment.caches);
-    return this.prepareCaches(image, caches).then(() => {
-      const args = buildDockerRunArgs({
-        image,
-        workspace: request.workspace,
-        store,
-        runner: this.runnerDir,
-        runnerMount: this.runnerMount,
-        command: ['node', join(this.runnerMount, 'runner.js')],
-        ...(environment.network === undefined ? {} : { network: environment.network }),
-        pull: resolveEnvironmentPull(environment),
-        ...(this.user === undefined ? {} : { user: this.user }),
-        ...(this.home === undefined ? {} : { home: this.home }),
-        ...(envNames.length === 0 ? {} : { env: envNames }),
-        ...(environment.gitIdentity === undefined ? {} : { gitIdentity: environment.gitIdentity }),
-        ...(caches === undefined ? {} : { caches }),
-      });
-      const payload = JSON.stringify({
-        skill: request.skill,
-        prompt: request.prompt,
-        workspace: request.workspace,
-        ...(this.model === undefined ? {} : { model: this.model }),
-        ...(this.agent === undefined ? {} : { agent: this.agent }),
-        ...(this.database === undefined ? {} : { database: this.database }),
-        ...(this.apiEndpoint === undefined ? {} : { apiEndpoint: this.apiEndpoint }),
-        ...(this.apiKeyEnv === undefined ? {} : { apiKeyEnv: this.apiKeyEnv }),
-        expectedSdkVersion: this.sdkVersion,
-      });
-      return this.runTurn(request, args, payload);
+    await this.prepareCaches(image, caches);
+    const args = buildDockerRunArgs({
+      image,
+      workspace: request.workspace,
+      store,
+      runner: this.runnerDir,
+      runnerMount: this.runnerMount,
+      command: ['node', join(this.runnerMount, 'runner.js')],
+      ...(environment.network === undefined ? {} : { network: environment.network }),
+      pull: resolveEnvironmentPull(environment),
+      ...(this.user === undefined ? {} : { user: this.user }),
+      ...(this.home === undefined ? {} : { home: this.home }),
+      ...(envNames.length === 0 ? {} : { env: envNames }),
+      ...(devices.length === 0 ? {} : { devices }),
+      ...(groups.length === 0 ? {} : { groups }),
+      ...(environment.gitIdentity === undefined ? {} : { gitIdentity: environment.gitIdentity }),
+      ...(caches === undefined ? {} : { caches }),
     });
+    const payload = JSON.stringify({
+      skill: request.skill,
+      prompt: request.prompt,
+      workspace: request.workspace,
+      ...(this.model === undefined ? {} : { model: this.model }),
+      ...(this.agent === undefined ? {} : { agent: this.agent }),
+      ...(this.database === undefined ? {} : { database: this.database }),
+      ...(this.apiEndpoint === undefined ? {} : { apiEndpoint: this.apiEndpoint }),
+      ...(this.apiKeyEnv === undefined ? {} : { apiKeyEnv: this.apiKeyEnv }),
+      expectedSdkVersion: this.sdkVersion,
+    });
+    return this.runTurn(request, args, payload);
+  }
+
+  /** Check every configured device path before the container starts. */
+  private async checkDevices(devices: string[]): Promise<void> {
+    for (const device of devices) {
+      await assertDeviceAvailable(device);
+    }
+  }
+
+  /**
+   * Resolve configured groups to numeric gids. Numbers pass through; names are
+   * resolved on the host so the container joins the host's group rather than a
+   * same-named group baked into the image. An unknown name fails the turn.
+   */
+  private async resolveGroups(groups: (string | number)[]): Promise<number[]> {
+    const resolved: number[] = [];
+    for (const group of groups) {
+      if (typeof group === 'number') {
+        resolved.push(group);
+        continue;
+      }
+      const gid = await this.resolveGroup(group);
+      if (gid === undefined) {
+        throw new Error(`the configured group '${group}' does not exist on the host`);
+      }
+      resolved.push(gid);
+    }
+    return resolved;
   }
 
   /**

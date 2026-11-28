@@ -166,8 +166,12 @@ ARG CLANG_FORMAT_VERSION=19.1.7
 ENV PLATFORMIO_CORE_DIR=/tmp/.platformio \
     PATH=/opt/platformio/bin:$PATH
 
+# usbutils provides lsusb so a turn can inspect the devices Docker exposed;
+# libudev1 and libusb-1.0-0 are the runtime libraries a hidapi-based client needs
+# to enumerate and open the meter's hidraw interface. Keep them in this flavour:
+# device access is configured per repository, not baked into every image.
 RUN apt-get update \
-  && apt-get install -y --no-install-recommends python3-venv lcov shellcheck \
+  && apt-get install -y --no-install-recommends python3-venv lcov shellcheck usbutils libudev1 libusb-1.0-0 \
   && rm -rf /var/lib/apt/lists/* \
   && python3 -m venv /opt/platformio \
   && /opt/platformio/bin/pip install --no-cache-dir \

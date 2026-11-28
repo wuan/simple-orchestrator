@@ -308,6 +308,10 @@ export interface DockerRunOptions {
   home?: string;
   /** Names of the orchestrator's environment variables passed into the container. */
   env?: string[];
+  /** Absolute host device paths exposed at the same path inside the container. */
+  devices?: string[];
+  /** Host group ids the container process joins as supplementary groups. */
+  groups?: number[];
   /** Named cache volumes reused across the repository's turns. */
   caches?: DockerCacheMount[];
   /** Git author/committer identity for commits made in the container. */
@@ -364,6 +368,14 @@ export function buildDockerRunArgs(options: DockerRunOptions): string[] {
   );
   for (const cache of options.caches ?? []) {
     args.push('--volume', `${cache.volume}:${cache.path}`);
+  }
+  // Devices are exposed at their configured path inside the container and stay
+  // read-write: flashing and the meter's protocol both send control messages.
+  for (const device of options.devices ?? []) {
+    args.push('--device', `${device}:${device}`);
+  }
+  for (const group of options.groups ?? []) {
+    args.push('--group-add', String(group));
   }
   args.push(options.image, ...options.command);
   return args;

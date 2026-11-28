@@ -186,6 +186,86 @@ repositories:
 `UV_LINK_MODE=copy` makes uv copy rather than hardlink from the cache volume
 into the bind-mounted worktree, which is normally a different filesystem.
 
+## Live-hardware USB devices
+
+A turn can drive attached USB hardware when its repository's `environment`
+names host device paths in `devices` and the groups that own them in `groups`
+(see [`docs/configuration.md`](../docs/configuration.md#device-access-for-live-hardware)).
+The orchestrator maps each path into the container with Docker's `--device` and
+runs the container process in the configured supplementary groups. It adds no
+privileged mode and mounts no host `/dev`; an environment that names no devices
+keeps Docker's default isolated device set. Direct device mapping is **Linux
+only**.
+
+### udev rules
+
+Give the board and the meter stable names and let the turn's non-root user open
+them. Create `/etc/udev/rules.d/99-simple-orchestrator-usb.rules`:
+
+```udev
+# The QT Py ESP32-S2 firmware CDC interface and ROM USB-Serial/JTAG interface
+# share one stable name because only one is present at a time.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="239a", ATTRS{idProduct}=="8111", SYMLINK+="qtpy2", GROUP="dialout", MODE="0660"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ATTRS{idProduct}=="1001", SYMLINK+="qtpy2", GROUP="dialout", MODE="0660"
+
+# The JT-UM120's measurement path is its HID interface, not its CDC port.
+SUBSYSTEM=="hidraw", ATTRS{idVendor}=="2e3c", ATTRS{idProduct}=="5558", SYMLINK+="jtum120", GROUP="dialout", MODE="0660"
+
+# Keep ModemManager off the ESP32 CDC ports so enumeration and flashing do not hang.
+SUBSYSTEM=="tty", ATTRS{idVendor}=="239a", ENV{ID_MM_DEVICE_IGNORE}="1"
+SUBSYSTEM=="tty", ATTRS{idVendor}=="303a", ENV{ID_MM_DEVICE_IGNORE}="1"
+```
+
+Reload the rules and trigger the device events:
+
+```bash
+sudo udevadm control --reload-rules
+sudo udevadm trigger --subsystem-match=tty --subsystem-match=hidraw
+```
+
+Use `GROUP`/`MODE` rather than `TAG+="uaccess"`: the host ACL applies to the
+logged-in user and does not cross into the container. `GROUP` plus the
+orchestrator's `--group-add` (from `environment.groups`) is what lets the
+non-root turn open the node.
+
+Point the repository at the PlatformIO flavour and the stable names:
+
+```yaml
+repositories:
+  - name: klimacontrol
+    environment:
+      image: ghcr.io/wuan/simple-orchestrator/platformio
+      devices:
+        - /dev/qtpy2
+        - /dev/jtum120
+      groups:
+        - dialout
+      env:
+        - LLM_API_KEY
+      caches:
+        - name: platformio
+          path: /tmp/.platformio
+```
+
+Each configured path is checked when a turn starts: it must be absolute, resolve
+through symlinks, and be a character device. A missing, dangling, or non-device
+path fails the turn naming the configured path. The check runs every turn, so a
+stable name follows a device replugged between turns; Docker resolves the symlink
+when it creates the container, which is why the turn can open `/dev/qtpy2` even
+though the host's link points at a transient `/dev/ttyACM*`.
+
+A device that re-enumerates **during** a turn is fixed when the container is
+created: the ESP32-S2's ROM bootloader may receive a different `ttyACM` minor
+mid-flash. That limitation is documented in the change that introduced device
+access; dynamic device-class exposure would be a separate change.
+
+### macOS and USB/IP
+
+Direct device access requires a Linux host. Docker Desktop on macOS runs
+containers in a VM without the host's device tree, so `--device` cannot reach a
+USB device attached to the Mac. Run the orchestrator on a Linux host, or forward
+the device over USB/IP and point `devices` at the forwarded node.
+
 ## Platforms
 
 A flavour is published for exactly the platforms its toolchain supports. The

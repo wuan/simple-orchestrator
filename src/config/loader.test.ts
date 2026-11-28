@@ -416,6 +416,112 @@ ${MINIMAL}    environment: node:24
 `;
       expect(() => parseConfig(bad)).toThrowError(/environment must be a mapping/);
     });
+
+    it('parses device paths and supplementary groups', () => {
+      const config = parseConfig(`
+${MINIMAL}    environment:
+      image: ghcr.io/wuan/simple-orchestrator/platformio
+      devices:
+        - /dev/qtpy2
+        - /dev/jtum120
+      groups:
+        - dialout
+        - 995
+`);
+      expect(config.repositories[0]?.environment?.devices).toEqual(['/dev/qtpy2', '/dev/jtum120']);
+      expect(config.repositories[0]?.environment?.groups).toEqual(['dialout', 995]);
+    });
+
+    it('parses the documented PlatformIO hardware example', () => {
+      const config = parseConfig(`
+repositories:
+  - name: klimacontrol
+    provider: github
+    owner: wuan
+    credential: env:GITHUB_TOKEN
+    environment:
+      image: ghcr.io/wuan/simple-orchestrator/platformio
+      devices:
+        - /dev/qtpy2
+        - /dev/jtum120
+      groups:
+        - dialout
+      env:
+        - LLM_API_KEY
+      caches:
+        - name: platformio
+          path: /tmp/.platformio
+`);
+      expect(config.repositories[0]?.environment).toMatchObject({
+        image: 'ghcr.io/wuan/simple-orchestrator/platformio',
+        devices: ['/dev/qtpy2', '/dev/jtum120'],
+        groups: ['dialout'],
+        env: ['LLM_API_KEY'],
+        caches: [{ name: 'platformio', path: '/tmp/.platformio' }],
+      });
+    });
+
+    it('rejects a devices field that is not a list', () => {
+      const bad = `
+${MINIMAL}    environment:
+      image: node:24
+      devices: /dev/qtpy2
+`;
+      expect(() => parseConfig(bad)).toThrowError(/devices.*list/);
+    });
+
+    it('rejects an empty or relative device path', () => {
+      for (const path of ["''", 'dev/qtpy2']) {
+        const bad = `
+${MINIMAL}    environment:
+      image: node:24
+      devices:
+        - ${path}
+`;
+        expect(() => parseConfig(bad)).toThrowError(/devices\[0\]/);
+      }
+    });
+
+    it('rejects a non-string device path', () => {
+      const bad = `
+${MINIMAL}    environment:
+      image: node:24
+      devices:
+        - 42
+`;
+      expect(() => parseConfig(bad)).toThrowError(/devices\[0\]/);
+    });
+
+    it('rejects a groups field that is not a list', () => {
+      const bad = `
+${MINIMAL}    environment:
+      image: node:24
+      groups: dialout
+`;
+      expect(() => parseConfig(bad)).toThrowError(/groups.*list/);
+    });
+
+    it('rejects an empty group', () => {
+      const bad = `
+${MINIMAL}    environment:
+      image: node:24
+      groups:
+        - ''
+`;
+      expect(() => parseConfig(bad)).toThrowError(/groups\[0\]/);
+    });
+
+    it('rejects a wrongly typed group entry', () => {
+      for (const entry of ['true', '-1', '1.5']) {
+        const bad = `
+${MINIMAL}    environment:
+      image: node:24
+      groups:
+        - ${entry}
+`;
+        expect(() => parseConfig(bad)).toThrowError(/groups\[0\]/);
+      }
+    });
   });
 
   describe('shared defaults', () => {
@@ -512,6 +618,33 @@ repositories:
         email: 'agent@example.com',
       });
       expect(gadget?.environment?.image).toBe('ghcr.io/acme/base:latest');
+    });
+
+    it('inherits device fields and takes each array wholesale from the layer that sets it', () => {
+      const config = parseConfig(`
+defaults:
+  provider: github
+  owner: acme
+  credential: env:GITHUB_TOKEN
+  environment:
+    image: ghcr.io/wuan/simple-orchestrator/platformio
+    devices:
+      - /dev/default-board
+    groups:
+      - dialout
+repositories:
+  - name: inherited
+  - name: overridden
+    environment:
+      devices:
+        - /dev/qtpy2
+        - /dev/jtum120
+`);
+      const [inherited, overridden] = config.repositories;
+      expect(inherited?.environment?.devices).toEqual(['/dev/default-board']);
+      expect(inherited?.environment?.groups).toEqual(['dialout']);
+      expect(overridden?.environment?.devices).toEqual(['/dev/qtpy2', '/dev/jtum120']);
+      expect(overridden?.environment?.groups).toEqual(['dialout']);
     });
 
     it('reports an invalid default environment at the defaults context', () => {
